@@ -6,6 +6,12 @@ pub enum PoolKind {
     Relay,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoutingError {
+    InvalidMode,
+    NoAvailableEndpoint,
+}
+
 #[derive(Debug, Clone)]
 pub struct CandidateEndpoint {
     pub id: String,
@@ -34,13 +40,14 @@ impl CandidateEndpoint {
     }
 }
 
-pub fn choose_endpoint(mode: &str, endpoints: &[CandidateEndpoint]) -> Option<CandidateEndpoint> {
-    match RoutingMode::parse(mode)? {
+pub fn choose_endpoint(mode: &str, endpoints: &[CandidateEndpoint]) -> Result<CandidateEndpoint, RoutingError> {
+    match RoutingMode::parse(mode).ok_or(RoutingError::InvalidMode)? {
         RoutingMode::AccountOnly => choose_from_pool(endpoints, PoolKind::Official),
         RoutingMode::RelayOnly => choose_from_pool(endpoints, PoolKind::Relay),
         RoutingMode::Hybrid => choose_from_pool(endpoints, PoolKind::Official)
             .or_else(|| choose_from_pool(endpoints, PoolKind::Relay)),
     }
+    .ok_or(RoutingError::NoAvailableEndpoint)
 }
 
 fn choose_from_pool(endpoints: &[CandidateEndpoint], pool: PoolKind) -> Option<CandidateEndpoint> {

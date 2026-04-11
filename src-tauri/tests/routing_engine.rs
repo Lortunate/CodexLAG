@@ -1,4 +1,4 @@
-use codexlag_lib::routing::engine::{CandidateEndpoint, choose_endpoint};
+use codexlag_lib::routing::engine::{CandidateEndpoint, RoutingError, choose_endpoint};
 
 #[test]
 fn hybrid_mode_prefers_official_then_relay() {
@@ -23,14 +23,25 @@ fn relay_only_skips_official_candidates() {
 }
 
 #[test]
-fn invalid_mode_is_rejected_instead_of_falling_back_to_hybrid() {
+fn invalid_mode_returns_distinct_error() {
     let endpoints = vec![
         CandidateEndpoint::official("official-1", 10, true),
         CandidateEndpoint::relay("relay-1", 20, true),
     ];
 
     let selected = choose_endpoint("not-a-real-mode", &endpoints);
-    assert!(selected.is_none(), "unexpected endpoint selected for invalid mode");
+    assert!(matches!(selected, Err(RoutingError::InvalidMode)));
+}
+
+#[test]
+fn no_available_endpoint_returns_distinct_error() {
+    let endpoints = vec![
+        CandidateEndpoint::official("official-1", 10, true),
+        CandidateEndpoint::relay("relay-1", 20, false),
+    ];
+
+    let selected = choose_endpoint("relay_only", &endpoints);
+    assert!(matches!(selected, Err(RoutingError::NoAvailableEndpoint)));
 }
 
 #[test]
