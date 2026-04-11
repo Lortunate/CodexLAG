@@ -1,6 +1,7 @@
 pub mod bootstrap;
 pub mod db;
 pub mod error;
+pub mod gateway;
 pub mod models;
 pub mod secret_store;
 pub mod state;
