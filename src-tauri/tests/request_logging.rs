@@ -52,3 +52,27 @@ fn usage_records_support_serde_round_trip() {
     assert_eq!(decoded_record.total_tokens, 62);
     assert_eq!(decoded_record.estimated_cost, "0.0042");
 }
+
+#[test]
+fn usage_record_deserialization_rejects_invalid_total_tokens() {
+    let error = from_str::<codexlag_lib::logging::usage::UsageRecord>(
+        r#"{
+            "request_id":"req-3",
+            "endpoint_id":"relay-2",
+            "input_tokens":10,
+            "output_tokens":20,
+            "cache_read_tokens":3,
+            "cache_write_tokens":4,
+            "total_tokens":999,
+            "estimated_cost":"0.0010"
+        }"#,
+    )
+    .expect_err("mismatched total_tokens should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("total_tokens must equal the sum of component token fields"),
+        "unexpected error: {error}"
+    );
+}
