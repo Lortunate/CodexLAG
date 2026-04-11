@@ -19,9 +19,12 @@ async fn bootstrap_creates_default_policy_and_default_key() {
 #[tokio::test]
 async fn bootstrap_persists_default_key_secret_in_secret_store() {
     let state = bootstrap_state_for_test().await.expect("bootstrap");
+    let key = state
+        .get_platform_key_by_name("default")
+        .expect("default key");
 
     let secret = state
-        .secret(&SecretKey::default_platform_key())
+        .secret(&SecretKey::platform_key(&key.id))
         .expect("default key secret");
 
     assert!(secret.starts_with(DEFAULT_PLATFORM_KEY_SECRET_PREFIX));

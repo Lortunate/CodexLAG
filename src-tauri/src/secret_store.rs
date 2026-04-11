@@ -15,11 +15,11 @@ impl SecretKey {
     }
 
     pub fn default_platform_key() -> Self {
-        Self::platform_key("default")
+        Self::platform_key("key-default")
     }
 
-    pub fn platform_key(name: impl Into<String>) -> Self {
-        Self(Cow::Owned(format!("platform-key/{}", name.into())))
+    pub fn platform_key(id: impl Into<String>) -> Self {
+        Self(Cow::Owned(format!("platform-key/{}", id.into())))
     }
 }
 

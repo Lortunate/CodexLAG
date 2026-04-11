@@ -24,12 +24,14 @@ pub async fn bootstrap_state_for_test() -> Result<AppState> {
         enabled: true,
     };
 
+    let default_key_secret = SecretKey::platform_key(default_key.id.clone());
+
     repositories.insert_policy(default_policy)?;
     repositories.insert_platform_key(default_key)?;
 
     let mut secret_store = SecretStore::default();
     secret_store.set(
-        &SecretKey::default_platform_key(),
+        &default_key_secret,
         TEST_DEFAULT_PLATFORM_KEY_SECRET_SEED.into(),
     )?;
 
