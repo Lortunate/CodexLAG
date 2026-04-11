@@ -1,3 +1,4 @@
+use crate::error::{CodexLagError, Result};
 use crate::models::{PlatformKey, RoutingPolicy};
 use std::collections::HashMap;
 
@@ -15,12 +16,32 @@ impl Repositories {
         }
     }
 
-    pub fn insert_policy(&mut self, policy: RoutingPolicy) {
-        self.policies.insert(policy.name.clone(), policy);
+    pub fn insert_policy(&mut self, policy: RoutingPolicy) -> Result<()> {
+        let name = policy.name.clone();
+
+        if self.policies.contains_key(&name) {
+            return Err(CodexLagError::new(format!(
+                "policy '{}' already exists",
+                name
+            )));
+        }
+
+        self.policies.insert(name, policy);
+        Ok(())
     }
 
-    pub fn insert_platform_key(&mut self, key: PlatformKey) {
-        self.keys.insert(key.name.clone(), key);
+    pub fn insert_platform_key(&mut self, key: PlatformKey) -> Result<()> {
+        let name = key.name.clone();
+
+        if self.keys.contains_key(&name) {
+            return Err(CodexLagError::new(format!(
+                "platform key '{}' already exists",
+                name
+            )));
+        }
+
+        self.keys.insert(name, key);
+        Ok(())
     }
 
     pub fn policy(&self, name: &str) -> Option<&RoutingPolicy> {

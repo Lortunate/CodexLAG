@@ -25,8 +25,4 @@ impl AppState {
     pub fn iter_platform_keys(&self) -> impl Iterator<Item = &PlatformKey> {
         self.repositories.iter_platform_keys()
     }
-
-    pub fn repositories_mut(&mut self) -> &mut Repositories {
-        &mut self.repositories
-    }
 }

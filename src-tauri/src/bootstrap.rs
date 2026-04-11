@@ -21,8 +21,8 @@ pub async fn bootstrap_state_for_test() -> Result<AppState> {
         enabled: true,
     };
 
-    repositories.insert_policy(default_policy);
-    repositories.insert_platform_key(default_key);
+    repositories.insert_policy(default_policy)?;
+    repositories.insert_platform_key(default_key)?;
 
     Ok(AppState::new(repositories))
 }
