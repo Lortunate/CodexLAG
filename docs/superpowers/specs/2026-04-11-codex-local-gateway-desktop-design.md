@@ -26,6 +26,7 @@
 - 平台 key 支持每个 key 自定义规则，而不是固定模式
 - 敏感凭据使用 Windows 系统级安全存储，不落地明文数据库
 - 官方账号额度展示只接受真实可查值，查不到就明确标记不可查询
+- 需要支持官方特性能力展示与透传，至少包含上下文窗口大小和上下文压缩
 - 本地网关只监听 `127.0.0.1` 或 `localhost`
 - 首版目标系统仅为 Windows
 - 首次启动自动创建一个 `default key`
@@ -45,6 +46,7 @@ V1 需要完成以下能力：
 - 为本地客户端创建平台 key
 - 为每个平台 key 绑定允许模式和独立路由策略
 - 按策略在官方账号池和中转池之间选路与降级
+- 展示并尽量透传官方特性能力，至少包括上下文窗口大小和上下文压缩能力
 - 记录请求日志、每次尝试链路、token 统计和预估费用
 - 提供 `default key` 的首启生成与托盘快捷切换
 
@@ -119,6 +121,7 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `supports_balance_query`
 - `last_balance_snapshot_at`
 - `pricing_profile_id`
+- `feature_capabilities`
 
 官方账号附加字段：
 
@@ -126,6 +129,9 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `account_identity`
 - `quota_capability`
 - `refresh_capability`
+- `max_context_window`
+- `supports_context_compression`
+- `context_compression_modes`
 
 中转附加字段：
 
@@ -146,7 +152,28 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `credential_kind`
 - `last_verified_at`
 
-### 5.3 PlatformKey
+### 5.3 FeatureCapabilities
+
+`FeatureCapabilities` 用于描述某个节点或某个模型可提供的官方特性能力，避免把这些能力散落在 UI 文案或请求转换逻辑里。
+
+字段建议包括：
+
+- `model_id`
+- `max_context_window`
+- `supports_context_compression`
+- `context_compression_modes`
+- `supports_prompt_cache`
+- `supports_reasoning`
+- `supports_streaming`
+- `last_capability_check_at`
+
+设计原则：
+
+- 能力优先按模型粒度维护，如果暂时拿不到模型级能力，可先回退到节点级默认能力
+- 上下文窗口大小必须作为显式能力字段展示，而不是隐含在模型名称里
+- 上下文压缩必须作为可开关或可声明能力处理，不能假设所有官方账号都支持
+
+### 5.4 PlatformKey
 
 `PlatformKey` 表示发给本机 Codex 客户端使用的网关 key。
 
@@ -167,7 +194,7 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `allowed_mode` 代表顶层许可边界
 - 真正的选路细则由绑定的 `RoutingPolicy` 决定
 
-### 5.4 RoutingPolicy
+### 5.5 RoutingPolicy
 
 `RoutingPolicy` 是系统核心配置对象，建议独立成可复用实体，而不是把复杂规则散落到平台 key 表中。
 
@@ -182,14 +209,16 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `failure_rules`
 - `recovery_rules`
 - `circuit_breaker_config`
+- `request_feature_policy`
 
 其中：
 
 - `selection_order` 定义池顺序、标签顺序和节点分组顺序
 - `failure_rules` 定义哪些失败会触发降级
 - `recovery_rules` 定义熔断恢复和半开探测逻辑
+- `request_feature_policy` 定义当请求声明了上下文窗口或上下文压缩需求时，如何校验、降级、拒绝或改写
 
-### 5.5 RequestLog
+### 5.6 RequestLog
 
 每次客户端请求一条主记录。
 
@@ -208,8 +237,12 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `latency_ms`
 - `error_code`
 - `error_reason`
+- `requested_context_window`
+- `requested_context_compression`
+- `effective_context_window`
+- `effective_context_compression`
 
-### 5.6 RequestAttemptLog
+### 5.7 RequestAttemptLog
 
 为了记录降级链路，每次尝试都需要单独存一条尝试记录。
 
@@ -227,8 +260,9 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `token_usage_snapshot`
 - `estimated_cost_snapshot`
 - `balance_snapshot_id`
+- `feature_resolution_snapshot`
 
-### 5.7 UsageLedger
+### 5.8 UsageLedger
 
 `UsageLedger` 是 token 和费用统计的事实表。
 
@@ -268,11 +302,12 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 
 1. 本机客户端携带平台 key 请求本地网关
 2. 网关校验平台 key 并加载绑定策略
-3. 根据 `allowed_mode` 和 `selection_order` 生成候选队列
-4. 过滤禁用、认证失效、已知额度耗尽、熔断中的节点
-5. 按顺序尝试请求上游
-6. 当命中失败规则时记录尝试日志并切换到下一个候选
-7. 成功后写入请求主日志、尝试日志、usage 和健康状态
+3. 解析请求中的官方特性需求，例如上下文窗口大小和上下文压缩参数
+4. 根据 `allowed_mode`、`selection_order` 和特性需求生成候选队列
+5. 过滤禁用、认证失效、已知额度耗尽、熔断中或能力不满足的节点
+6. 按顺序尝试请求上游
+7. 当命中失败规则时记录尝试日志并切换到下一个候选
+8. 成功后写入请求主日志、尝试日志、usage 和健康状态
 
 ### 6.3 可配置失败条件
 
@@ -287,7 +322,22 @@ V1 支持策略层配置以下触发项：
 
 V1 不做并发探测，只做串行降级。每个请求都必须能解释“为什么选到当前节点”和“为什么放弃前一个节点”。
 
-### 6.4 熔断与恢复
+### 6.4 官方特性处理
+
+V1 需要支持官方特性能力展示与透传，首批至少覆盖：
+
+- 上下文窗口大小
+- 上下文压缩
+
+处理原则如下：
+
+- 如果客户端请求显式声明了特性需求，路由器优先选择满足该能力的候选
+- 若策略允许降级，可退回到能力较低但仍可执行的候选，并在日志中记录能力降级
+- 若策略不允许降级，则直接返回能力不满足错误，而不是静默修改请求
+- 如果某个官方节点支持上下文压缩，网关应尽量透传该参数，而不是在本地伪造压缩行为
+- 本地网关首版不实现自研上下文压缩算法，只负责能力发现、参数传递和结果记录
+
+### 6.5 熔断与恢复
 
 路由器需要支持健康状态机，至少包含：
 
@@ -327,6 +377,7 @@ V1 同时支持两种接入：
 - `quota_capability`
 - `last_verified_at`
 - `status`
+- `default_feature_capabilities`
 
 ### 7.3 能力探测
 
@@ -336,6 +387,8 @@ V1 同时支持两种接入：
 - 是否可刷新
 - 是否可查询真实额度
 - 支持哪些模型或接口族
+- 支持的上下文窗口大小
+- 是否支持上下文压缩
 
 对于不能查询真实额度的官方账号，V1 明确展示“余额不可查询”，不做虚假估算。
 
@@ -392,6 +445,8 @@ V1 先支持：
 - cache write token
 - reasoning token
 - total token
+
+如果上游返回与上下文压缩相关的 usage 或上下文裁剪信息，也应归一化写入请求尝试快照或 usage 扩展字段，供后续 UI 展示。
 
 ### 9.4 费用估算
 
@@ -457,6 +512,14 @@ SQLite 只存：
 - `GET /health`
 - `GET /models`，如果后续需要模型枚举映射
 
+网关在请求入口需要具备一层轻量的特性解析与能力匹配逻辑：
+
+- 识别客户端声明的目标模型
+- 识别客户端声明的上下文窗口需求
+- 识别客户端声明的上下文压缩需求
+- 将这些需求映射到候选节点能力矩阵
+- 在无法满足时返回明确的能力不匹配错误
+
 控制面动作和数据面动作必须隔离，避免在 UI 中的测试连接、余额查询等操作污染真实请求日志和用量统计。
 
 ## 12. Desktop UI 与托盘
@@ -471,6 +534,12 @@ V1 主界面建议固定为六个主区：
 4. 平台 Key
 5. 策略中心
 6. 请求日志与统计
+
+主界面还需要有明确的能力展示区域，至少在以下位置可见：
+
+- 官方账号详情页展示默认上下文窗口大小和上下文压缩支持情况
+- 模型或能力详情弹层展示模型级能力矩阵
+- 请求日志详情展示请求声明能力与实际生效能力
 
 ### 12.2 首启默认对象
 
@@ -531,6 +600,7 @@ UI 展示面向用户的动作性错误文案，不直接展示内部堆栈。
 - 该中转类型当前不支持余额查询
 - 此平台 key 的策略未包含任何可用节点
 - 请求已降级多次，所有候选节点均失败
+- 请求要求的上下文窗口或上下文压缩能力当前无可用节点支持
 
 ## 14. 测试策略
 
@@ -542,6 +612,8 @@ V1 测试重点放在后端稳定性，而不是完整 UI 自动化。
 - 失败规则触发
 - 熔断和恢复
 - 官方账号能力探测
+- 上下文窗口能力匹配
+- 上下文压缩需求透传与拒绝逻辑
 - NewAPI 余额归一化
 - usage 抽取与价格表匹配
 
@@ -602,6 +674,7 @@ V1 测试重点放在后端稳定性，而不是完整 UI 自动化。
 - 首启自动生成 `default key`
 - 本机客户端可使用平台 key 访问本地网关
 - 官方账号和 NewAPI 中转都能被纳入统一选路
+- 上下文窗口大小和上下文压缩能力可以被发现、展示、记录并参与选路
 - 降级规则可配置且有可解释日志
 - 敏感凭据不落库明文
 - 托盘可切换 `default key` 三种模式并显示摘要状态
