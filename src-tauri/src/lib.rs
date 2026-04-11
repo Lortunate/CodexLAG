@@ -2,6 +2,7 @@ pub mod bootstrap;
 pub mod db;
 pub mod error;
 pub mod models;
+pub mod secret_store;
 pub mod state;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

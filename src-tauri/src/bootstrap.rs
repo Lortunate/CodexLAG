@@ -1,7 +1,8 @@
 use crate::{
     db::repositories::Repositories,
     error::Result,
-    models::{PlatformKey, RoutingPolicy},
+    models::{PlatformKey, RoutingPolicy, DEFAULT_PLATFORM_KEY_SECRET},
+    secret_store::SecretStore,
     state::AppState,
 };
 
@@ -24,5 +25,8 @@ pub async fn bootstrap_state_for_test() -> Result<AppState> {
     repositories.insert_policy(default_policy)?;
     repositories.insert_platform_key(default_key)?;
 
-    Ok(AppState::new(repositories))
+    let mut secret_store = SecretStore::default();
+    secret_store.set("platform-key/default", DEFAULT_PLATFORM_KEY_SECRET.into());
+
+    Ok(AppState::new(repositories, secret_store))
 }

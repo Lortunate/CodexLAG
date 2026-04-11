@@ -1,13 +1,18 @@
 use crate::db::repositories::Repositories;
 use crate::models::{PlatformKey, RoutingPolicy};
+use crate::secret_store::SecretStore;
 
 pub struct AppState {
     repositories: Repositories,
+    pub secret_store: SecretStore,
 }
 
 impl AppState {
-    pub fn new(repositories: Repositories) -> Self {
-        Self { repositories }
+    pub fn new(repositories: Repositories, secret_store: SecretStore) -> Self {
+        Self {
+            repositories,
+            secret_store,
+        }
     }
 
     pub fn get_policy_by_name(&self, name: &str) -> Option<&RoutingPolicy> {
