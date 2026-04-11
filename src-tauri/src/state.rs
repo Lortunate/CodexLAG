@@ -38,4 +38,15 @@ impl AppState {
     pub fn iter_platform_keys(&self) -> impl Iterator<Item = &PlatformKey> {
         self.repositories.iter_platform_keys()
     }
+
+    pub fn authenticate_platform_key(&self, provided_secret: &str) -> Option<PlatformKey> {
+        self.iter_platform_keys()
+            .find(|key| {
+                key.enabled
+                    && self
+                        .secret(&SecretKey::platform_key(key.id.clone()))
+                        .is_ok_and(|stored_secret| stored_secret == provided_secret)
+            })
+            .cloned()
+    }
 }

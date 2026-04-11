@@ -1,7 +1,14 @@
 use axum::Router;
 
-use crate::gateway::{auth::GatewayAuthState, routes::build_routes};
+use crate::{
+    gateway::{auth::GatewayState, routes::build_routes},
+    state::AppState,
+};
 
-pub fn build_router_for_test(secret: impl Into<String>) -> Router {
-    build_routes().with_state(GatewayAuthState::new(secret))
+pub fn build_router(app_state: AppState) -> Router {
+    build_routes().with_state(GatewayState::new(app_state))
+}
+
+pub fn build_router_for_test(app_state: AppState) -> Router {
+    build_router(app_state)
 }
