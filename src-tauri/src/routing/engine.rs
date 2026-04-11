@@ -35,14 +35,18 @@ impl CandidateEndpoint {
 }
 
 pub fn choose_endpoint(mode: &str, endpoints: &[CandidateEndpoint]) -> Option<CandidateEndpoint> {
+    match mode {
+        ACCOUNT_ONLY => choose_from_pool(endpoints, PoolKind::Official),
+        RELAY_ONLY => choose_from_pool(endpoints, PoolKind::Relay),
+        _ => choose_from_pool(endpoints, PoolKind::Official)
+            .or_else(|| choose_from_pool(endpoints, PoolKind::Relay)),
+    }
+}
+
+fn choose_from_pool(endpoints: &[CandidateEndpoint], pool: PoolKind) -> Option<CandidateEndpoint> {
     let mut candidates: Vec<_> = endpoints
         .iter()
-        .filter(|item| item.available)
-        .filter(|item| match mode {
-            ACCOUNT_ONLY => item.pool == PoolKind::Official,
-            RELAY_ONLY => item.pool == PoolKind::Relay,
-            _ => true,
-        })
+        .filter(|item| item.available && item.pool == pool)
         .cloned()
         .collect();
 
