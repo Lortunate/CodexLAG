@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::providers::capabilities::{FeatureCapability, FeatureCapabilityPatch};
 pub use crate::providers::official::{OfficialAuthMode, OfficialSession};
+pub use crate::logging::usage::{UsageRecord, UsageRecordInput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformKey {

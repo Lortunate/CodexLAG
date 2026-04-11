@@ -2,6 +2,7 @@ pub mod bootstrap;
 pub mod db;
 pub mod error;
 pub mod gateway;
+pub mod logging;
 pub mod models;
 pub mod providers;
 pub mod routing;
