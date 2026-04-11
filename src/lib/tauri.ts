@@ -4,8 +4,21 @@ import type {
   DefaultKeySummary,
   LogSummary,
   PolicySummary,
+  RawDefaultKeySummary,
   RelaySummary,
+  DefaultKeyMode,
 } from "./types";
+
+function parseDefaultKeyMode(value: string): DefaultKeyMode | null {
+  switch (value) {
+    case "account_only":
+    case "relay_only":
+    case "hybrid":
+      return value;
+    default:
+      return null;
+  }
+}
 
 export function listAccounts() {
   return invoke<AccountSummary[]>("list_accounts");
@@ -16,7 +29,13 @@ export function listRelays() {
 }
 
 export function getDefaultKeySummary() {
-  return invoke<DefaultKeySummary>("get_default_key_summary");
+  return invoke<RawDefaultKeySummary>("get_default_key_summary").then(
+    (summary): DefaultKeySummary => ({
+      name: summary.name,
+      allowedMode: parseDefaultKeyMode(summary.allowed_mode),
+      rawAllowedMode: summary.allowed_mode,
+    }),
+  );
 }
 
 export function listPolicies() {
