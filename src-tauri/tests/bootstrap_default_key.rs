@@ -1,6 +1,6 @@
-use codexlag_lib::{
-    bootstrap::bootstrap_state_for_test, models::DEFAULT_PLATFORM_KEY_SECRET_PREFIX,
-};
+use codexlag_lib::{bootstrap::bootstrap_state_for_test, secret_store::SecretKey};
+
+const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
 
 #[tokio::test]
 async fn bootstrap_creates_default_policy_and_default_key() {
@@ -21,8 +21,7 @@ async fn bootstrap_persists_default_key_secret_in_secret_store() {
     let state = bootstrap_state_for_test().await.expect("bootstrap");
 
     let secret = state
-        .secret_store
-        .get("platform-key/default")
+        .secret(&SecretKey::PLATFORM_KEY_DEFAULT)
         .expect("default key secret");
 
     assert!(secret.starts_with(DEFAULT_PLATFORM_KEY_SECRET_PREFIX));

@@ -1,10 +1,10 @@
 use crate::db::repositories::Repositories;
 use crate::models::{PlatformKey, RoutingPolicy};
-use crate::secret_store::SecretStore;
+use crate::secret_store::{SecretKey, SecretStore};
 
 pub struct AppState {
     repositories: Repositories,
-    pub secret_store: SecretStore,
+    secret_store: SecretStore,
 }
 
 impl AppState {
@@ -13,6 +13,14 @@ impl AppState {
             repositories,
             secret_store,
         }
+    }
+
+    pub fn store_secret(&mut self, key: &SecretKey, value: String) -> crate::error::Result<()> {
+        self.secret_store.set(key, value)
+    }
+
+    pub fn secret(&self, key: &SecretKey) -> crate::error::Result<String> {
+        self.secret_store.get(key)
     }
 
     pub fn get_policy_by_name(&self, name: &str) -> Option<&RoutingPolicy> {

@@ -1,10 +1,12 @@
 use crate::{
     db::repositories::Repositories,
     error::Result,
-    models::{PlatformKey, RoutingPolicy, DEFAULT_PLATFORM_KEY_SECRET},
-    secret_store::SecretStore,
+    models::{PlatformKey, RoutingPolicy},
+    secret_store::{SecretKey, SecretStore},
     state::AppState,
 };
+
+const TEST_DEFAULT_PLATFORM_KEY_SECRET_SEED: &str = "ck_local_default_seed";
 
 pub async fn bootstrap_state_for_test() -> Result<AppState> {
     let mut repositories = Repositories::new();
@@ -26,7 +28,10 @@ pub async fn bootstrap_state_for_test() -> Result<AppState> {
     repositories.insert_platform_key(default_key)?;
 
     let mut secret_store = SecretStore::default();
-    secret_store.set("platform-key/default", DEFAULT_PLATFORM_KEY_SECRET.into());
+    secret_store.set(
+        &SecretKey::PLATFORM_KEY_DEFAULT,
+        TEST_DEFAULT_PLATFORM_KEY_SECRET_SEED.into(),
+    )?;
 
     Ok(AppState::new(repositories, secret_store))
 }
