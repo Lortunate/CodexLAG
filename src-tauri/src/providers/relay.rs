@@ -6,12 +6,14 @@ pub struct NormalizedBalance {
     pub used: String,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayBalanceAdapter {
     NewApi,
     NoBalance,
 }
 
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum RelayBalanceError {
     Payload(serde_json::Error),
