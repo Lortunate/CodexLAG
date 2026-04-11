@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-pub use crate::providers::capabilities::FeatureCapability;
-pub use crate::providers::official::OfficialSession;
+pub use crate::providers::capabilities::{FeatureCapability, FeatureCapabilityPatch};
+pub use crate::providers::official::{OfficialAuthMode, OfficialSession};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformKey {
