@@ -51,5 +51,23 @@ async fn tray_model_contains_default_key_mode_actions() {
     assert!(model.items.iter().any(|item| {
         item.kind == TrayItemKind::Mode && item.id == TrayItemId::Mode(RoutingMode::Hybrid)
     }));
+    assert!(
+        model
+            .items
+            .iter()
+            .any(|item| item.id.menu_id().as_ref() == "mode:account_only")
+    );
+    assert!(
+        model
+            .items
+            .iter()
+            .any(|item| item.id.menu_id().as_ref() == "mode:relay_only")
+    );
+    assert!(
+        model
+            .items
+            .iter()
+            .any(|item| item.id.menu_id().as_ref() == "mode:hybrid")
+    );
     assert_eq!(model.current_mode(), Some(RoutingMode::Hybrid));
 }

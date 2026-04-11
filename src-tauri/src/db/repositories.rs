@@ -52,6 +52,20 @@ impl Repositories {
         self.keys.get(name)
     }
 
+    pub fn update_platform_key_allowed_mode(
+        &mut self,
+        name: &str,
+        allowed_mode: &str,
+    ) -> Result<()> {
+        let key = self
+            .keys
+            .get_mut(name)
+            .ok_or_else(|| CodexLagError::new(format!("platform key '{}' not found", name)))?;
+
+        key.allowed_mode = allowed_mode.into();
+        Ok(())
+    }
+
     pub fn iter_policies(&self) -> impl Iterator<Item = &RoutingPolicy> {
         self.policies.values()
     }

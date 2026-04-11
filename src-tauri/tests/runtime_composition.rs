@@ -1,11 +1,11 @@
 use codexlag_lib::{
     bootstrap::bootstrap_runtime_for_test,
     commands::{
-        keys::default_key_summary_from_state,
+        keys::{default_key_summary_from_state, set_default_key_mode_from_runtime},
         logs::log_summary_from_runtime,
         policies::policy_summaries_from_state,
     },
-    routing::policy::{RoutingMode, HYBRID},
+    routing::policy::{RoutingMode, HYBRID, RELAY_ONLY},
 };
 
 #[tokio::test]
@@ -14,8 +14,8 @@ async fn bootstrapped_runtime_feeds_commands_and_tray_from_shared_state() {
         .await
         .expect("bootstrap runtime");
 
-    let key_summary = default_key_summary_from_state(runtime.app_state()).expect("key summary");
-    let policy_summaries = policy_summaries_from_state(runtime.app_state());
+    let key_summary = default_key_summary_from_state(&runtime.app_state()).expect("key summary");
+    let policy_summaries = policy_summaries_from_state(&runtime.app_state());
     let log_summary = log_summary_from_runtime(&runtime);
 
     assert_eq!(key_summary.name, "default");
@@ -28,4 +28,33 @@ async fn bootstrapped_runtime_feeds_commands_and_tray_from_shared_state() {
     assert_eq!(log_summary.level, "info");
     assert!(log_summary.last_event.contains("default"));
     assert!(log_summary.last_event.contains(HYBRID));
+}
+
+#[tokio::test]
+async fn runtime_mode_switch_updates_default_key_summary_and_tray_model() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
+        .expect("switch to relay-only");
+
+    let key_summary = default_key_summary_from_state(&runtime.app_state()).expect("key summary");
+
+    assert_eq!(key_summary.allowed_mode, RELAY_ONLY);
+    assert_eq!(runtime.current_mode(), RoutingMode::RelayOnly);
+    assert_eq!(runtime.tray_model().current_mode(), Some(RoutingMode::RelayOnly));
+}
+
+#[tokio::test]
+async fn set_default_key_mode_rejects_invalid_mode_strings() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let error = set_default_key_mode_from_runtime(&runtime, "invalid-mode")
+        .expect_err("invalid mode should fail");
+
+    assert!(error.to_string().contains("unsupported default key mode"));
 }

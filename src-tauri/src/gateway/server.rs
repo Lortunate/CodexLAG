@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use axum::Router;
 
@@ -14,7 +14,7 @@ pub struct LoopbackGateway {
 }
 
 impl LoopbackGateway {
-    pub fn new(app_state: Arc<AppState>) -> Self {
+    pub fn new(app_state: Arc<RwLock<AppState>>) -> Self {
         let state = GatewayState::new(app_state);
         let router = build_routes().with_state(state.clone());
 
@@ -35,7 +35,7 @@ impl LoopbackGateway {
 }
 
 pub fn build_router(app_state: AppState) -> Router {
-    LoopbackGateway::new(Arc::new(app_state)).router()
+    LoopbackGateway::new(Arc::new(RwLock::new(app_state))).router()
 }
 
 pub fn build_router_for_test(app_state: AppState) -> Router {

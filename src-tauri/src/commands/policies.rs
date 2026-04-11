@@ -35,5 +35,5 @@ pub fn policy_summaries_from_state(state: &AppState) -> Vec<PolicySummary> {
 
 #[tauri::command]
 pub fn list_policies(state: State<'_, RuntimeState>) -> Vec<PolicySummary> {
-    policy_summaries_from_state(state.app_state())
+    policy_summaries_from_state(&state.app_state())
 }

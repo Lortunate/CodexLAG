@@ -10,8 +10,8 @@ pub struct LogSummary {
 }
 
 pub fn log_summary_from_runtime(runtime: &RuntimeState) -> LogSummary {
-    let key_name = runtime
-        .app_state()
+    let app_state = runtime.app_state();
+    let key_name = app_state
         .default_platform_key()
         .map(|key| key.name.as_str())
         .unwrap_or("missing");

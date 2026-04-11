@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use crate::db::repositories::Repositories;
 use crate::gateway::server::LoopbackGateway;
@@ -71,43 +71,50 @@ impl AppState {
             })
             .cloned()
     }
+
+    pub fn set_default_key_allowed_mode(&mut self, mode: RoutingMode) -> crate::error::Result<()> {
+        self.repositories
+            .update_platform_key_allowed_mode("default", mode.as_str())
+    }
 }
 
 #[derive(Clone)]
 pub struct RuntimeState {
-    app_state: Arc<AppState>,
+    app_state: Arc<RwLock<AppState>>,
     loopback_gateway: LoopbackGateway,
-    tray_model: TrayModel,
 }
 
 impl RuntimeState {
     pub fn new(app_state: AppState) -> Self {
-        let app_state = Arc::new(app_state);
+        let app_state = Arc::new(RwLock::new(app_state));
         let loopback_gateway = LoopbackGateway::new(Arc::clone(&app_state));
-        let tray_model = build_tray_model_for_state(app_state.as_ref());
 
         Self {
             app_state,
             loopback_gateway,
-            tray_model,
         }
     }
 
-    pub fn app_state(&self) -> &AppState {
-        self.app_state.as_ref()
+    pub fn app_state(&self) -> RwLockReadGuard<'_, AppState> {
+        self.app_state.read().expect("runtime app state lock poisoned")
     }
 
     pub fn loopback_gateway(&self) -> &LoopbackGateway {
         &self.loopback_gateway
     }
 
-    pub fn tray_model(&self) -> &TrayModel {
-        &self.tray_model
+    pub fn tray_model(&self) -> TrayModel {
+        build_tray_model_for_state(&self.app_state())
     }
 
     pub fn current_mode(&self) -> RoutingMode {
-        self.tray_model()
-            .current_mode()
-            .unwrap_or(RoutingMode::Hybrid)
+        self.app_state().current_mode().unwrap_or(RoutingMode::Hybrid)
+    }
+
+    pub fn set_current_mode(&self, mode: RoutingMode) -> crate::error::Result<()> {
+        self.app_state
+            .write()
+            .expect("runtime app state lock poisoned")
+            .set_default_key_allowed_mode(mode)
     }
 }

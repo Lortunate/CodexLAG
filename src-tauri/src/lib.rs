@@ -18,10 +18,12 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(|app| -> Result<(), Box<dyn Error>> {
             let runtime = bootstrap::bootstrap_runtime()
                 .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
 
+            tray::install_runtime_tray(app, &runtime.tray_model())
+                .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
             app.manage(runtime);
             Ok(())
         })
@@ -29,6 +31,7 @@ pub fn run() {
             commands::accounts::list_accounts,
             commands::relays::list_relays,
             commands::keys::get_default_key_summary,
+            commands::keys::set_default_key_mode,
             commands::policies::list_policies,
             commands::logs::get_log_summary
         ])

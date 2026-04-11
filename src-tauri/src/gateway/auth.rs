@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use axum::{
     extract::FromRequestParts,
@@ -12,28 +12,28 @@ use crate::{
 
 #[derive(Clone)]
 pub struct GatewayState {
-    app_state: Arc<AppState>,
+    app_state: Arc<RwLock<AppState>>,
 }
 
 impl GatewayState {
-    pub fn new(app_state: Arc<AppState>) -> Self {
+    pub fn new(app_state: Arc<RwLock<AppState>>) -> Self {
         Self {
             app_state,
         }
     }
 
-    pub fn app_state(&self) -> &AppState {
-        self.app_state.as_ref()
+    pub fn app_state(&self) -> RwLockReadGuard<'_, AppState> {
+        self.app_state.read().expect("gateway app state lock poisoned")
     }
 
     pub fn policy_for_platform_key(&self, platform_key: &PlatformKey) -> Option<RoutingPolicy> {
-        self.app_state
+        self.app_state()
             .get_policy_by_id(&platform_key.policy_id)
             .cloned()
     }
 
     fn authenticate_platform_key(&self, provided_secret: &str) -> Option<PlatformKey> {
-        self.app_state.authenticate_platform_key(provided_secret)
+        self.app_state().authenticate_platform_key(provided_secret)
     }
 }
 
