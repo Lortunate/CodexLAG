@@ -97,6 +97,9 @@ async fn bootstrap_persists_default_state_across_restarts() {
     assert_eq!(second_key.allowed_mode.as_str(), RoutingMode::RelayOnly.as_str());
     assert_eq!(second_state.iter_policies().count(), 1);
     assert_eq!(second_state.iter_platform_keys().count(), 1);
+
+    drop(second_state);
+    let _ = std::fs::remove_file(&database_path);
 }
 
 #[tokio::test]

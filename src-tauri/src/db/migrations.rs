@@ -16,7 +16,8 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
                 name TEXT NOT NULL UNIQUE,
                 allowed_mode TEXT NOT NULL,
                 policy_id TEXT NOT NULL,
-                enabled INTEGER NOT NULL
+                enabled INTEGER NOT NULL,
+                FOREIGN KEY(policy_id) REFERENCES routing_policies(id)
             );
             ",
         )

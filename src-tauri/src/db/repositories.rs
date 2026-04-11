@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use rusqlite::{params, Connection};
 
@@ -153,12 +154,32 @@ impl Repositories {
     }
 
     fn open_sqlite(database_path: &Path) -> Result<Connection> {
-        Connection::open(database_path).map_err(|error| {
+        let connection = Connection::open(database_path).map_err(|error| {
             CodexLagError::new(format!(
                 "failed to open SQLite database '{}': {error}",
                 database_path.display()
             ))
-        })
+        })?;
+
+        connection
+            .busy_timeout(Duration::from_secs(5))
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to configure SQLite busy timeout for '{}': {error}",
+                    database_path.display()
+                ))
+            })?;
+
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to enable SQLite foreign keys for '{}': {error}",
+                    database_path.display()
+                ))
+            })?;
+
+        Ok(connection)
     }
 
     fn load_policies(connection: &Connection) -> Result<HashMap<String, RoutingPolicy>> {

@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     db::repositories::Repositories,
-    error::Result,
+    error::{CodexLagError, Result},
     models::{PlatformKey, RoutingPolicy},
     routing::policy::HYBRID,
     secret_store::{SecretKey, SecretStore},
@@ -27,6 +27,15 @@ fn build_default_app_state(
         name: DEFAULT_POLICY_NAME.into(),
     };
 
+    if repositories.policy(DEFAULT_POLICY_NAME).is_none() {
+        repositories.insert_policy(default_policy)?;
+    }
+
+    let default_policy = repositories
+        .policy(DEFAULT_POLICY_NAME)
+        .cloned()
+        .ok_or_else(|| CodexLagError::new("default policy missing after bootstrap insert"))?;
+
     let default_key = PlatformKey {
         id: DEFAULT_PLATFORM_KEY_ID.into(),
         name: DEFAULT_PLATFORM_KEY_NAME.into(),
@@ -36,10 +45,6 @@ fn build_default_app_state(
     };
 
     let default_key_secret = SecretKey::platform_key(default_key.id.clone());
-
-    if repositories.policy(DEFAULT_POLICY_NAME).is_none() {
-        repositories.insert_policy(default_policy)?;
-    }
 
     if repositories.platform_key(DEFAULT_PLATFORM_KEY_NAME).is_none() {
         repositories.insert_platform_key(default_key)?;
