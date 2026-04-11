@@ -6,6 +6,29 @@ pub struct NormalizedBalance {
     pub used: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelayBalanceAdapter {
+    NewApi,
+    NoBalance,
+}
+
+#[derive(Debug)]
+pub enum RelayBalanceError {
+    Payload(serde_json::Error),
+}
+
+impl RelayBalanceError {
+    pub fn is_payload_error(&self) -> bool {
+        matches!(self, Self::Payload(_))
+    }
+}
+
+impl From<serde_json::Error> for RelayBalanceError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Payload(value)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct NewApiPayload {
     data: NewApiBalanceData,
@@ -17,7 +40,19 @@ struct NewApiBalanceData {
     used_balance: String,
 }
 
-pub fn normalize_newapi_balance_response(
+pub fn normalize_relay_balance_response(
+    adapter: RelayBalanceAdapter,
+    body: &str,
+) -> Result<Option<NormalizedBalance>, RelayBalanceError> {
+    match adapter {
+        RelayBalanceAdapter::NewApi => Ok(Some(
+            normalize_newapi_balance_response(body).map_err(RelayBalanceError::from)?,
+        )),
+        RelayBalanceAdapter::NoBalance => Ok(None),
+    }
+}
+
+fn normalize_newapi_balance_response(
     body: &str,
 ) -> Result<NormalizedBalance, serde_json::Error> {
     let payload: NewApiPayload = serde_json::from_str(body)?;
