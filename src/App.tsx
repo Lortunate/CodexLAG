@@ -1,10 +1,17 @@
+import { AccountsPage } from "./features/accounts/accounts-page";
+import { KeysPage } from "./features/keys/keys-page";
+import { LogsPage } from "./features/logs/logs-page";
+import { OverviewPage } from "./features/overview/overview-page";
+import { PoliciesPage } from "./features/policies/policies-page";
+import { RelaysPage } from "./features/relays/relays-page";
+
 const sections = [
   "Overview",
   "Official Accounts",
   "Relays",
   "Platform Keys",
   "Policies",
-  "Logs & Usage"
+  "Logs & Usage",
 ];
 
 export default function App() {
@@ -21,8 +28,12 @@ export default function App() {
         </nav>
       </aside>
       <main className="content">
-        <h2>Gateway Shell</h2>
-        <p>Windows-first local Codex gateway desktop console.</p>
+        <OverviewPage />
+        <AccountsPage />
+        <RelaysPage />
+        <KeysPage />
+        <PoliciesPage />
+        <LogsPage />
       </main>
     </div>
   );

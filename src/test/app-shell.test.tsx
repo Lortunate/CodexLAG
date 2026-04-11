@@ -14,4 +14,17 @@ describe("App shell", () => {
     expect(screen.getByText("Policies")).toBeInTheDocument();
     expect(screen.getByText("Logs & Usage")).toBeInTheDocument();
   });
+
+  it("shows default key mode controls in the overview shell", () => {
+    render(<App />);
+
+    expect(screen.getByText("Default Key Mode")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "account_only" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "relay_only" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "hybrid" })).toBeInTheDocument();
+  });
 });
