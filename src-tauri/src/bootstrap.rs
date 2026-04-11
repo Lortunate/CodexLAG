@@ -51,12 +51,12 @@ fn build_default_app_state(
     Ok(AppState::new(repositories, secret_store))
 }
 
-pub fn bootstrap_state() -> Result<AppState> {
-    build_default_app_state(default_database_path(), DEFAULT_PLATFORM_KEY_SECRET_SEED)
+pub fn bootstrap_state_at(database_path: impl AsRef<Path>) -> Result<AppState> {
+    build_default_app_state(database_path, DEFAULT_PLATFORM_KEY_SECRET_SEED)
 }
 
-pub fn bootstrap_runtime() -> Result<RuntimeState> {
-    bootstrap_state().map(RuntimeState::new)
+pub fn bootstrap_runtime_at(database_path: impl AsRef<Path>) -> Result<RuntimeState> {
+    bootstrap_state_at(database_path).map(RuntimeState::new)
 }
 
 pub async fn bootstrap_state_for_test() -> Result<AppState> {
@@ -69,10 +69,6 @@ pub async fn bootstrap_state_for_test_at(database_path: impl AsRef<Path>) -> Res
 
 pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
     bootstrap_state_for_test().await.map(RuntimeState::new)
-}
-
-fn default_database_path() -> PathBuf {
-    std::env::temp_dir().join("codexlag").join("codexlag.sqlite3")
 }
 
 fn test_database_path() -> PathBuf {

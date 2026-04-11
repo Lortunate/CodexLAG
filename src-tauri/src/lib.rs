@@ -19,7 +19,13 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| -> Result<(), Box<dyn Error>> {
-            let runtime = bootstrap::bootstrap_runtime()
+            let app_local_data_dir = app
+                .path()
+                .app_local_data_dir()
+                .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
+            let database_path = app_local_data_dir.join("codexlag.sqlite3");
+
+            let runtime = bootstrap::bootstrap_runtime_at(database_path)
                 .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
 
             tray::install_runtime_tray(app, &runtime.tray_model())

@@ -2,9 +2,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use codexlag_lib::{
     bootstrap::{bootstrap_state_for_test, bootstrap_state_for_test_at},
+    routing::policy::RoutingMode,
     secret_store::SecretKey,
 };
 use codexlag_lib::routing::policy::HYBRID;
+use rusqlite::Connection;
 
 const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
 
@@ -47,35 +49,52 @@ async fn bootstrap_persists_default_state_across_restarts() {
             .as_nanos()
     ));
 
-    let first_state = bootstrap_state_for_test_at(&database_path)
+    let mut first_state = bootstrap_state_for_test_at(&database_path)
         .await
         .expect("first bootstrap");
-    let first_policy = first_state
-        .get_policy_by_name("default")
-        .expect("first default policy");
     let first_key = first_state
         .get_platform_key_by_name("default")
         .expect("first default key");
-    let first_policy_id = first_policy.id.clone();
-    let first_key_id = first_key.id.clone();
 
     assert_eq!(first_state.iter_policies().count(), 1);
     assert_eq!(first_state.iter_platform_keys().count(), 1);
+    assert_eq!(first_key.allowed_mode.as_str(), HYBRID);
+
+    first_state
+        .set_default_key_allowed_mode(RoutingMode::RelayOnly)
+        .expect("persist default key mode change");
 
     drop(first_state);
+
+    assert!(database_path.exists(), "bootstrap should create sqlite file");
+
+    let connection = Connection::open(&database_path).expect("open sqlite database");
+    let policy_rows: i64 = connection
+        .query_row("SELECT COUNT(*) FROM routing_policies", [], |row| row.get(0))
+        .expect("count routing policies");
+    let key_rows: i64 = connection
+        .query_row("SELECT COUNT(*) FROM platform_keys", [], |row| row.get(0))
+        .expect("count platform keys");
+    let persisted_mode: String = connection
+        .query_row(
+            "SELECT allowed_mode FROM platform_keys WHERE name = 'default'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("select default key mode");
+
+    assert_eq!(policy_rows, 1);
+    assert_eq!(key_rows, 1);
+    assert_eq!(persisted_mode, RoutingMode::RelayOnly.as_str());
 
     let second_state = bootstrap_state_for_test_at(&database_path)
         .await
         .expect("second bootstrap");
-    let second_policy = second_state
-        .get_policy_by_name("default")
-        .expect("second default policy");
     let second_key = second_state
         .get_platform_key_by_name("default")
         .expect("second default key");
 
-    assert_eq!(second_policy.id, first_policy_id);
-    assert_eq!(second_key.id, first_key_id);
+    assert_eq!(second_key.allowed_mode.as_str(), RoutingMode::RelayOnly.as_str());
     assert_eq!(second_state.iter_policies().count(), 1);
     assert_eq!(second_state.iter_platform_keys().count(), 1);
 }
