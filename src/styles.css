@@ -1,0 +1,64 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.app-shell {
+  background: #fff;
+  color: #0f172a;
+  width: min(1200px, 100%);
+  padding: 3rem;
+  border-radius: 1.25rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.15);
+}
+
+body {
+  min-height: 100vh;
+  font-family: "Inter", system-ui, sans-serif;
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 2rem;
+}
+
+.eyebrow {
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: #6366f1;
+  margin-bottom: 0.5rem;
+}
+
+.lede {
+  max-width: 560px;
+  color: #475569;
+  margin-top: 0.5rem;
+}
+
+.app-nav {
+  margin-top: 2.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+}
+
+.nav-card {
+  padding: 1.5rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, #f8fafc, #fff);
+  min-height: 160px;
+}
+
+.nav-card h2 {
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+}
+
+.nav-card p {
+  color: #475569;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}

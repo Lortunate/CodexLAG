@@ -1,0 +1,39 @@
+{
+  "package": {
+    "productName": "Codex Gateway",
+    "version": "0.1.0"
+  },
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "distDir": "../dist",
+    "devPath": "http://localhost:5173"
+  },
+  "tauri": {
+    "bundle": {
+      "identifier": "com.example.codexgateway",
+      "icon": [],
+      "resources": [],
+      "externalBin": []
+    },
+    "allowlist": {
+      "all": false,
+      "fs": {
+        "all": false
+      },
+      "http": {
+        "all": false
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "title": "Codex Gateway",
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "schema": "https://tauri.app/schema/tauri/1.0",
+  "allowlist": {
+    "all": false
+  }
+}
