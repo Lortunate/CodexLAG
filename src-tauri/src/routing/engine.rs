@@ -1,4 +1,4 @@
-use crate::routing::policy::{ACCOUNT_ONLY, RELAY_ONLY};
+use crate::routing::policy::RoutingMode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PoolKind {
@@ -35,10 +35,10 @@ impl CandidateEndpoint {
 }
 
 pub fn choose_endpoint(mode: &str, endpoints: &[CandidateEndpoint]) -> Option<CandidateEndpoint> {
-    match mode {
-        ACCOUNT_ONLY => choose_from_pool(endpoints, PoolKind::Official),
-        RELAY_ONLY => choose_from_pool(endpoints, PoolKind::Relay),
-        _ => choose_from_pool(endpoints, PoolKind::Official)
+    match RoutingMode::parse(mode)? {
+        RoutingMode::AccountOnly => choose_from_pool(endpoints, PoolKind::Official),
+        RoutingMode::RelayOnly => choose_from_pool(endpoints, PoolKind::Relay),
+        RoutingMode::Hybrid => choose_from_pool(endpoints, PoolKind::Official)
             .or_else(|| choose_from_pool(endpoints, PoolKind::Relay)),
     }
 }
@@ -50,6 +50,10 @@ fn choose_from_pool(endpoints: &[CandidateEndpoint], pool: PoolKind) -> Option<C
         .cloned()
         .collect();
 
-    candidates.sort_by_key(|item| item.priority);
+    candidates.sort_by(|left, right| {
+        left.priority
+            .cmp(&right.priority)
+            .then_with(|| left.id.cmp(&right.id))
+    });
     candidates.into_iter().next()
 }
