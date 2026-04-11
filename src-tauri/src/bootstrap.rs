@@ -29,7 +29,7 @@ pub async fn bootstrap_state_for_test() -> Result<AppState> {
 
     let mut secret_store = SecretStore::default();
     secret_store.set(
-        &SecretKey::PLATFORM_KEY_DEFAULT,
+        &SecretKey::default_platform_key(),
         TEST_DEFAULT_PLATFORM_KEY_SECRET_SEED.into(),
     )?;
 

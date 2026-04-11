@@ -21,7 +21,7 @@ async fn bootstrap_persists_default_key_secret_in_secret_store() {
     let state = bootstrap_state_for_test().await.expect("bootstrap");
 
     let secret = state
-        .secret(&SecretKey::PLATFORM_KEY_DEFAULT)
+        .secret(&SecretKey::default_platform_key())
         .expect("default key secret");
 
     assert!(secret.starts_with(DEFAULT_PLATFORM_KEY_SECRET_PREFIX));

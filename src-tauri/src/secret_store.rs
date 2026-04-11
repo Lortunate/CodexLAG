@@ -1,19 +1,26 @@
 use crate::error::{CodexLagError, Result};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
-pub struct SecretKey(&'static str);
+pub struct SecretKey(Cow<'static, str>);
 
 impl SecretKey {
-    pub const fn new(name: &'static str) -> Self {
-        Self(name)
+    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
+        Self(name.into())
     }
 
     pub fn as_str(&self) -> &str {
-        self.0
+        self.0.as_ref()
     }
 
-    pub const PLATFORM_KEY_DEFAULT: Self = SecretKey::new("platform-key/default");
+    pub fn default_platform_key() -> Self {
+        Self::platform_key("default")
+    }
+
+    pub fn platform_key(name: impl Into<String>) -> Self {
+        Self(Cow::Owned(format!("platform-key/{}", name.into())))
+    }
 }
 
 #[derive(Default)]
