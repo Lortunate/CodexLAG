@@ -9,6 +9,12 @@ pub struct PlatformKey {
     pub enabled: bool,
 }
 
+impl PlatformKey {
+    pub fn allowed_mode(&self) -> &str {
+        self.allowed_mode.as_str()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingPolicy {
     pub id: String,
