@@ -3,6 +3,7 @@ pub mod db;
 pub mod error;
 pub mod gateway;
 pub mod models;
+pub mod providers;
 pub mod routing;
 pub mod secret_store;
 pub mod state;

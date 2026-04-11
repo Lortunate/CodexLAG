@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+pub use crate::providers::capabilities::FeatureCapability;
+pub use crate::providers::official::OfficialSession;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformKey {
     pub id: String,
