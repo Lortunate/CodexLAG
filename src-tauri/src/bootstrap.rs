@@ -1,13 +1,13 @@
 use crate::{
     db::repositories::Repositories,
+    error::Result,
     models::{PlatformKey, RoutingPolicy},
+    state::AppState,
 };
 
-pub struct AppStateForTest {
-    pub db: Repositories,
-}
+pub async fn bootstrap_state_for_test() -> Result<AppState> {
+    let mut repositories = Repositories::new();
 
-pub async fn bootstrap_state_for_test() -> Result<AppStateForTest, String> {
     let default_policy = RoutingPolicy {
         id: "policy-default".into(),
         name: "default".into(),
@@ -21,10 +21,8 @@ pub async fn bootstrap_state_for_test() -> Result<AppStateForTest, String> {
         enabled: true,
     };
 
-    Ok(AppStateForTest {
-        db: Repositories {
-            policies: vec![default_policy],
-            keys: vec![default_key],
-        },
-    })
+    repositories.insert_policy(default_policy);
+    repositories.insert_platform_key(default_key);
+
+    Ok(AppState::new(repositories))
 }
