@@ -1,4 +1,5 @@
 use codexlag_lib::logging::usage::{record_request, UsageRecordInput};
+use serde_json::{from_str, to_string};
 
 #[test]
 fn record_request_captures_input_output_cache_and_estimated_cost() {
@@ -18,4 +19,36 @@ fn record_request_captures_input_output_cache_and_estimated_cost() {
     assert_eq!(record.cache_write_tokens, 0);
     assert_eq!(record.total_tokens, 160);
     assert_eq!(record.estimated_cost, "0.0123");
+}
+
+#[test]
+fn usage_records_support_serde_round_trip() {
+    let input = UsageRecordInput {
+        request_id: "req-2".into(),
+        endpoint_id: "relay-1".into(),
+        input_tokens: 40,
+        output_tokens: 15,
+        cache_read_tokens: 5,
+        cache_write_tokens: 2,
+        estimated_cost: "0.0042".into(),
+    };
+
+    let input_json = to_string(&input).expect("serialize usage input");
+    let decoded_input: UsageRecordInput = from_str(&input_json).expect("deserialize usage input");
+    assert_eq!(decoded_input.request_id, "req-2");
+    assert_eq!(decoded_input.cache_write_tokens, 2);
+
+    let record = record_request(input);
+    let record_json = to_string(&record).expect("serialize usage record");
+    let decoded_record = from_str::<codexlag_lib::logging::usage::UsageRecord>(&record_json)
+        .expect("deserialize usage record");
+
+    assert_eq!(decoded_record.request_id, "req-2");
+    assert_eq!(decoded_record.endpoint_id, "relay-1");
+    assert_eq!(decoded_record.input_tokens, 40);
+    assert_eq!(decoded_record.output_tokens, 15);
+    assert_eq!(decoded_record.cache_read_tokens, 5);
+    assert_eq!(decoded_record.cache_write_tokens, 2);
+    assert_eq!(decoded_record.total_tokens, 62);
+    assert_eq!(decoded_record.estimated_cost, "0.0042");
 }

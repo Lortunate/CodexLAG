@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageRecordInput {
     pub request_id: String,
     pub endpoint_id: String,
@@ -9,7 +11,7 @@ pub struct UsageRecordInput {
     pub estimated_cost: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageRecord {
     pub request_id: String,
     pub endpoint_id: String,
