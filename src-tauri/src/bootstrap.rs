@@ -2,6 +2,7 @@ use crate::{
     db::repositories::Repositories,
     error::Result,
     models::{PlatformKey, RoutingPolicy},
+    routing::policy::HYBRID,
     secret_store::{SecretKey, SecretStore},
     state::AppState,
 };
@@ -19,7 +20,7 @@ pub async fn bootstrap_state_for_test() -> Result<AppState> {
     let default_key = PlatformKey {
         id: "key-default".into(),
         name: "default".into(),
-        allowed_mode: "hybrid".into(),
+        allowed_mode: HYBRID.into(),
         policy_id: default_policy.id.clone(),
         enabled: true,
     };

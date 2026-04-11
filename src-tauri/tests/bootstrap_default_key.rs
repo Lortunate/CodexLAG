@@ -1,4 +1,5 @@
 use codexlag_lib::{bootstrap::bootstrap_state_for_test, secret_store::SecretKey};
+use codexlag_lib::routing::policy::HYBRID;
 
 const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
 
@@ -13,7 +14,7 @@ async fn bootstrap_creates_default_policy_and_default_key() {
 
     assert_eq!(policy.name, "default");
     assert_eq!(key.name, "default");
-    assert_eq!(key.allowed_mode.as_str(), "hybrid");
+    assert_eq!(key.allowed_mode.as_str(), HYBRID);
 }
 
 #[tokio::test]
@@ -33,9 +34,20 @@ async fn bootstrap_persists_default_key_secret_in_secret_store() {
 
 #[test]
 fn tray_model_contains_default_key_mode_actions() {
-    let model = codexlag_lib::tray::build_tray_model("hybrid");
+    use codexlag_lib::{
+        routing::policy::RoutingMode,
+        tray::{TrayItemId, TrayItemKind},
+    };
 
-    assert!(model.items.contains(&"mode:account_only".to_string()));
-    assert!(model.items.contains(&"mode:relay_only".to_string()));
-    assert!(model.items.contains(&"mode:hybrid".to_string()));
+    let model = codexlag_lib::tray::build_tray_model(RoutingMode::Hybrid);
+
+    assert!(model.items.iter().any(|item| {
+        item.kind == TrayItemKind::Mode && item.id == TrayItemId::Mode(RoutingMode::AccountOnly)
+    }));
+    assert!(model.items.iter().any(|item| {
+        item.kind == TrayItemKind::Mode && item.id == TrayItemId::Mode(RoutingMode::RelayOnly)
+    }));
+    assert!(model.items.iter().any(|item| {
+        item.kind == TrayItemKind::Mode && item.id == TrayItemId::Mode(RoutingMode::Hybrid)
+    }));
 }

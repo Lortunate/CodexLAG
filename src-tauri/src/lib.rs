@@ -14,11 +14,6 @@ pub mod tray;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|app| {
-            let _model = crate::tray::build_tray_model("hybrid");
-            let _ = app;
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             commands::accounts::list_accounts,
             commands::relays::list_relays,

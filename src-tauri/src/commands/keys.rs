@@ -1,3 +1,4 @@
+use crate::routing::policy::HYBRID;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -10,6 +11,6 @@ pub struct DefaultKeySummary {
 pub fn get_default_key_summary() -> DefaultKeySummary {
     DefaultKeySummary {
         name: "default".into(),
-        allowed_mode: "hybrid".into(),
+        allowed_mode: HYBRID.into(),
     }
 }
