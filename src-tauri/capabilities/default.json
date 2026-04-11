@@ -1,6 +1,6 @@
 {
-  "schema": "https://tauri.app/schema/tauri/1.0",
-  "allowlist": {
-    "all": false
-  }
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": ["core:default"]
 }

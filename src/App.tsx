@@ -1,53 +1,29 @@
-import React from "react";
-
-const primarySections = [
-  {
-    title: "Overview",
-    description: "Quick status of relays, usage, and alerts across your Tauri setup."
-  },
-  {
-    title: "Official Accounts",
-    description: "Manage the brands, identities, and credentials that represent your organization."
-  },
-  {
-    title: "Relays",
-    description: "Track relay health, latency, and event throughput in real time."
-  },
-  {
-    title: "Platform Keys",
-    description: "Inspect API credentials, rotate secrets, and audit key usage."
-  },
-  {
-    title: "Policies",
-    description: "Review security policies, access levels, and compliance checks."
-  },
-  {
-    title: "Logs & Usage",
-    description: "Browse detailed logs, usage charts, and billing-related events."
-  }
+const sections = [
+  "Overview",
+  "Official Accounts",
+  "Relays",
+  "Platform Keys",
+  "Policies",
+  "Logs & Usage"
 ];
 
-const App = () => {
+export default function App() {
   return (
     <div className="app-shell">
-      <header>
-        <p className="eyebrow">Tauri Desktop Control</p>
-        <h1>Codex Gateway</h1>
-        <p className="lede">
-          Everything you need to understand the state of your engine, right from this shell.
-        </p>
-      </header>
-
-      <nav className="app-nav" aria-label="Primary navigation">
-        {primarySections.map((section) => (
-          <article key={section.title} className="nav-card">
-            <h2>{section.title}</h2>
-            <p>{section.description}</p>
-          </article>
-        ))}
-      </nav>
+      <aside className="sidebar">
+        <h1>CodexLAG</h1>
+        <nav>
+          {sections.map((section) => (
+            <button key={section} type="button">
+              {section}
+            </button>
+          ))}
+        </nav>
+      </aside>
+      <main className="content">
+        <h2>Gateway Shell</h2>
+        <p>Windows-first local Codex gateway desktop console.</p>
+      </main>
     </div>
   );
-};
-
-export default App;
+}
