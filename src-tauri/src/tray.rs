@@ -1,10 +1,20 @@
 use std::borrow::Cow;
 
 use crate::routing::policy::RoutingMode;
+use crate::state::AppState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrayModel {
     pub items: Vec<TrayItem>,
+}
+
+impl TrayModel {
+    pub fn current_mode(&self) -> Option<RoutingMode> {
+        self.items.iter().find_map(|item| match item.label {
+            TrayItemLabel::CurrentMode(mode) => Some(mode),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,4 +97,8 @@ pub fn build_tray_model(current_mode: RoutingMode) -> TrayModel {
     ]);
 
     TrayModel { items }
+}
+
+pub fn build_tray_model_for_state(state: &AppState) -> TrayModel {
+    build_tray_model(state.current_mode().unwrap_or(RoutingMode::Hybrid))
 }

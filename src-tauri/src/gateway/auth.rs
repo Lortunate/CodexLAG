@@ -5,7 +5,10 @@ use axum::{
     http::{header::AUTHORIZATION, request::Parts, StatusCode},
 };
 
-use crate::{models::PlatformKey, state::AppState};
+use crate::{
+    models::{PlatformKey, RoutingPolicy},
+    state::AppState,
+};
 
 #[derive(Clone)]
 pub struct GatewayState {
@@ -13,10 +16,20 @@ pub struct GatewayState {
 }
 
 impl GatewayState {
-    pub fn new(app_state: AppState) -> Self {
+    pub fn new(app_state: Arc<AppState>) -> Self {
         Self {
-            app_state: Arc::new(app_state),
+            app_state,
         }
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        self.app_state.as_ref()
+    }
+
+    pub fn policy_for_platform_key(&self, platform_key: &PlatformKey) -> Option<RoutingPolicy> {
+        self.app_state
+            .get_policy_by_id(&platform_key.policy_id)
+            .cloned()
     }
 
     fn authenticate_platform_key(&self, provided_secret: &str) -> Option<PlatformKey> {

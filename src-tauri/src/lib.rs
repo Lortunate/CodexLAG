@@ -11,9 +11,20 @@ pub mod secret_store;
 pub mod state;
 pub mod tray;
 
+use std::error::Error;
+
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            let runtime = bootstrap::bootstrap_runtime()
+                .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
+
+            app.manage(runtime);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::accounts::list_accounts,
             commands::relays::list_relays,

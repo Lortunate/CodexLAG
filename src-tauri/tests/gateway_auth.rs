@@ -7,6 +7,7 @@ use codexlag_lib::{
     gateway::build_router_for_test,
     secret_store::SecretKey,
 };
+use serde_json::Value;
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -77,5 +78,9 @@ async fn gateway_auth_codex_route_accepts_valid_platform_key() {
         .await
         .expect("codex body");
 
-    assert_eq!(body.as_ref(), b"default");
+    let payload: Value = serde_json::from_slice(body.as_ref()).expect("gateway response json");
+
+    assert_eq!(payload["platform_key"], "default");
+    assert_eq!(payload["policy"], "default");
+    assert_eq!(payload["allowed_mode"], "hybrid");
 }

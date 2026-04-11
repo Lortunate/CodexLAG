@@ -32,14 +32,15 @@ async fn bootstrap_persists_default_key_secret_in_secret_store() {
     assert!(secret.len() > DEFAULT_PLATFORM_KEY_SECRET_PREFIX.len());
 }
 
-#[test]
-fn tray_model_contains_default_key_mode_actions() {
+#[tokio::test]
+async fn tray_model_contains_default_key_mode_actions() {
     use codexlag_lib::{
         routing::policy::RoutingMode,
-        tray::{TrayItemId, TrayItemKind},
+        tray::{build_tray_model_for_state, TrayItemId, TrayItemKind},
     };
 
-    let model = codexlag_lib::tray::build_tray_model(RoutingMode::Hybrid);
+    let state = bootstrap_state_for_test().await.expect("bootstrap");
+    let model = build_tray_model_for_state(&state);
 
     assert!(model.items.iter().any(|item| {
         item.kind == TrayItemKind::Mode && item.id == TrayItemId::Mode(RoutingMode::AccountOnly)
@@ -50,4 +51,5 @@ fn tray_model_contains_default_key_mode_actions() {
     assert!(model.items.iter().any(|item| {
         item.kind == TrayItemKind::Mode && item.id == TrayItemId::Mode(RoutingMode::Hybrid)
     }));
+    assert_eq!(model.current_mode(), Some(RoutingMode::Hybrid));
 }
