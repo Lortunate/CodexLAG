@@ -9,6 +9,7 @@ use codexlag_lib::routing::policy::HYBRID;
 use rusqlite::Connection;
 
 const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
+const LEGACY_DEFAULT_PLATFORM_KEY_SECRET_SEED: &str = "ck_local_default_seed";
 
 #[tokio::test]
 async fn bootstrap_creates_default_policy_and_default_key() {
@@ -37,6 +38,7 @@ async fn bootstrap_persists_default_key_secret_in_secret_store() {
 
     assert!(secret.starts_with(DEFAULT_PLATFORM_KEY_SECRET_PREFIX));
     assert!(secret.len() > DEFAULT_PLATFORM_KEY_SECRET_PREFIX.len());
+    assert_ne!(secret, LEGACY_DEFAULT_PLATFORM_KEY_SECRET_SEED);
 }
 
 #[tokio::test]

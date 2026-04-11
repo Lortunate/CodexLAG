@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rand::{rngs::OsRng, RngCore};
+
 use crate::{
     db::repositories::Repositories,
     error::{CodexLagError, Result},
@@ -14,11 +16,11 @@ const DEFAULT_POLICY_ID: &str = "policy-default";
 const DEFAULT_POLICY_NAME: &str = "default";
 const DEFAULT_PLATFORM_KEY_ID: &str = "key-default";
 const DEFAULT_PLATFORM_KEY_NAME: &str = "default";
-const DEFAULT_PLATFORM_KEY_SECRET_SEED: &str = "ck_local_default_seed";
+const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
 
 fn build_default_app_state(
     database_path: impl AsRef<Path>,
-    default_platform_key_secret: &str,
+    secret_store: SecretStore,
 ) -> Result<AppState> {
     let mut repositories = Repositories::open(database_path)?;
 
@@ -50,14 +52,15 @@ fn build_default_app_state(
         repositories.insert_platform_key(default_key)?;
     }
 
-    let mut secret_store = SecretStore::default();
-    secret_store.set(&default_key_secret, default_platform_key_secret.into())?;
+    if secret_store.get_optional(&default_key_secret)?.is_none() {
+        secret_store.set(&default_key_secret, generate_default_platform_key_secret())?;
+    }
 
     Ok(AppState::new(repositories, secret_store))
 }
 
 pub fn bootstrap_state_at(database_path: impl AsRef<Path>) -> Result<AppState> {
-    build_default_app_state(database_path, DEFAULT_PLATFORM_KEY_SECRET_SEED)
+    build_default_app_state(database_path, SecretStore::production()?)
 }
 
 pub fn bootstrap_runtime_at(database_path: impl AsRef<Path>) -> Result<RuntimeState> {
@@ -69,7 +72,8 @@ pub async fn bootstrap_state_for_test() -> Result<AppState> {
 }
 
 pub async fn bootstrap_state_for_test_at(database_path: impl AsRef<Path>) -> Result<AppState> {
-    build_default_app_state(database_path, DEFAULT_PLATFORM_KEY_SECRET_SEED)
+    let secret_namespace = format!("test/{}", database_path.as_ref().to_string_lossy());
+    build_default_app_state(database_path, SecretStore::in_memory(secret_namespace))
 }
 
 pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
@@ -85,4 +89,16 @@ fn test_database_path() -> PathBuf {
     std::env::temp_dir()
         .join("codexlag-tests")
         .join(format!("codexlag-{unique_suffix}.sqlite3"))
+}
+
+fn generate_default_platform_key_secret() -> String {
+    let mut bytes = [0_u8; 24];
+    OsRng.fill_bytes(&mut bytes);
+
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push_str(&format!("{byte:02x}"));
+    }
+
+    format!("{DEFAULT_PLATFORM_KEY_SECRET_PREFIX}{encoded}")
 }

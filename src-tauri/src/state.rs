@@ -20,7 +20,7 @@ impl AppState {
         }
     }
 
-    pub fn store_secret(&mut self, key: &SecretKey, value: String) -> crate::error::Result<()> {
+    pub fn store_secret(&self, key: &SecretKey, value: String) -> crate::error::Result<()> {
         self.secret_store.set(key, value)
     }
 
