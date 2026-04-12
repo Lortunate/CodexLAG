@@ -2,21 +2,53 @@ use codexlag_lib::commands::accounts::get_account_capability_detail;
 use codexlag_lib::commands::logs::{
     get_usage_request_detail, list_usage_request_history, query_usage_ledger,
 };
-use codexlag_lib::commands::relays::get_relay_capability_detail;
+use codexlag_lib::commands::relays::{get_relay_capability_detail, RelayCapabilityDetail};
 use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance};
+use codexlag_lib::providers::official::OfficialBalanceCapability;
+use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
 
 #[test]
 fn account_and_relay_capability_details_expose_balance_metadata() {
-    let account =
-        get_account_capability_detail("official-primary".to_string()).expect("official account");
+    let account = get_account_capability_detail("official-primary".to_string())
+        .expect("official account should succeed");
     assert_eq!(account.account_id, "official-primary");
     assert_eq!(account.refresh_capability, Some(true));
-    assert!(!account.balance_queryable);
+    assert_eq!(
+        account.balance_capability,
+        OfficialBalanceCapability::NonQueryable
+    );
 
-    let relay = get_relay_capability_detail("relay-newapi".to_string()).expect("relay");
+    let relay =
+        get_relay_capability_detail("relay-newapi".to_string()).expect("relay should succeed");
     assert_eq!(relay.relay_id, "relay-newapi");
-    assert_eq!(relay.balance_adapter.as_deref(), Some("newapi"));
-    assert!(relay.balance_queryable);
+    assert_eq!(
+        relay.balance_capability,
+        RelayBalanceCapability::Queryable {
+            adapter: RelayBalanceAdapter::NewApi
+        }
+    );
+
+    let unsupported = get_relay_capability_detail("relay-nobalance".to_string())
+        .expect("unsupported relay should still return capability details");
+    assert_eq!(
+        unsupported,
+        RelayCapabilityDetail {
+            relay_id: "relay-nobalance".to_string(),
+            endpoint: "https://relay.example.test".to_string(),
+            balance_capability: RelayBalanceCapability::Unsupported,
+        }
+    );
+}
+
+#[test]
+fn capability_detail_commands_return_explicit_errors_for_unknown_ids() {
+    let account_error = get_account_capability_detail("unknown-account".to_string())
+        .expect_err("unknown account should be reported");
+    assert_eq!(account_error, "unknown account id: unknown-account");
+
+    let relay_error = get_relay_capability_detail("relay-missing".to_string())
+        .expect_err("unknown relay should be reported");
+    assert_eq!(relay_error, "unknown relay id: relay-missing");
 }
 
 #[test]

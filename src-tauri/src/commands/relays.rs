@@ -16,15 +16,26 @@ pub struct RelaySummary {
 pub struct RelayBalanceSnapshot {
     pub relay_id: String,
     pub endpoint: String,
-    pub balance: Option<NormalizedBalance>,
+    pub balance: RelayBalanceAvailability,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum RelayBalanceAvailability {
+    Queryable {
+        adapter: String,
+        balance: NormalizedBalance,
+    },
+    Unsupported {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct RelayCapabilityDetail {
     pub relay_id: String,
     pub endpoint: String,
-    pub balance_queryable: bool,
-    pub balance_adapter: Option<String>,
+    pub balance_capability: RelayBalanceCapability,
 }
 
 #[tauri::command]
@@ -40,19 +51,32 @@ pub fn list_relays() -> Vec<RelaySummary> {
             name: "Upstream Proxy".into(),
             endpoint: "https://relay.example.test".into(),
         },
+        RelaySummary {
+            relay_id: "relay-badpayload".into(),
+            name: "Broken Upstream".into(),
+            endpoint: "https://badpayload.example.test".into(),
+        },
     ]
 }
 
 #[tauri::command]
-pub fn refresh_relay_balance(relay_id: String) -> Option<RelayBalanceSnapshot> {
-    let summary = list_relays()
-        .into_iter()
-        .find(|candidate| candidate.relay_id == relay_id)?;
+pub fn refresh_relay_balance(relay_id: String) -> Result<RelayBalanceSnapshot, String> {
+    let summary = relay_summary_by_id(relay_id.as_str())?;
     let adapter = relay_adapter_for(summary.relay_id.as_str())?;
-    let payload = relay_balance_fixture_payload(adapter);
-    let balance = normalize_relay_balance_response(adapter, payload).ok()?;
+    let payload = relay_balance_fixture_payload(summary.relay_id.as_str());
+    let balance = normalize_relay_balance_response(adapter, payload)
+        .map_err(|error| format!("relay balance payload parse error: {error:?}"))?;
+    let balance = match balance {
+        Some(value) => RelayBalanceAvailability::Queryable {
+            adapter: adapter_name(adapter),
+            balance: value,
+        },
+        None => RelayBalanceAvailability::Unsupported {
+            reason: "relay does not provide a balance endpoint".into(),
+        },
+    };
 
-    Some(RelayBalanceSnapshot {
+    Ok(RelayBalanceSnapshot {
         relay_id: summary.relay_id,
         endpoint: summary.endpoint,
         balance,
@@ -60,41 +84,44 @@ pub fn refresh_relay_balance(relay_id: String) -> Option<RelayBalanceSnapshot> {
 }
 
 #[tauri::command]
-pub fn get_relay_capability_detail(relay_id: String) -> Option<RelayCapabilityDetail> {
-    let summary = list_relays()
-        .into_iter()
-        .find(|candidate| candidate.relay_id == relay_id)?;
+pub fn get_relay_capability_detail(relay_id: String) -> Result<RelayCapabilityDetail, String> {
+    let summary = relay_summary_by_id(relay_id.as_str())?;
     let adapter = relay_adapter_for(summary.relay_id.as_str())?;
-    let capability = relay_balance_capability(adapter);
 
-    Some(RelayCapabilityDetail {
+    Ok(RelayCapabilityDetail {
         relay_id: summary.relay_id,
         endpoint: summary.endpoint,
-        balance_queryable: matches!(capability, RelayBalanceCapability::Queryable { .. }),
-        balance_adapter: adapter_name(adapter),
+        balance_capability: relay_balance_capability(adapter),
     })
 }
 
-fn relay_adapter_for(relay_id: &str) -> Option<RelayBalanceAdapter> {
+fn relay_adapter_for(relay_id: &str) -> Result<RelayBalanceAdapter, String> {
     match relay_id {
-        "relay-newapi" => Some(RelayBalanceAdapter::NewApi),
-        "relay-nobalance" => Some(RelayBalanceAdapter::NoBalance),
-        _ => None,
+        "relay-newapi" | "relay-badpayload" => Ok(RelayBalanceAdapter::NewApi),
+        "relay-nobalance" => Ok(RelayBalanceAdapter::NoBalance),
+        _ => Err(format!("unknown relay id: {relay_id}")),
     }
 }
 
-fn relay_balance_fixture_payload(adapter: RelayBalanceAdapter) -> &'static str {
-    match adapter {
-        RelayBalanceAdapter::NewApi => {
-            r#"{"data":{"total_balance":"25.00","used_balance":"7.50"}}"#
-        }
-        RelayBalanceAdapter::NoBalance => r#"{"ignored":true}"#,
+fn relay_balance_fixture_payload(relay_id: &str) -> &'static str {
+    match relay_id {
+        "relay-newapi" => r#"{"data":{"total_balance":"25.00","used_balance":"7.50"}}"#,
+        "relay-badpayload" => r#"{"data":{"total_balance":"25.00"}}"#,
+        "relay-nobalance" => r#"{"ignored":true}"#,
+        _ => r#"{"ignored":true}"#,
     }
 }
 
-fn adapter_name(adapter: RelayBalanceAdapter) -> Option<String> {
+fn adapter_name(adapter: RelayBalanceAdapter) -> String {
     match adapter {
-        RelayBalanceAdapter::NewApi => Some("newapi".into()),
-        RelayBalanceAdapter::NoBalance => None,
+        RelayBalanceAdapter::NewApi => "newapi".into(),
+        RelayBalanceAdapter::NoBalance => "none".into(),
     }
+}
+
+fn relay_summary_by_id(relay_id: &str) -> Result<RelaySummary, String> {
+    list_relays()
+        .into_iter()
+        .find(|candidate| candidate.relay_id == relay_id)
+        .ok_or_else(|| format!("unknown relay id: {relay_id}"))
 }
