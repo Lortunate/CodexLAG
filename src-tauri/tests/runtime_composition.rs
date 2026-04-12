@@ -157,6 +157,8 @@ async fn diagnostics_export_returns_manifest_path() {
     assert!(manifest_contents.contains("log_dir=<app-local-data>/logs"));
     assert!(manifest_contents.contains("files_count="));
     assert!(manifest_contents.contains("files=[\"gateway-export.log\"]"));
+    assert!(!manifest_contents.contains("ck_local_"));
+    assert!(!manifest_contents.contains("bearer "));
 
     let diagnostics_entries = std::fs::read_dir(log_dir.join("diagnostics"))
         .expect("read diagnostics directory entries");
