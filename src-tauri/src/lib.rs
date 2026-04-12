@@ -14,10 +14,24 @@ pub mod tray;
 use std::error::Error;
 
 use tauri::Manager;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir {
+                        file_name: Some("gateway".to_string()),
+                    }),
+                ])
+                .max_file_size(10_000_000)
+                .rotation_strategy(RotationStrategy::KeepAll)
+                .timezone_strategy(TimezoneStrategy::UseLocal)
+                .build(),
+        )
         .setup(|app| -> Result<(), Box<dyn Error>> {
             let app_local_data_dir = app
                 .path()

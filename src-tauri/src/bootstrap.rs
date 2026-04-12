@@ -73,6 +73,10 @@ pub fn runtime_database_path(app_local_data_dir: impl AsRef<Path>) -> PathBuf {
     app_local_data_dir.as_ref().join("codexlag.sqlite3")
 }
 
+pub fn runtime_log_dir(app_local_data_dir: impl AsRef<Path>) -> PathBuf {
+    app_local_data_dir.as_ref().join("logs")
+}
+
 pub async fn bootstrap_state_for_test() -> Result<AppState> {
     bootstrap_state_for_test_at(test_database_path()).await
 }

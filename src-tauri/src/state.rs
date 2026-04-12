@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock, RwLockReadGuard},
+};
 
 use crate::db::repositories::Repositories;
 use crate::gateway::server::LoopbackGateway;
@@ -80,10 +83,16 @@ impl AppState {
 }
 
 #[derive(Clone)]
+pub struct RuntimeLogConfig {
+    pub log_dir: PathBuf,
+}
+
+#[derive(Clone)]
 pub struct RuntimeState {
     app_state: Arc<RwLock<AppState>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     loopback_gateway: LoopbackGateway,
+    pub runtime_log: RuntimeLogConfig,
 }
 
 impl RuntimeState {
@@ -97,6 +106,9 @@ impl RuntimeState {
             app_state,
             usage_records,
             loopback_gateway,
+            runtime_log: RuntimeLogConfig {
+                log_dir: PathBuf::new(),
+            },
         }
     }
 

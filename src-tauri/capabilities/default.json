@@ -1,5 +1,10 @@
 {
   "identifier": "default",
   "windows": ["main"],
-  "permissions": ["core:default", "core:menu:default", "core:tray:default"]
+  "permissions": [
+    "core:default",
+    "core:menu:default",
+    "core:tray:default",
+    "log:default"
+  ]
 }
