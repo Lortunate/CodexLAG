@@ -206,10 +206,11 @@ fn redact_prefixed_token(value: &str, prefix: &str) -> String {
 
 fn redact_bearer_token(value: &str) -> String {
     let marker = "bearer ";
+    let lowercase = value.to_ascii_lowercase();
     let mut output = String::with_capacity(value.len());
     let mut cursor = 0usize;
 
-    while let Some(relative_start) = value[cursor..].find(marker) {
+    while let Some(relative_start) = lowercase[cursor..].find(marker) {
         let start = cursor + relative_start;
         output.push_str(&value[cursor..start]);
         output.push_str(marker);

@@ -140,6 +140,10 @@ async fn diagnostics_export_returns_manifest_path() {
 
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
     std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
+    std::fs::write(log_dir.join("ck_local_abc123xyz.log"), "tokenized filename")
+        .expect("write token-like log file");
+    std::fs::write(log_dir.join("Bearer demo-token.log"), "bearer filename")
+        .expect("write bearer-like log file");
 
     let manifest_display_path =
         export_runtime_diagnostics_from_runtime(&runtime).expect("export runtime diagnostics");
@@ -156,9 +160,12 @@ async fn diagnostics_export_returns_manifest_path() {
     assert!(manifest_contents.contains("generated_at_unix="));
     assert!(manifest_contents.contains("log_dir=<app-local-data>/logs"));
     assert!(manifest_contents.contains("files_count="));
-    assert!(manifest_contents.contains("files=[\"gateway-export.log\"]"));
-    assert!(!manifest_contents.contains("ck_local_"));
-    assert!(!manifest_contents.contains("bearer "));
+    assert!(manifest_contents.contains("gateway-export.log"));
+    assert!(manifest_contents.contains("ck_local_[redacted]"));
+    assert!(manifest_contents.contains("bearer [redacted]"));
+    assert!(!manifest_contents.contains("ck_local_abc123xyz"));
+    assert!(!manifest_contents.contains("Bearer demo-token"));
+    assert!(!manifest_contents.contains("bearer demo-token"));
 
     let diagnostics_entries = std::fs::read_dir(log_dir.join("diagnostics"))
         .expect("read diagnostics directory entries");

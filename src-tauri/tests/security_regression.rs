@@ -26,6 +26,11 @@ async fn diagnostics_and_db_artifacts_never_contain_plain_platform_secret() {
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
     std::fs::write(log_dir.join("gateway-security.log"), "regular-entry")
         .expect("write runtime log file");
+    std::fs::write(
+        log_dir.join(format!("Bearer {platform_secret}.log")),
+        "trigger bearer redaction",
+    )
+    .expect("write bearer trigger log file");
 
     let _ = export_runtime_diagnostics_from_runtime(&runtime).expect("export diagnostics");
     let manifest_path = log_dir.join("diagnostics").join("diagnostics-manifest.txt");
@@ -36,6 +41,10 @@ async fn diagnostics_and_db_artifacts_never_contain_plain_platform_secret() {
     assert!(
         !manifest_content.contains(platform_secret.as_str()),
         "diagnostics manifest must not contain plain platform secret"
+    );
+    assert!(
+        manifest_content.contains("bearer [redacted]"),
+        "diagnostics manifest should redact bearer token values case-insensitively"
     );
     assert!(
         !database_text.contains(platform_secret.as_str()),

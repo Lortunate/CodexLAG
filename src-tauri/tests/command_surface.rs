@@ -234,6 +234,16 @@ async fn diagnostics_export_manifest_redacts_plain_platform_secret() {
         .app_state()
         .secret(&SecretKey::default_platform_key())
         .expect("platform key secret");
+    std::fs::create_dir_all(runtime.runtime_log().log_dir.as_path())
+        .expect("create runtime log directory");
+    std::fs::write(
+        runtime
+            .runtime_log()
+            .log_dir
+            .join(format!("Bearer {platform_secret}.log")),
+        "trigger bearer redaction",
+    )
+    .expect("write redaction trigger log file");
 
     let _ = export_runtime_diagnostics_from_runtime(&runtime).expect("export diagnostics");
     let manifest_path = runtime
@@ -246,5 +256,9 @@ async fn diagnostics_export_manifest_redacts_plain_platform_secret() {
     assert!(
         !manifest_contents.contains(platform_secret.as_str()),
         "diagnostics manifest should not leak platform secret"
+    );
+    assert!(
+        manifest_contents.contains("bearer [redacted]"),
+        "diagnostics manifest should redact bearer token values"
     );
 }
