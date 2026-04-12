@@ -52,6 +52,7 @@ pub fn log_route_downgrade(
 
 pub fn log_route_rejection(
     request_id: &str,
+    attempt_count: usize,
     mode: &str,
     error: &RoutingError,
     candidates: &[CandidateEndpoint],
@@ -70,9 +71,11 @@ pub fn log_route_rejection(
         reasons.join(",")
     };
     let error_code = routing_error_code(error);
+    let attempt_count_value = attempt_count.to_string();
     let line = format_event_fields(&[
         ("event", "routing.endpoint.rejected"),
         ("request_id", request_id),
+        ("attempt_count", attempt_count_value.as_str()),
         ("mode", mode),
         ("error", error_code),
         ("reasons", detail.as_str()),

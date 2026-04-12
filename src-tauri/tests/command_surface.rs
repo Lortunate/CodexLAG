@@ -4,7 +4,7 @@ use axum::{
 };
 use codexlag_lib::commands::accounts::get_account_capability_detail;
 use codexlag_lib::commands::logs::{
-    usage_ledger_from_runtime, usage_request_detail_from_runtime,
+    export_runtime_diagnostics_from_runtime, usage_ledger_from_runtime, usage_request_detail_from_runtime,
     usage_request_history_from_runtime,
 };
 use codexlag_lib::commands::relays::{get_relay_capability_detail, RelayCapabilityDetail};
@@ -222,5 +222,43 @@ async fn unauthorized_gateway_request_does_not_create_usage_record() {
     assert!(
         usage_request_history_from_runtime(&runtime, None).is_empty(),
         "unauthorized requests must not be recorded"
+    );
+}
+
+#[tokio::test]
+async fn diagnostics_export_manifest_redacts_plain_platform_secret() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let platform_secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("platform key secret");
+    std::fs::create_dir_all(runtime.runtime_log().log_dir.as_path())
+        .expect("create runtime log directory");
+    std::fs::write(
+        runtime
+            .runtime_log()
+            .log_dir
+            .join(format!("Bearer {platform_secret}.log")),
+        "trigger bearer redaction",
+    )
+    .expect("write redaction trigger log file");
+
+    let _ = export_runtime_diagnostics_from_runtime(&runtime).expect("export diagnostics");
+    let manifest_path = runtime
+        .runtime_log()
+        .log_dir
+        .join("diagnostics")
+        .join("diagnostics-manifest.txt");
+    let manifest_contents = std::fs::read_to_string(&manifest_path).expect("read diagnostics manifest");
+
+    assert!(
+        !manifest_contents.contains(platform_secret.as_str()),
+        "diagnostics manifest should not leak platform secret"
+    );
+    assert!(
+        manifest_contents.contains("bearer [redacted]"),
+        "diagnostics manifest should redact bearer token values"
     );
 }

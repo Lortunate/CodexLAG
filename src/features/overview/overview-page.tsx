@@ -26,6 +26,7 @@ const initialSummary: DefaultKeySummary = {
   name: "loading",
   allowedMode: null,
   rawAllowedMode: "loading",
+  unavailableReason: null,
 };
 
 export function OverviewPage() {
@@ -228,6 +229,7 @@ export function OverviewPage() {
         activeMode={summary.allowedMode}
         disabled={isUpdatingMode}
         rawMode={summary.rawAllowedMode}
+        unavailableReason={summary.unavailableReason}
         summaryName={summary.name}
         onSelectMode={handleSelectMode}
       />

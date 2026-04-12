@@ -6,6 +6,7 @@ interface DefaultKeyModeToggleProps {
   activeMode: DefaultKeyMode | null;
   disabled?: boolean;
   rawMode: string;
+  unavailableReason?: string | null;
   summaryName: string;
   onSelectMode: (mode: DefaultKeyMode) => void;
 }
@@ -19,6 +20,7 @@ export function DefaultKeyModeToggle({
   activeMode,
   disabled = false,
   rawMode,
+  unavailableReason = null,
   summaryName,
   onSelectMode,
 }: DefaultKeyModeToggleProps) {
@@ -28,6 +30,7 @@ export function DefaultKeyModeToggle({
       <p>Default key: {summaryName}</p>
       <p>{buildTraySummaryText(activeMode, rawMode)}</p>
       <p>Allowed mode: {activeMode ?? `unsupported (${rawMode})`}</p>
+      {unavailableReason ? <p role="status">{unavailableReason}</p> : null}
       <div className="mode-toggle-row">
         {modes.map((mode) => (
           <button

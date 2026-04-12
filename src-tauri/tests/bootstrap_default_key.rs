@@ -145,3 +145,25 @@ async fn tray_model_contains_default_key_mode_actions() {
     );
     assert_eq!(model.current_mode(), Some(RoutingMode::Hybrid));
 }
+
+#[test]
+fn tray_model_status_text_includes_unavailable_reason_when_provided() {
+    use codexlag_lib::{
+        routing::policy::RoutingMode,
+        tray::{build_tray_model, TrayItemId},
+    };
+
+    let model = build_tray_model(
+        RoutingMode::RelayOnly,
+        Some("no available endpoint for mode 'relay_only'".to_string()),
+    );
+    let status_label = model
+        .items
+        .iter()
+        .find(|item| item.id == TrayItemId::CurrentMode)
+        .map(|item| item.label.text().to_string())
+        .expect("tray status label");
+
+    assert!(status_label.contains("Current mode: relay_only"));
+    assert!(status_label.contains("no available endpoint for mode 'relay_only'"));
+}

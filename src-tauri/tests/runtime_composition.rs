@@ -1,14 +1,20 @@
 use codexlag_lib::{
     bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test_at, runtime_database_path},
     commands::{
-        keys::{default_key_summary_from_state, set_default_key_mode_from_runtime},
+        keys::{
+            default_key_summary_from_runtime, default_key_summary_from_state,
+            set_default_key_mode_from_runtime,
+        },
         logs::{
             export_runtime_diagnostics_from_runtime, log_summary_from_runtime,
             runtime_log_metadata_from_runtime,
         },
         policies::policy_summaries_from_state,
     },
-    routing::policy::{RoutingMode, HYBRID, RELAY_ONLY},
+    routing::{
+        engine::PoolKind,
+        policy::{RoutingMode, HYBRID, RELAY_ONLY},
+    },
     secret_store::SecretKey,
     state::{RuntimeLogConfig, RuntimeState},
 };
@@ -60,6 +66,53 @@ async fn runtime_mode_switch_updates_default_key_summary_and_tray_model() {
     assert_eq!(
         runtime.tray_model().current_mode(),
         Some(RoutingMode::RelayOnly)
+    );
+}
+
+#[tokio::test]
+async fn runtime_log_summary_warns_when_current_mode_has_no_available_endpoint() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
+        .expect("switch to relay-only");
+
+    for candidate in runtime.loopback_gateway().state().current_candidates() {
+        if candidate.pool == PoolKind::Relay {
+            let updated = runtime
+                .loopback_gateway()
+                .state()
+                .set_endpoint_availability(candidate.id.as_str(), false);
+            assert!(updated, "relay candidate availability should be mutable");
+        }
+    }
+
+    let log_summary = log_summary_from_runtime(&runtime);
+
+    assert_eq!(log_summary.level, "warn");
+    assert!(log_summary.last_event.contains(RELAY_ONLY));
+}
+
+#[tokio::test]
+async fn runtime_default_key_summary_marks_unavailable_mode_when_no_candidates_exist() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    for candidate in runtime.loopback_gateway().state().current_candidates() {
+        let updated = runtime
+            .loopback_gateway()
+            .state()
+            .set_endpoint_availability(candidate.id.as_str(), false);
+        assert!(updated, "candidate availability should be mutable for runtime updates");
+    }
+
+    let summary = default_key_summary_from_runtime(&runtime).expect("default key summary");
+    assert_eq!(summary.allowed_mode, HYBRID);
+    assert_eq!(
+        summary.unavailable_reason,
+        Some("no available endpoint for mode 'hybrid'".to_string())
     );
 }
 
@@ -140,6 +193,10 @@ async fn diagnostics_export_returns_manifest_path() {
 
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
     std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
+    std::fs::write(log_dir.join("ck_local_abc123xyz.log"), "tokenized filename")
+        .expect("write token-like log file");
+    std::fs::write(log_dir.join("Bearer demo-token.log"), "bearer filename")
+        .expect("write bearer-like log file");
 
     let manifest_display_path =
         export_runtime_diagnostics_from_runtime(&runtime).expect("export runtime diagnostics");
@@ -156,7 +213,12 @@ async fn diagnostics_export_returns_manifest_path() {
     assert!(manifest_contents.contains("generated_at_unix="));
     assert!(manifest_contents.contains("log_dir=<app-local-data>/logs"));
     assert!(manifest_contents.contains("files_count="));
-    assert!(manifest_contents.contains("files=[\"gateway-export.log\"]"));
+    assert!(manifest_contents.contains("gateway-export.log"));
+    assert!(manifest_contents.contains("ck_local_[redacted]"));
+    assert!(manifest_contents.contains("bearer [redacted]"));
+    assert!(!manifest_contents.contains("ck_local_abc123xyz"));
+    assert!(!manifest_contents.contains("Bearer demo-token"));
+    assert!(!manifest_contents.contains("bearer demo-token"));
 
     let diagnostics_entries = std::fs::read_dir(log_dir.join("diagnostics"))
         .expect("read diagnostics directory entries");

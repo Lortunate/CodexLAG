@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "test:smoke": "vitest run src/test/app-shell.test.tsx",
     "test:watch": "vitest",
     "tauri:dev": "tauri dev"
   },

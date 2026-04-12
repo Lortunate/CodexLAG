@@ -29,13 +29,18 @@ pub fn log_summary_from_runtime(runtime: &RuntimeState) -> LogSummary {
         .default_platform_key()
         .map(|key| key.name.as_str())
         .unwrap_or("missing");
-    let gateway_ready = runtime.loopback_gateway().is_ready();
+    let current_mode = runtime.current_mode();
+    let mode = current_mode.as_str();
+    let gateway_ready = runtime.loopback_gateway().is_ready_for_mode(mode);
     let level = if gateway_ready { "info" } else { "warn" };
-    let last_event = format!(
-        "Loopback gateway ready for key '{}' in {} mode",
-        key_name,
-        runtime.current_mode().as_str()
-    );
+    let last_event = if gateway_ready {
+        format!("Loopback gateway ready for key '{}' in {} mode", key_name, mode)
+    } else {
+        format!(
+            "Loopback gateway unavailable for key '{}' in {} mode",
+            key_name, mode
+        )
+    };
 
     LogSummary {
         last_event,
@@ -134,11 +139,11 @@ pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result
     let files_payload = serde_json::to_string(&metadata.files)
         .map_err(|error| format!("failed to serialize diagnostics manifest files: {error}"))?;
     let manifest_path = diagnostics_dir.join("diagnostics-manifest.txt");
-    let manifest = format!(
+    let manifest = redact_token_like_values(&format!(
         "generated_at_unix={generated_at_unix}\nlog_dir={}\nfiles_count={}\nfiles={files_payload}\n",
         metadata.log_dir,
         metadata.files.len()
-    );
+    ));
 
     write_file_atomically(&manifest_path, &manifest)?;
 
@@ -171,6 +176,63 @@ fn diagnostics_manifest_display_path(log_dir: &Path) -> String {
         "{}/diagnostics/diagnostics-manifest.txt",
         sanitize_log_dir_for_display(log_dir)
     )
+}
+
+fn redact_token_like_values(value: &str) -> String {
+    let value = redact_prefixed_token(value, "ck_local_");
+    redact_bearer_token(&value)
+}
+
+fn redact_prefixed_token(value: &str, prefix: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut cursor = 0usize;
+
+    while let Some(relative_start) = value[cursor..].find(prefix) {
+        let start = cursor + relative_start;
+        output.push_str(&value[cursor..start]);
+        output.push_str(prefix);
+        output.push_str("[redacted]");
+
+        let mut token_end = start + prefix.len();
+        for ch in value[token_end..].chars() {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                token_end += ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+
+        cursor = token_end;
+    }
+
+    output.push_str(&value[cursor..]);
+    output
+}
+
+fn redact_bearer_token(value: &str) -> String {
+    let marker = "bearer ";
+    let lowercase = value.to_ascii_lowercase();
+    let mut output = String::with_capacity(value.len());
+    let mut cursor = 0usize;
+
+    while let Some(relative_start) = lowercase[cursor..].find(marker) {
+        let start = cursor + relative_start;
+        output.push_str(&value[cursor..start]);
+        output.push_str(marker);
+        output.push_str("[redacted]");
+
+        let mut token_end = start + marker.len();
+        for ch in value[token_end..].chars() {
+            if ch.is_whitespace() || ch == '"' || ch == '\'' || ch == ',' {
+                break;
+            }
+            token_end += ch.len_utf8();
+        }
+        cursor = token_end;
+    }
+
+    output.push_str(&value[cursor..]);
+    output
 }
 
 fn write_file_atomically(target_path: &Path, content: &str) -> Result<(), String> {

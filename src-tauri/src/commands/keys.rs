@@ -11,6 +11,7 @@ use crate::{
 pub struct DefaultKeySummary {
     pub name: String,
     pub allowed_mode: String,
+    pub unavailable_reason: Option<String>,
 }
 
 pub const DEFAULT_KEY_SUMMARY_CHANGED_EVENT: &str = "default-key-summary-changed";
@@ -23,6 +24,7 @@ pub fn default_key_summary_from_state(state: &AppState) -> Result<DefaultKeySumm
     Ok(DefaultKeySummary {
         name: key.name.clone(),
         allowed_mode: key.allowed_mode.clone(),
+        unavailable_reason: None,
     })
 }
 
@@ -34,7 +36,16 @@ pub fn set_default_key_mode_from_runtime(
         .ok_or_else(|| CodexLagError::new(format!("unsupported default key mode '{}'", mode)))?;
 
     runtime.set_current_mode(mode)?;
-    default_key_summary_from_state(&runtime.app_state())
+    default_key_summary_from_runtime(runtime)
+}
+
+pub fn default_key_summary_from_runtime(runtime: &RuntimeState) -> Result<DefaultKeySummary> {
+    let mut summary = default_key_summary_from_state(&runtime.app_state())?;
+    summary.unavailable_reason = runtime
+        .loopback_gateway()
+        .state()
+        .unavailable_reason_for_mode(summary.allowed_mode.as_str());
+    Ok(summary)
 }
 
 pub fn emit_default_key_summary_changed<R: Runtime>(
@@ -48,7 +59,7 @@ pub fn emit_default_key_summary_changed<R: Runtime>(
 pub fn get_default_key_summary(
     state: State<'_, RuntimeState>,
 ) -> std::result::Result<DefaultKeySummary, String> {
-    default_key_summary_from_state(&state.app_state()).map_err(|error| error.to_string())
+    default_key_summary_from_runtime(&state).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

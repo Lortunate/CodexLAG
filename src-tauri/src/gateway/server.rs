@@ -5,7 +5,7 @@ use axum::Router;
 use crate::{
     gateway::{auth::GatewayState, routes::build_routes},
     logging::usage::UsageRecord,
-    routing::engine::{choose_endpoint, CandidateEndpoint},
+    routing::engine::CandidateEndpoint,
     state::AppState,
 };
 
@@ -20,7 +20,15 @@ impl LoopbackGateway {
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     ) -> Self {
-        let state = GatewayState::new(app_state, usage_records);
+        Self::new_with_runtime(app_state, usage_records, default_candidates())
+    }
+
+    pub fn new_with_runtime(
+        app_state: Arc<RwLock<AppState>>,
+        usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+        candidates: Vec<CandidateEndpoint>,
+    ) -> Self {
+        let state = GatewayState::new_with_runtime(app_state, usage_records, candidates);
         let router = build_routes().with_state(state.clone());
 
         Self { state, router }
@@ -35,7 +43,11 @@ impl LoopbackGateway {
     }
 
     pub fn is_ready(&self) -> bool {
-        choose_endpoint("hybrid", &default_candidates()).is_ok()
+        self.is_ready_for_mode("hybrid")
+    }
+
+    pub fn is_ready_for_mode(&self, mode: &str) -> bool {
+        self.state.has_available_endpoint_for_mode(mode)
     }
 }
 
@@ -49,6 +61,18 @@ pub fn build_router(app_state: AppState) -> Router {
 
 pub fn build_router_for_test(app_state: AppState) -> Router {
     build_router(app_state)
+}
+
+pub fn build_router_for_test_with_runtime(
+    app_state: AppState,
+    candidates: Vec<CandidateEndpoint>,
+) -> Router {
+    LoopbackGateway::new_with_runtime(
+        Arc::new(RwLock::new(app_state)),
+        Arc::new(RwLock::new(Vec::new())),
+        candidates,
+    )
+    .router()
 }
 
 pub fn default_candidates() -> Vec<CandidateEndpoint> {

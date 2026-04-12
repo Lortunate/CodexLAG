@@ -1,19 +1,20 @@
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
 use serde::Serialize;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
-use crate::gateway::server::default_candidates;
 use crate::logging::runtime::{build_attempt_id, format_event_fields};
 use crate::logging::usage::UsageRecordInput;
 use crate::logging::{log_route_downgrade, log_route_rejection};
 use crate::routing::engine::{
-    choose_endpoint_at, endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms,
-    PoolKind, RoutingError,
+    endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms, PoolKind,
+    RoutingError,
 };
 
 #[derive(Debug, Serialize)]
@@ -28,6 +29,8 @@ struct CodexRequestSummary {
 struct RoutingErrorResponse {
     error: &'static str,
     mode: String,
+    request_id: String,
+    attempt_count: usize,
 }
 
 pub fn build_routes() -> Router<GatewayState> {
@@ -42,6 +45,7 @@ async fn health() -> &'static str {
 
 async fn codex_request(
     State(gateway_state): State<GatewayState>,
+    headers: HeaderMap,
     auth: AuthenticatedPlatformKey,
 ) -> Result<Json<CodexRequestSummary>, (StatusCode, Json<RoutingErrorResponse>)> {
     let platform_key = auth.platform_key();
@@ -49,6 +53,11 @@ async fn codex_request(
     let mode_value = platform_key.allowed_mode.clone();
     let mode = mode_value.as_str();
     let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "unrouted");
+    let endpoint_status_plan = if gateway_state.test_route_headers_enabled() {
+        parse_endpoint_status_plan(&headers)
+    } else {
+        HashMap::new()
+    };
 
     let accepted_line = format_event_fields(&[
         ("event", "gateway.request.accepted"),
@@ -58,26 +67,55 @@ async fn codex_request(
     ]);
     log::info!("{accepted_line}");
 
-    let policy = gateway_state.policy_for_platform_key(platform_key).ok_or((
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(RoutingErrorResponse {
-            error: "policy_missing",
-            mode: platform_key.allowed_mode.clone(),
-        }),
-    ))?;
-    let candidates = default_candidates();
-    let selected = choose_endpoint_at(mode, &candidates, now_ms).map_err(|error| {
-        log_route_rejection(
-            request_id.as_str(),
-            mode,
-            &error,
-            &candidates,
-            now_ms,
-        );
-        map_routing_error(mode, error)
-    })?;
+    let policy = match gateway_state.policy_for_platform_key(platform_key) {
+        Some(policy) => policy,
+        None => {
+            let line = format_event_fields(&[
+                ("event", "routing.endpoint.rejected"),
+                ("request_id", request_id.as_str()),
+                ("attempt_count", "0"),
+                ("mode", mode),
+                ("error", "policy_missing"),
+                ("reasons", "policy_missing"),
+            ]);
+            log::warn!("{line}");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(RoutingErrorResponse {
+                    error: "policy_missing",
+                    mode: platform_key.allowed_mode.clone(),
+                    request_id: public_request_id(request_id.as_str()),
+                    attempt_count: 0,
+                }),
+            ));
+        }
+    };
+    let selection = gateway_state
+        .choose_endpoint_with_runtime_failover(request_id.as_str(), mode, |endpoint, _context| {
+            invoke_endpoint_with_plan(endpoint.id.as_str(), &endpoint_status_plan)
+        })
+        .map_err(|route_error| {
+            let candidates = gateway_state.current_candidates();
+            log_route_rejection(
+                request_id.as_str(),
+                route_error.attempt_count,
+                mode,
+                &route_error.error,
+                &candidates,
+                now_ms,
+            );
+            map_routing_error(
+                request_id.as_str(),
+                route_error.attempt_count,
+                mode,
+                route_error.error,
+            )
+        })?;
+    let selected = selection.endpoint;
+    let candidates = gateway_state.current_candidates();
+    let attempt_index = selection.attempt_count.saturating_sub(1);
+    let attempt_id = build_attempt_id(request_id.as_str(), attempt_index);
 
-    let attempt_id = build_attempt_id(request_id.as_str(), 0);
     let selected_line = format_event_fields(&[
         ("event", "routing.endpoint.selected"),
         ("request_id", request_id.as_str()),
@@ -116,6 +154,32 @@ async fn codex_request(
     }))
 }
 
+fn parse_endpoint_status_plan(headers: &HeaderMap) -> HashMap<String, u16> {
+    headers
+        .get("x-codexlag-endpoint-status")
+        .and_then(|value| value.to_str().ok())
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|segment| {
+                    let (endpoint_id, status) = segment.trim().split_once(':')?;
+                    let status = status.trim().parse::<u16>().ok()?;
+                    Some((endpoint_id.trim().to_string(), status))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn invoke_endpoint_with_plan(
+    endpoint_id: &str,
+    status_plan: &HashMap<String, u16>,
+) -> Result<(), crate::models::EndpointFailure> {
+    match status_plan.get(endpoint_id) {
+        Some(status) if *status >= 400 => Err(crate::models::EndpointFailure::HttpStatus(*status)),
+        _ => Ok(()),
+    }
+}
+
 fn should_log_downgrade(
     mode: &str,
     selected: &crate::routing::engine::CandidateEndpoint,
@@ -134,7 +198,12 @@ fn should_log_downgrade(
     })
 }
 
-fn map_routing_error(mode: &str, error: RoutingError) -> (StatusCode, Json<RoutingErrorResponse>) {
+fn map_routing_error(
+    request_id: &str,
+    attempt_count: usize,
+    mode: &str,
+    error: RoutingError,
+) -> (StatusCode, Json<RoutingErrorResponse>) {
     let (status, code) = match error {
         RoutingError::InvalidMode => (StatusCode::BAD_REQUEST, "invalid_mode"),
         RoutingError::NoAvailableEndpoint => {
@@ -147,6 +216,14 @@ fn map_routing_error(mode: &str, error: RoutingError) -> (StatusCode, Json<Routi
         Json(RoutingErrorResponse {
             error: code,
             mode: mode.to_string(),
+            request_id: public_request_id(request_id),
+            attempt_count,
         }),
     )
+}
+
+fn public_request_id(request_id: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    request_id.hash(&mut hasher);
+    format!("req_{:016x}", hasher.finish())
 }
