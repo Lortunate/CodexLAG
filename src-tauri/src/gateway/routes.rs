@@ -28,6 +28,8 @@ struct CodexRequestSummary {
 struct RoutingErrorResponse {
     error: &'static str,
     mode: String,
+    request_id: String,
+    attempt_count: usize,
 }
 
 pub fn build_routes() -> Router<GatewayState> {
@@ -69,16 +71,30 @@ async fn codex_request(
         Json(RoutingErrorResponse {
             error: "policy_missing",
             mode: platform_key.allowed_mode.clone(),
+            request_id: request_id.clone(),
+            attempt_count: 0,
         }),
     ))?;
     let selection = gateway_state
         .choose_endpoint_with_runtime_failover(request_id.as_str(), mode, |endpoint, _context| {
             invoke_endpoint_with_plan(endpoint.id.as_str(), &endpoint_status_plan)
         })
-        .map_err(|error| {
+        .map_err(|route_error| {
             let candidates = gateway_state.current_candidates();
-            log_route_rejection(request_id.as_str(), mode, &error, &candidates, now_ms);
-            map_routing_error(mode, error)
+            log_route_rejection(
+                request_id.as_str(),
+                route_error.attempt_count,
+                mode,
+                &route_error.error,
+                &candidates,
+                now_ms,
+            );
+            map_routing_error(
+                request_id.as_str(),
+                route_error.attempt_count,
+                mode,
+                route_error.error,
+            )
         })?;
     let selected = selection.endpoint;
     let candidates = gateway_state.current_candidates();
@@ -167,7 +183,12 @@ fn should_log_downgrade(
     })
 }
 
-fn map_routing_error(mode: &str, error: RoutingError) -> (StatusCode, Json<RoutingErrorResponse>) {
+fn map_routing_error(
+    request_id: &str,
+    attempt_count: usize,
+    mode: &str,
+    error: RoutingError,
+) -> (StatusCode, Json<RoutingErrorResponse>) {
     let (status, code) = match error {
         RoutingError::InvalidMode => (StatusCode::BAD_REQUEST, "invalid_mode"),
         RoutingError::NoAvailableEndpoint => {
@@ -180,6 +201,8 @@ fn map_routing_error(mode: &str, error: RoutingError) -> (StatusCode, Json<Routi
         Json(RoutingErrorResponse {
             error: code,
             mode: mode.to_string(),
+            request_id: request_id.to_string(),
+            attempt_count,
         }),
     )
 }

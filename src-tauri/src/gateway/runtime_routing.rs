@@ -24,6 +24,12 @@ pub struct RouteDebugSnapshot {
     pub attempt_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteSelectionError {
+    pub error: RoutingError,
+    pub attempt_count: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct RouteSelection {
     pub endpoint: CandidateEndpoint,
@@ -58,7 +64,7 @@ impl RuntimeRoutingState {
         request_id: &str,
         mode: &str,
         mut invoke: F,
-    ) -> Result<RouteSelection, RoutingError>
+    ) -> Result<RouteSelection, RouteSelectionError>
     where
         F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure>,
     {
@@ -71,7 +77,12 @@ impl RuntimeRoutingState {
             let now_ms = wall_clock_now_ms();
             let selected = match choose_endpoint_at(mode, &self.candidates, now_ms) {
                 Ok(candidate) => candidate,
-                Err(error) => return Err(error),
+                Err(error) => {
+                    return Err(RouteSelectionError {
+                        error,
+                        attempt_count,
+                    });
+                }
             };
 
             if attempted_endpoint_ids.contains(selected.id.as_str()) {
@@ -80,7 +91,10 @@ impl RuntimeRoutingState {
                     selected_endpoint_id: endpoint_id,
                     attempt_count,
                 });
-                return Err(RoutingError::NoAvailableEndpoint);
+                return Err(RouteSelectionError {
+                    error: RoutingError::NoAvailableEndpoint,
+                    attempt_count,
+                });
             }
 
             attempt_count = attempt_count.saturating_add(1);
@@ -127,6 +141,9 @@ impl RuntimeRoutingState {
             });
         }
 
-        Err(RoutingError::NoAvailableEndpoint)
+        Err(RouteSelectionError {
+            error: RoutingError::NoAvailableEndpoint,
+            attempt_count,
+        })
     }
 }

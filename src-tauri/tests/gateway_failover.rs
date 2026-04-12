@@ -61,7 +61,7 @@ async fn gateway_falls_back_to_relay_after_official_server_error_and_keeps_corre
 }
 
 #[tokio::test]
-async fn gateway_returns_no_available_endpoint_when_all_candidates_fail() {
+async fn no_available_endpoint_returns_structured_error_with_attempt_context() {
     let runtime = bootstrap_runtime_for_test()
         .await
         .expect("bootstrap runtime");
@@ -99,6 +99,12 @@ async fn gateway_returns_no_available_endpoint_when_all_candidates_fail() {
         .expect("route body");
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
     assert_eq!(payload["error"], "no_available_endpoint");
+    assert_eq!(payload["mode"], "hybrid");
+    assert_eq!(payload["attempt_count"], 2);
+    assert!(payload["request_id"]
+        .as_str()
+        .expect("request id")
+        .contains(":unrouted:"));
 
     let debug = runtime
         .loopback_gateway()

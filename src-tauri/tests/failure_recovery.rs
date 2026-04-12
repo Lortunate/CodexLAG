@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use codexlag_lib::{
-    bootstrap::bootstrap_state_for_test,
+    bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test},
     gateway::build_router_for_test,
     routing::{
         engine::{
@@ -78,6 +78,34 @@ async fn codex_request_account_only_succeeds_with_placeholder_candidates() {
 
     assert_eq!(payload["allowed_mode"], "account_only");
     assert_eq!(payload["endpoint_id"], "official-default");
+}
+
+#[tokio::test]
+async fn production_requests_ignore_test_route_status_header_by_default() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("platform key secret");
+
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .header("x-codexlag-endpoint-status", "official-default:503,relay-default:503")
+                .body(Body::empty())
+                .expect("codex request"),
+        )
+        .await
+        .expect("codex response");
+
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[test]

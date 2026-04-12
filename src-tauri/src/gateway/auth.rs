@@ -12,13 +12,14 @@ use axum::{
 use crate::{
     gateway::{
         runtime_routing::{
-            RouteDebugSnapshot, RouteSelection, RoutingAttemptContext, RuntimeRoutingState,
+            RouteDebugSnapshot, RouteSelection, RouteSelectionError, RoutingAttemptContext,
+            RuntimeRoutingState,
         },
         server::default_candidates,
     },
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
     models::{EndpointFailure, PlatformKey, RoutingPolicy},
-    routing::engine::{CandidateEndpoint, FailureRules, RoutingError},
+    routing::engine::{CandidateEndpoint, FailureRules},
     state::AppState,
 };
 
@@ -106,7 +107,7 @@ impl GatewayState {
         request_id: &str,
         mode: &str,
         invoke: F,
-    ) -> Result<RouteSelection, RoutingError>
+    ) -> Result<RouteSelection, RouteSelectionError>
     where
         F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure>,
     {
