@@ -71,10 +71,13 @@ async fn runtime_default_key_summary_marks_unavailable_mode_when_no_candidates_e
     let runtime = bootstrap_runtime_for_test()
         .await
         .expect("bootstrap runtime");
-    runtime
-        .loopback_gateway()
-        .state()
-        .set_all_candidates_unavailable_for_test();
+    for candidate in runtime.loopback_gateway().state().current_candidates() {
+        let updated = runtime
+            .loopback_gateway()
+            .state()
+            .set_endpoint_availability(candidate.id.as_str(), false);
+        assert!(updated, "candidate availability should be mutable for runtime updates");
+    }
 
     let summary = default_key_summary_from_runtime(&runtime).expect("default key summary");
     assert_eq!(summary.allowed_mode, HYBRID);

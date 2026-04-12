@@ -144,15 +144,10 @@ impl RuntimeState {
             .app_state()
             .current_mode()
             .unwrap_or(RoutingMode::Hybrid);
-        let unavailable_reason = if self
+        let unavailable_reason = self
             .loopback_gateway
             .state()
-            .has_available_endpoint_for_mode(mode.as_str())
-        {
-            None
-        } else {
-            Some(format!("no available endpoint for mode '{}'", mode.as_str()))
-        };
+            .unavailable_reason_for_mode(mode.as_str());
         build_tray_model(mode, unavailable_reason)
     }
 

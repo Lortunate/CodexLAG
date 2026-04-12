@@ -63,10 +63,25 @@ impl RuntimeRoutingState {
         choose_endpoint_at(mode, &self.candidates, wall_clock_now_ms()).is_ok()
     }
 
-    pub fn set_all_candidates_available_for_test(&mut self, available: bool) {
-        for candidate in &mut self.candidates {
-            candidate.available = available;
+    pub fn availability_for_mode(&self, mode: &str) -> Result<bool, RoutingError> {
+        match choose_endpoint_at(mode, &self.candidates, wall_clock_now_ms()) {
+            Ok(_) => Ok(true),
+            Err(RoutingError::NoAvailableEndpoint) => Ok(false),
+            Err(error) => Err(error),
         }
+    }
+
+    pub fn set_endpoint_availability(&mut self, endpoint_id: &str, available: bool) -> bool {
+        if let Some(candidate) = self
+            .candidates
+            .iter_mut()
+            .find(|candidate| candidate.id == endpoint_id)
+        {
+            candidate.available = available;
+            return true;
+        }
+
+        false
     }
 
     pub fn choose_with_failover<F>(

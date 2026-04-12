@@ -41,16 +41,10 @@ pub fn set_default_key_mode_from_runtime(
 
 pub fn default_key_summary_from_runtime(runtime: &RuntimeState) -> Result<DefaultKeySummary> {
     let mut summary = default_key_summary_from_state(&runtime.app_state())?;
-    if !runtime
+    summary.unavailable_reason = runtime
         .loopback_gateway()
         .state()
-        .has_available_endpoint_for_mode(summary.allowed_mode.as_str())
-    {
-        summary.unavailable_reason = Some(format!(
-            "no available endpoint for mode '{}'",
-            summary.allowed_mode
-        ));
-    }
+        .unavailable_reason_for_mode(summary.allowed_mode.as_str());
     Ok(summary)
 }
 

@@ -19,7 +19,7 @@ use crate::{
     },
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
     models::{EndpointFailure, PlatformKey, RoutingPolicy},
-    routing::engine::{CandidateEndpoint, FailureRules},
+    routing::engine::{CandidateEndpoint, FailureRules, RoutingError},
     state::AppState,
 };
 
@@ -131,6 +131,24 @@ impl GatewayState {
             .has_available_endpoint_for_mode(mode)
     }
 
+    pub fn unavailable_reason_for_mode(&self, mode: &str) -> Option<String> {
+        let availability = self
+            .routing
+            .read()
+            .expect("gateway routing lock poisoned")
+            .availability_for_mode(mode);
+        match availability {
+            Ok(true) => None,
+            Ok(false) => Some(format!("no available endpoint for mode '{mode}'")),
+            Err(RoutingError::InvalidMode) => {
+                Some(format!("unsupported default key mode '{mode}'"))
+            }
+            Err(RoutingError::NoAvailableEndpoint) => {
+                Some(format!("no available endpoint for mode '{mode}'"))
+            }
+        }
+    }
+
     pub fn last_route_debug(&self) -> Option<RouteDebugSnapshot> {
         self.routing
             .read()
@@ -139,11 +157,11 @@ impl GatewayState {
             .cloned()
     }
 
-    pub fn set_all_candidates_unavailable_for_test(&self) {
+    pub fn set_endpoint_availability(&self, endpoint_id: &str, available: bool) -> bool {
         self.routing
             .write()
             .expect("gateway routing lock poisoned")
-            .set_all_candidates_available_for_test(false);
+            .set_endpoint_availability(endpoint_id, available)
     }
 
     pub fn enable_test_route_headers_for_test(&self) {
