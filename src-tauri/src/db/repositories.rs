@@ -98,8 +98,13 @@ impl Repositories {
                 ))
             })?;
 
-        self.policies
-            .insert(policy.name.clone(), policy);
+        let policy_id = policy.id.clone();
+        let policy_name = policy.name.clone();
+
+        self.policies.retain(|name, cached_policy| {
+            cached_policy.id != policy_id || name == &policy_name
+        });
+        self.policies.insert(policy_name, policy);
         Ok(())
     }
 
@@ -192,6 +197,21 @@ impl Repositories {
         request: &RequestLog,
         attempts: &[RequestAttemptLog],
     ) -> Result<()> {
+        let expected_attempts = usize::try_from(request.attempt_count).map_err(|_| {
+            CodexLagError::new(format!(
+                "request '{}' attempt_count '{}' is not representable as usize",
+                request.request_id, request.attempt_count
+            ))
+        })?;
+        if expected_attempts != attempts.len() {
+            return Err(CodexLagError::new(format!(
+                "request '{}' attempt_count {} does not match provided attempts length {}",
+                request.request_id,
+                request.attempt_count,
+                attempts.len()
+            )));
+        }
+
         for attempt in attempts {
             if attempt.request_id != request.request_id {
                 return Err(CodexLagError::new(format!(

@@ -101,6 +101,153 @@ fn appending_request_and_attempt_rows_is_transactional() {
 }
 
 #[test]
+fn appending_request_with_attempt_count_mismatch_is_rejected_without_partial_inserts() {
+    let database_path = temp_database_path("codexlag-request-attempts-mismatch");
+    let repositories = Repositories::open(&database_path).expect("open repositories");
+
+    let request = RequestLog {
+        request_id: "req-mismatch-001".into(),
+        platform_key_id: "key-default".into(),
+        request_type: "chat.completions".into(),
+        model: "gpt-5".into(),
+        selected_endpoint_id: Some("endpoint-official-1".into()),
+        attempt_count: 2,
+        final_status: "success".into(),
+        http_status: Some(200),
+        started_at_ms: 1_710_100_000_000,
+        finished_at_ms: Some(1_710_100_000_250),
+        latency_ms: Some(250),
+        error_code: None,
+        error_reason: None,
+        requested_context_window: Some(200_000),
+        requested_context_compression: Some("auto".into()),
+        effective_context_window: Some(200_000),
+        effective_context_compression: Some("auto".into()),
+    };
+    let attempts = vec![RequestAttemptLog {
+        attempt_id: "attempt-mismatch-001".into(),
+        request_id: "req-mismatch-001".into(),
+        attempt_index: 0,
+        endpoint_id: "endpoint-official-1".into(),
+        pool_type: "official_pool".into(),
+        trigger_reason: "initial".into(),
+        upstream_status: Some(200),
+        timeout_ms: Some(30_000),
+        latency_ms: Some(250),
+        token_usage_snapshot: Some("{\"input\":12,\"output\":30}".into()),
+        estimated_cost_snapshot: Some("0.0009".into()),
+        balance_snapshot_id: None,
+        feature_resolution_snapshot: Some("{\"compression\":\"auto\"}".into()),
+    }];
+
+    let error = repositories
+        .append_request_with_attempts(&request, &attempts)
+        .expect_err("attempt_count mismatch should be rejected");
+    assert!(
+        error.to_string().contains("attempt_count"),
+        "expected attempt_count validation error, got: {error}"
+    );
+    drop(repositories);
+
+    let sqlite = Connection::open(&database_path).expect("open sqlite file");
+    let request_rows: i64 = sqlite
+        .query_row("SELECT COUNT(*) FROM request_logs", [], |row| row.get(0))
+        .expect("count request rows");
+    let attempt_rows: i64 = sqlite
+        .query_row("SELECT COUNT(*) FROM request_attempt_logs", [], |row| {
+            row.get(0)
+        })
+        .expect("count attempt rows");
+    assert_eq!(request_rows, 0);
+    assert_eq!(attempt_rows, 0);
+
+    let _ = std::fs::remove_file(&database_path);
+}
+
+#[test]
+fn appending_request_rolls_back_transaction_when_attempt_insert_fails() {
+    let database_path = temp_database_path("codexlag-request-attempts-rollback");
+    let repositories = Repositories::open(&database_path).expect("open repositories");
+
+    let request = RequestLog {
+        request_id: "req-rollback-001".into(),
+        platform_key_id: "key-default".into(),
+        request_type: "chat.completions".into(),
+        model: "gpt-5".into(),
+        selected_endpoint_id: Some("endpoint-official-1".into()),
+        attempt_count: 2,
+        final_status: "success".into(),
+        http_status: Some(200),
+        started_at_ms: 1_710_200_000_000,
+        finished_at_ms: Some(1_710_200_000_250),
+        latency_ms: Some(250),
+        error_code: None,
+        error_reason: None,
+        requested_context_window: Some(200_000),
+        requested_context_compression: Some("auto".into()),
+        effective_context_window: Some(200_000),
+        effective_context_compression: Some("auto".into()),
+    };
+    let attempts = vec![
+        RequestAttemptLog {
+            attempt_id: "attempt-duplicate".into(),
+            request_id: "req-rollback-001".into(),
+            attempt_index: 0,
+            endpoint_id: "endpoint-official-1".into(),
+            pool_type: "official_pool".into(),
+            trigger_reason: "initial".into(),
+            upstream_status: Some(429),
+            timeout_ms: Some(30_000),
+            latency_ms: Some(100),
+            token_usage_snapshot: Some("{\"input\":10,\"output\":0}".into()),
+            estimated_cost_snapshot: Some("0.0001".into()),
+            balance_snapshot_id: None,
+            feature_resolution_snapshot: Some("{\"compression\":\"none\"}".into()),
+        },
+        RequestAttemptLog {
+            attempt_id: "attempt-duplicate".into(),
+            request_id: "req-rollback-001".into(),
+            attempt_index: 1,
+            endpoint_id: "endpoint-relay-1".into(),
+            pool_type: "relay_pool".into(),
+            trigger_reason: "fallback_after_429".into(),
+            upstream_status: Some(200),
+            timeout_ms: Some(30_000),
+            latency_ms: Some(150),
+            token_usage_snapshot: Some("{\"input\":10,\"output\":20}".into()),
+            estimated_cost_snapshot: Some("0.0007".into()),
+            balance_snapshot_id: Some("balance-rollback".into()),
+            feature_resolution_snapshot: Some("{\"compression\":\"auto\"}".into()),
+        },
+    ];
+
+    let error = repositories
+        .append_request_with_attempts(&request, &attempts)
+        .expect_err("duplicate attempt ids should fail insertion");
+    assert!(
+        error
+            .to_string()
+            .contains("failed to insert request attempt"),
+        "expected attempt insert error, got: {error}"
+    );
+    drop(repositories);
+
+    let sqlite = Connection::open(&database_path).expect("open sqlite file");
+    let request_rows: i64 = sqlite
+        .query_row("SELECT COUNT(*) FROM request_logs", [], |row| row.get(0))
+        .expect("count request rows");
+    let attempt_rows: i64 = sqlite
+        .query_row("SELECT COUNT(*) FROM request_attempt_logs", [], |row| {
+            row.get(0)
+        })
+        .expect("count attempt rows");
+    assert_eq!(request_rows, 0);
+    assert_eq!(attempt_rows, 0);
+
+    let _ = std::fs::remove_file(&database_path);
+}
+
+#[test]
 fn active_pricing_profile_lookup_is_model_and_time_scoped() {
     let database_path = temp_database_path("codexlag-pricing-lookup");
     let repositories = Repositories::open(&database_path).expect("open repositories");
