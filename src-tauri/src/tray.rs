@@ -76,7 +76,7 @@ impl TrayItemLabel {
     pub fn text(self) -> Cow<'static, str> {
         match self {
             Self::CurrentMode(mode) => {
-                format!("Default key ready | Current mode: {}", mode.as_str()).into()
+                format!("Default key state | Current mode: {}", mode.as_str()).into()
             }
             Self::Mode(mode) => match mode {
                 RoutingMode::AccountOnly => Cow::Borrowed("Account only"),
@@ -144,7 +144,7 @@ pub fn install_runtime_tray<R: Runtime>(app: &App<R>, model: &TrayModel) -> taur
             .iter()
             .find(|item| item.id == TrayItemId::CurrentMode)
             .map(|item| item.label.text())
-            .unwrap_or_else(|| Cow::Borrowed("Default key ready | Current mode: hybrid"))
+            .unwrap_or_else(|| Cow::Borrowed("Default key state | Current mode: hybrid"))
             .as_ref(),
         false,
         None::<&str>,

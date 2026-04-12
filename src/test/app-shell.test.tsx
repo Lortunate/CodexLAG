@@ -140,7 +140,7 @@ describe("App shell", () => {
           endpoint: "http://127.0.0.1:8787",
           balance: {
             kind: "queryable",
-            adapter: "newapi",
+            adapter: "new_api",
             balance: { total: "25.00", used: "7.50" },
           },
         };
@@ -156,7 +156,7 @@ describe("App shell", () => {
         return {
           relay_id: "relay-newapi",
           endpoint: "http://127.0.0.1:8787",
-          balance_capability: { kind: "queryable", adapter: "newapi" },
+          balance_capability: { kind: "queryable", adapter: "new_api" },
         };
       }
       return {
@@ -236,9 +236,11 @@ describe("App shell", () => {
     expect(await screen.findByText("Runtime status")).toBeInTheDocument();
     expect(screen.getByText("Balance observability")).toBeInTheDocument();
     expect(screen.getByText("Usage ledger")).toBeInTheDocument();
-    expect(screen.getByText("Default key ready | Current mode: hybrid")).toBeInTheDocument();
+    expect(screen.getByText("Default key state | Current mode: hybrid")).toBeInTheDocument();
     expect(screen.getByText("Non-queryable accounts: 1")).toBeInTheDocument();
     expect(screen.getByText("Queryable relays: 1")).toBeInTheDocument();
+    expect(screen.getByText("Account refresh failures: 0")).toBeInTheDocument();
+    expect(screen.getByText("Relay refresh failures: 0")).toBeInTheDocument();
     expect(screen.getByText("Total ledger tokens: 222")).toBeInTheDocument();
     expect(screen.getByText("Usage cost provenance: unknown")).toBeInTheDocument();
     expect(queryUsageLedger).toHaveBeenCalledTimes(1);
@@ -271,7 +273,7 @@ describe("App shell", () => {
 
     expect(await screen.findByText("Local Gateway")).toBeInTheDocument();
     expect(screen.getByText("Balance state: queryable")).toBeInTheDocument();
-    expect(screen.getByText("Adapter: newapi")).toBeInTheDocument();
+    expect(screen.getByText("Adapter: new_api")).toBeInTheDocument();
     expect(screen.getByText("Total: 25.00")).toBeInTheDocument();
     expect(screen.getByText("Used: 7.50")).toBeInTheDocument();
     expect(screen.getByText("Upstream Proxy")).toBeInTheDocument();
@@ -298,9 +300,39 @@ describe("App shell", () => {
     expect(screen.getByText("Cost provenance: estimated")).toBeInTheDocument();
   });
 
+  it("clears stale request detail when detail loading fails", async () => {
+    getUsageRequestDetail
+      .mockResolvedValueOnce({
+        request_id: "req-1",
+        endpoint_id: "official-1",
+        input_tokens: 120,
+        output_tokens: 30,
+        cache_read_tokens: 10,
+        cache_write_tokens: 0,
+        total_tokens: 160,
+        cost: { amount: "0.0123", provenance: "estimated" },
+      })
+      .mockRejectedValueOnce(new Error("detail failed"));
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Logs & Usage" }));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "View request req-1" }));
+    expect(await screen.findByText("Request detail: req-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View request req-2" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Failed to load request detail for req-2.",
+    );
+    expect(screen.queryByText("Request detail: req-1")).not.toBeInTheDocument();
+  });
+
   it("updates the overview when the backend emits a default key summary change", async () => {
     render(<App />);
-    await screen.findByText("Default key ready | Current mode: hybrid");
+    await screen.findByText("Default key state | Current mode: hybrid");
 
     await act(async () => {
       emitDefaultKeySummaryChanged({
@@ -311,7 +343,7 @@ describe("App shell", () => {
     });
 
     expect(
-      await screen.findByText("Default key ready | Current mode: account_only"),
+      await screen.findByText("Default key state | Current mode: account_only"),
     ).toBeInTheDocument();
   });
 });

@@ -50,6 +50,7 @@ export function LogsPage() {
       setRequestDetail(detail);
       setErrorMessage(null);
     } catch {
+      setRequestDetail(null);
       setErrorMessage(`Failed to load request detail for ${requestId}.`);
     }
   }

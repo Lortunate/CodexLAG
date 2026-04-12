@@ -27,9 +27,11 @@ const initialSummary: DefaultKeySummary = {
 
 export function OverviewPage() {
   const [accountBalances, setAccountBalances] = useState<AccountBalanceSnapshot[]>([]);
+  const [accountRefreshFailures, setAccountRefreshFailures] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [logSummary, setLogSummary] = useState<LogSummary | null>(null);
+  const [relayRefreshFailures, setRelayRefreshFailures] = useState(0);
   const [relayBalances, setRelayBalances] = useState<RelayBalanceSnapshot[]>([]);
   const [summary, setSummary] = useState<DefaultKeySummary>(initialSummary);
   const [usageLedger, setUsageLedger] = useState<UsageLedger | null>(null);
@@ -81,6 +83,8 @@ export function OverviewPage() {
         setRelayBalances(
           nextRelayBalances.filter((snapshot): snapshot is RelayBalanceSnapshot => snapshot !== null),
         );
+        setAccountRefreshFailures(nextAccountBalances.filter((snapshot) => snapshot === null).length);
+        setRelayRefreshFailures(nextRelayBalances.filter((snapshot) => snapshot === null).length);
         setUsageLedger(nextLedger);
         setErrorMessage(null);
       } catch {
@@ -156,6 +160,8 @@ export function OverviewPage() {
           <h3>Balance observability</h3>
           <p>Non-queryable accounts: {nonQueryableAccountCount}</p>
           <p>Queryable relays: {queryableRelayCount}</p>
+          <p>Account refresh failures: {accountRefreshFailures}</p>
+          <p>Relay refresh failures: {relayRefreshFailures}</p>
         </article>
         <article className="status-card">
           <h3>Usage ledger</h3>

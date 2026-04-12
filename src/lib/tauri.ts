@@ -73,11 +73,11 @@ export function listAccounts() {
 }
 
 export function refreshAccountBalance(accountId: string) {
-  return invoke<AccountBalanceSnapshot>("refresh_account_balance", { accountId });
+  return invoke<AccountBalanceSnapshot>("refresh_account_balance", { account_id: accountId });
 }
 
 export function getAccountCapabilityDetail(accountId: string) {
-  return invoke<AccountCapabilityDetail>("get_account_capability_detail", { accountId });
+  return invoke<AccountCapabilityDetail>("get_account_capability_detail", { account_id: accountId });
 }
 
 export function listRelays() {
@@ -85,13 +85,13 @@ export function listRelays() {
 }
 
 export function refreshRelayBalance(relayId: string) {
-  return invoke<RelayBalanceSnapshot>("refresh_relay_balance", { relayId });
+  return invoke<RelayBalanceSnapshot>("refresh_relay_balance", { relay_id: relayId });
 }
 
 export function getRelayCapabilityDetail(relayId: string) {
   return invoke<Omit<RelayCapabilityDetail, "balance_capability"> & { balance_capability: RawRelayBalanceCapability }>(
     "get_relay_capability_detail",
-    { relayId },
+    { relay_id: relayId },
   ).then((detail) => ({
     ...detail,
     balance_capability: parseRelayCapability(detail.balance_capability),
@@ -121,7 +121,7 @@ export function getLogSummary() {
 }
 
 export function getUsageRequestDetail(requestId: string) {
-  return invoke<UsageRequestDetail | null>("get_usage_request_detail", { requestId });
+  return invoke<UsageRequestDetail | null>("get_usage_request_detail", { request_id: requestId });
 }
 
 export function listUsageRequestHistory(limit?: number) {

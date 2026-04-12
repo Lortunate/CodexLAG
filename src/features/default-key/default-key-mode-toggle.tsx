@@ -12,7 +12,7 @@ interface DefaultKeyModeToggleProps {
 
 function buildTraySummaryText(activeMode: DefaultKeyMode | null, rawMode: string) {
   const modeText = activeMode ?? `unsupported (${rawMode})`;
-  return `Default key ready | Current mode: ${modeText}`;
+  return `Default key state | Current mode: ${modeText}`;
 }
 
 export function DefaultKeyModeToggle({
