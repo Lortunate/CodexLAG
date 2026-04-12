@@ -32,6 +32,130 @@ pub struct RoutingPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExpandedRoutingPolicy {
+    pub id: String,
+    pub name: String,
+    pub selection_order: Vec<String>,
+    pub cross_pool_fallback: bool,
+    pub retry_budget: u32,
+    pub failure_rules: FailureRules,
+    pub recovery_rules: RecoveryRules,
+}
+
+impl ExpandedRoutingPolicy {
+    pub fn from_routing_policy(policy: RoutingPolicy) -> Self {
+        Self {
+            id: policy.id,
+            name: policy.name,
+            selection_order: Vec::new(),
+            cross_pool_fallback: true,
+            retry_budget: 0,
+            failure_rules: FailureRules::default(),
+            recovery_rules: RecoveryRules::default(),
+        }
+    }
+
+    pub fn as_routing_policy(&self) -> RoutingPolicy {
+        RoutingPolicy {
+            id: self.id.clone(),
+            name: self.name.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderEndpointKind {
+    OfficialAccount,
+    RelayEndpoint,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderEndpoint {
+    pub id: String,
+    pub name: String,
+    pub kind: ProviderEndpointKind,
+    pub enabled: bool,
+    pub priority: i64,
+    pub pool_tags: Vec<String>,
+    pub health_status: EndpointHealthState,
+    pub last_health_check_at_ms: Option<i64>,
+    pub supports_balance_query: bool,
+    pub last_balance_snapshot_at_ms: Option<i64>,
+    pub pricing_profile_id: Option<String>,
+    pub credential_ref_id: Option<String>,
+    pub feature_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialKind {
+    PlatformKeySecret,
+    OfficialSession,
+    RelayApiKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CredentialRef {
+    pub id: String,
+    pub target_name: String,
+    pub version: i64,
+    pub credential_kind: CredentialKind,
+    pub last_verified_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PricingProfile {
+    pub id: String,
+    pub model: String,
+    pub input_price_per_1k_micros: i64,
+    pub output_price_per_1k_micros: i64,
+    pub cache_read_price_per_1k_micros: i64,
+    pub currency: String,
+    pub effective_from_ms: i64,
+    pub effective_to_ms: Option<i64>,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestLog {
+    pub request_id: String,
+    pub platform_key_id: String,
+    pub request_type: String,
+    pub model: String,
+    pub selected_endpoint_id: Option<String>,
+    pub attempt_count: u32,
+    pub final_status: String,
+    pub http_status: Option<i64>,
+    pub started_at_ms: i64,
+    pub finished_at_ms: Option<i64>,
+    pub latency_ms: Option<i64>,
+    pub error_code: Option<String>,
+    pub error_reason: Option<String>,
+    pub requested_context_window: Option<i64>,
+    pub requested_context_compression: Option<String>,
+    pub effective_context_window: Option<i64>,
+    pub effective_context_compression: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestAttemptLog {
+    pub attempt_id: String,
+    pub request_id: String,
+    pub attempt_index: u32,
+    pub endpoint_id: String,
+    pub pool_type: String,
+    pub trigger_reason: String,
+    pub upstream_status: Option<i64>,
+    pub timeout_ms: Option<i64>,
+    pub latency_ms: Option<i64>,
+    pub token_usage_snapshot: Option<String>,
+    pub estimated_cost_snapshot: Option<String>,
+    pub balance_snapshot_id: Option<String>,
+    pub feature_resolution_snapshot: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndpointFailure {
     Timeout,
     HttpStatus(u16),
@@ -99,6 +223,21 @@ impl FailureRules {
                 FailureClass::ServerError
             }
             EndpointFailure::HttpStatus(_) => FailureClass::Ignored,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryRules {
+    pub half_open_after_ms: u64,
+    pub success_close_after: u32,
+}
+
+impl Default for RecoveryRules {
+    fn default() -> Self {
+        Self {
+            half_open_after_ms: 15_000,
+            success_close_after: 1,
         }
     }
 }
