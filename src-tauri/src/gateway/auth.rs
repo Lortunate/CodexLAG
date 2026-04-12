@@ -124,12 +124,26 @@ impl GatewayState {
             .candidates_snapshot()
     }
 
+    pub fn has_available_endpoint_for_mode(&self, mode: &str) -> bool {
+        self.routing
+            .read()
+            .expect("gateway routing lock poisoned")
+            .has_available_endpoint_for_mode(mode)
+    }
+
     pub fn last_route_debug(&self) -> Option<RouteDebugSnapshot> {
         self.routing
             .read()
             .expect("gateway routing lock poisoned")
             .last_debug()
             .cloned()
+    }
+
+    pub fn set_all_candidates_unavailable_for_test(&self) {
+        self.routing
+            .write()
+            .expect("gateway routing lock poisoned")
+            .set_all_candidates_available_for_test(false);
     }
 
     pub fn enable_test_route_headers_for_test(&self) {

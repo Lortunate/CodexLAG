@@ -26,6 +26,7 @@ const {
         name: string;
         allowedMode: "account_only" | "relay_only" | "hybrid" | null;
         rawAllowedMode: string;
+        unavailableReason: string | null;
       }) => void)
     | null = null;
 
@@ -34,6 +35,7 @@ const {
       name: string;
       allowedMode: "account_only" | "relay_only" | "hybrid" | null;
       rawAllowedMode: string;
+      unavailableReason: string | null;
     }) {
       listener?.(summary);
     },
@@ -105,6 +107,7 @@ describe("App shell", () => {
       name: "default",
       allowedMode: "hybrid",
       rawAllowedMode: "hybrid",
+      unavailableReason: null,
     });
     getLogSummary.mockResolvedValue({
       level: "info",
@@ -242,6 +245,7 @@ describe("App shell", () => {
       name: "default",
       allowedMode: "relay_only",
       rawAllowedMode: "relay_only",
+      unavailableReason: null,
     });
   });
 
@@ -392,11 +396,28 @@ describe("App shell", () => {
         name: "default",
         allowedMode: "account_only",
         rawAllowedMode: "account_only",
+        unavailableReason: null,
       });
     });
 
     expect(
       await screen.findByText("Default key state | Current mode: account_only"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows unavailable reason when current default mode has no available endpoint", async () => {
+    getDefaultKeySummary.mockResolvedValueOnce({
+      name: "default",
+      allowedMode: "relay_only",
+      rawAllowedMode: "relay_only",
+      unavailableReason: "no available endpoint for mode 'relay_only'",
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Default key state | Current mode: relay_only")).toBeInTheDocument();
+    expect(
+      screen.getByText("no available endpoint for mode 'relay_only'"),
     ).toBeInTheDocument();
   });
 });

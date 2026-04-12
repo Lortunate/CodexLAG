@@ -3,12 +3,14 @@ export type DefaultKeyMode = "account_only" | "relay_only" | "hybrid";
 export interface RawDefaultKeySummary {
   name: string;
   allowed_mode: string;
+  unavailable_reason: string | null;
 }
 
 export interface DefaultKeySummary {
   name: string;
   allowedMode: DefaultKeyMode | null;
   rawAllowedMode: string;
+  unavailableReason: string | null;
 }
 
 export interface AccountSummary {

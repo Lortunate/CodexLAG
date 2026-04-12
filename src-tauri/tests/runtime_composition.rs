@@ -1,7 +1,10 @@
 use codexlag_lib::{
     bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test_at, runtime_database_path},
     commands::{
-        keys::{default_key_summary_from_state, set_default_key_mode_from_runtime},
+        keys::{
+            default_key_summary_from_runtime, default_key_summary_from_state,
+            set_default_key_mode_from_runtime,
+        },
         logs::{
             export_runtime_diagnostics_from_runtime, log_summary_from_runtime,
             runtime_log_metadata_from_runtime,
@@ -60,6 +63,24 @@ async fn runtime_mode_switch_updates_default_key_summary_and_tray_model() {
     assert_eq!(
         runtime.tray_model().current_mode(),
         Some(RoutingMode::RelayOnly)
+    );
+}
+
+#[tokio::test]
+async fn runtime_default_key_summary_marks_unavailable_mode_when_no_candidates_exist() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .loopback_gateway()
+        .state()
+        .set_all_candidates_unavailable_for_test();
+
+    let summary = default_key_summary_from_runtime(&runtime).expect("default key summary");
+    assert_eq!(summary.allowed_mode, HYBRID);
+    assert_eq!(
+        summary.unavailable_reason,
+        Some("no available endpoint for mode 'hybrid'".to_string())
     );
 }
 

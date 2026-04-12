@@ -16,7 +16,7 @@ pub struct TrayModel {
 impl TrayModel {
     pub fn current_mode(&self) -> Option<RoutingMode> {
         self.items.iter().find_map(|item| match item.label {
-            TrayItemLabel::CurrentMode(mode) => Some(mode),
+            TrayItemLabel::CurrentMode(mode, _) => Some(mode),
             _ => None,
         })
     }
@@ -63,9 +63,9 @@ impl TrayItemId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayItemLabel {
-    CurrentMode(RoutingMode),
+    CurrentMode(RoutingMode, Option<String>),
     Mode(RoutingMode),
     Open,
     RestartGateway,
@@ -73,9 +73,14 @@ pub enum TrayItemLabel {
 }
 
 impl TrayItemLabel {
-    pub fn text(self) -> Cow<'static, str> {
+    pub fn text(&self) -> Cow<'static, str> {
         match self {
-            Self::CurrentMode(mode) => {
+            Self::CurrentMode(mode, Some(reason)) => format!(
+                "Default key state | Current mode: {} ({reason})",
+                mode.as_str()
+            )
+            .into(),
+            Self::CurrentMode(mode, None) => {
                 format!("Default key state | Current mode: {}", mode.as_str()).into()
             }
             Self::Mode(mode) => match mode {
@@ -97,10 +102,10 @@ pub enum TrayItemKind {
     Action,
 }
 
-pub fn build_tray_model(current_mode: RoutingMode) -> TrayModel {
+pub fn build_tray_model(current_mode: RoutingMode, unavailable_reason: Option<String>) -> TrayModel {
     let mut items = vec![TrayItem {
         id: TrayItemId::CurrentMode,
-        label: TrayItemLabel::CurrentMode(current_mode),
+        label: TrayItemLabel::CurrentMode(current_mode, unavailable_reason),
         kind: TrayItemKind::Status,
     }];
 
@@ -132,7 +137,7 @@ pub fn build_tray_model(current_mode: RoutingMode) -> TrayModel {
 }
 
 pub fn build_tray_model_for_state(state: &AppState) -> TrayModel {
-    build_tray_model(state.current_mode().unwrap_or(RoutingMode::Hybrid))
+    build_tray_model(state.current_mode().unwrap_or(RoutingMode::Hybrid), None)
 }
 
 pub fn install_runtime_tray<R: Runtime>(app: &App<R>, model: &TrayModel) -> tauri::Result<()> {
@@ -142,9 +147,9 @@ pub fn install_runtime_tray<R: Runtime>(app: &App<R>, model: &TrayModel) -> taur
         model
             .items
             .iter()
-            .find(|item| item.id == TrayItemId::CurrentMode)
-            .map(|item| item.label.text())
-            .unwrap_or_else(|| Cow::Borrowed("Default key state | Current mode: hybrid"))
+                .find(|item| item.id == TrayItemId::CurrentMode)
+                .map(|item| item.label.text())
+                .unwrap_or_else(|| Cow::Borrowed("Default key state | Current mode: hybrid"))
             .as_ref(),
         false,
         None::<&str>,
@@ -252,12 +257,15 @@ fn handle_menu_event<R: Runtime>(
             if let Some(runtime) = app.try_state::<crate::state::RuntimeState>() {
                 let _ = runtime.set_current_mode(mode);
                 if let Ok(summary) =
-                    crate::commands::keys::default_key_summary_from_state(&runtime.app_state())
+                    crate::commands::keys::default_key_summary_from_runtime(&runtime)
                 {
                     let _ = crate::commands::keys::emit_default_key_summary_changed(app, &summary);
+                    let reason = summary.unavailable_reason.clone();
+                    let _ = current_mode_item
+                        .set_text(TrayItemLabel::CurrentMode(mode, reason).text().as_ref());
+                } else {
+                    let _ = current_mode_item.set_text(TrayItemLabel::CurrentMode(mode, None).text().as_ref());
                 }
-                let _ =
-                    current_mode_item.set_text(TrayItemLabel::CurrentMode(mode).text().as_ref());
                 let _ = account_only_item.set_checked(mode == RoutingMode::AccountOnly);
                 let _ = relay_only_item.set_checked(mode == RoutingMode::RelayOnly);
                 let _ = hybrid_item.set_checked(mode == RoutingMode::Hybrid);

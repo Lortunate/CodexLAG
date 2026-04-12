@@ -45,6 +45,7 @@ function parseDefaultKeySummary(summary: RawDefaultKeySummary): DefaultKeySummar
     name: summary.name,
     allowedMode: parseDefaultKeyMode(summary.allowed_mode),
     rawAllowedMode: summary.allowed_mode,
+    unavailableReason: summary.unavailable_reason,
   };
 }
 

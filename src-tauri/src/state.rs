@@ -9,7 +9,7 @@ use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
 use crate::models::{PlatformKey, RoutingPolicy};
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
-use crate::tray::{build_tray_model_for_state, TrayModel};
+use crate::tray::{build_tray_model, TrayModel};
 
 pub struct AppState {
     repositories: Repositories,
@@ -140,7 +140,20 @@ impl RuntimeState {
     }
 
     pub fn tray_model(&self) -> TrayModel {
-        build_tray_model_for_state(&self.app_state())
+        let mode = self
+            .app_state()
+            .current_mode()
+            .unwrap_or(RoutingMode::Hybrid);
+        let unavailable_reason = if self
+            .loopback_gateway
+            .state()
+            .has_available_endpoint_for_mode(mode.as_str())
+        {
+            None
+        } else {
+            Some(format!("no available endpoint for mode '{}'", mode.as_str()))
+        };
+        build_tray_model(mode, unavailable_reason)
     }
 
     pub fn current_mode(&self) -> RoutingMode {

@@ -59,6 +59,16 @@ impl RuntimeRoutingState {
         self.last_debug.as_ref()
     }
 
+    pub fn has_available_endpoint_for_mode(&self, mode: &str) -> bool {
+        choose_endpoint_at(mode, &self.candidates, wall_clock_now_ms()).is_ok()
+    }
+
+    pub fn set_all_candidates_available_for_test(&mut self, available: bool) {
+        for candidate in &mut self.candidates {
+            candidate.available = available;
+        }
+    }
+
     pub fn choose_with_failover<F>(
         &mut self,
         request_id: &str,
