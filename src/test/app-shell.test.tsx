@@ -7,6 +7,7 @@ const {
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
+  getRuntimeLogMetadata,
   getRelayCapabilityDetail,
   getUsageRequestDetail,
   listenForDefaultKeySummaryChanged,
@@ -38,6 +39,7 @@ const {
     getAccountCapabilityDetail: vi.fn(),
     getDefaultKeySummary: vi.fn(),
     getLogSummary: vi.fn(),
+    getRuntimeLogMetadata: vi.fn(),
     getRelayCapabilityDetail: vi.fn(),
     getUsageRequestDetail: vi.fn(),
     listenForDefaultKeySummaryChanged: vi.fn(async (handler) => {
@@ -61,6 +63,7 @@ vi.mock("../lib/tauri", () => ({
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
+  getRuntimeLogMetadata,
   getRelayCapabilityDetail,
   getUsageRequestDetail,
   listenForDefaultKeySummaryChanged,
@@ -81,6 +84,7 @@ describe("App shell", () => {
     getAccountCapabilityDetail.mockReset();
     getDefaultKeySummary.mockReset();
     getLogSummary.mockReset();
+    getRuntimeLogMetadata.mockReset();
     getRelayCapabilityDetail.mockReset();
     getUsageRequestDetail.mockReset();
     listenForDefaultKeySummaryChanged.mockClear();
@@ -101,6 +105,10 @@ describe("App shell", () => {
     getLogSummary.mockResolvedValue({
       level: "info",
       last_event: "Loopback gateway ready for key 'default' in hybrid mode",
+    });
+    getRuntimeLogMetadata.mockResolvedValue({
+      log_dir: "/tmp/codexlag/logs",
+      files: ["gateway.log", "gateway.1.log"],
     });
     listAccounts.mockResolvedValue([
       { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
@@ -236,6 +244,7 @@ describe("App shell", () => {
     expect(await screen.findByText("Runtime status")).toBeInTheDocument();
     expect(screen.getByText("Balance observability")).toBeInTheDocument();
     expect(screen.getByText("Usage ledger")).toBeInTheDocument();
+    expect(screen.getByText("Runtime diagnostics")).toBeInTheDocument();
     expect(screen.getByText("Default key state | Current mode: hybrid")).toBeInTheDocument();
     expect(screen.getByText("Non-queryable accounts: 1")).toBeInTheDocument();
     expect(screen.getByText("Queryable relays: 1")).toBeInTheDocument();
@@ -243,6 +252,8 @@ describe("App shell", () => {
     expect(screen.getByText("Relay refresh failures: 0")).toBeInTheDocument();
     expect(screen.getByText("Total ledger tokens: 222")).toBeInTheDocument();
     expect(screen.getByText("Usage cost provenance: unknown")).toBeInTheDocument();
+    expect(screen.getByText("Log directory: /tmp/codexlag/logs")).toBeInTheDocument();
+    expect(screen.getByText("Tracked log files: 2")).toBeInTheDocument();
     expect(queryUsageLedger).toHaveBeenCalledTimes(1);
   });
 

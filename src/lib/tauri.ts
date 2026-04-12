@@ -13,6 +13,7 @@ import type {
   RelayBalanceSnapshot,
   RelayCapabilityDetail,
   RelaySummary,
+  RuntimeLogMetadata,
   UsageLedger,
   UsageLedgerQuery,
   UsageRequestDetail,
@@ -118,6 +119,10 @@ export function listPolicies() {
 
 export function getLogSummary() {
   return invoke<LogSummary>("get_log_summary");
+}
+
+export function getRuntimeLogMetadata() {
+  return invoke<RuntimeLogMetadata>("get_runtime_log_metadata");
 }
 
 export function getUsageRequestDetail(requestId: string) {

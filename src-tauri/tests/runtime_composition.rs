@@ -2,7 +2,7 @@ use codexlag_lib::{
     bootstrap::{bootstrap_runtime_for_test, runtime_database_path},
     commands::{
         keys::{default_key_summary_from_state, set_default_key_mode_from_runtime},
-        logs::log_summary_from_runtime,
+        logs::{log_summary_from_runtime, runtime_log_metadata_from_runtime},
         policies::policy_summaries_from_state,
     },
     routing::policy::{RoutingMode, HYBRID, RELAY_ONLY},
@@ -80,4 +80,25 @@ fn runtime_database_path_uses_app_local_data_dir_with_sqlite_filename() {
         derived,
         std::path::PathBuf::from("/tmp/codexlag-app").join("codexlag.sqlite3")
     );
+}
+
+#[tokio::test]
+async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let log_dir = runtime.runtime_log().log_dir.clone();
+    std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
+    let first = log_dir.join("gateway.log");
+    let second = log_dir.join("gateway.1.log");
+    std::fs::write(&first, "first").expect("write first log");
+    std::fs::write(&second, "second").expect("write second log");
+
+    let metadata = runtime_log_metadata_from_runtime(&runtime).expect("runtime log metadata");
+
+    assert_eq!(metadata.log_dir, log_dir.to_string_lossy());
+    assert!(metadata.files.contains(&"gateway.log".to_string()));
+    assert!(metadata.files.contains(&"gateway.1.log".to_string()));
+    assert!(metadata.files.len() <= 20);
 }

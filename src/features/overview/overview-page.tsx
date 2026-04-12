@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   getDefaultKeySummary,
   getLogSummary,
+  getRuntimeLogMetadata,
   listAccounts,
   listRelays,
   listenForDefaultKeySummaryChanged,
@@ -15,6 +16,7 @@ import type {
   DefaultKeySummary,
   LogSummary,
   RelayBalanceSnapshot,
+  RuntimeLogMetadata,
   UsageLedger,
 } from "../../lib/types";
 import { DefaultKeyModeToggle } from "../default-key/default-key-mode-toggle";
@@ -33,6 +35,7 @@ export function OverviewPage() {
   const [logSummary, setLogSummary] = useState<LogSummary | null>(null);
   const [relayRefreshFailures, setRelayRefreshFailures] = useState(0);
   const [relayBalances, setRelayBalances] = useState<RelayBalanceSnapshot[]>([]);
+  const [runtimeLogMetadata, setRuntimeLogMetadata] = useState<RuntimeLogMetadata | null>(null);
   const [summary, setSummary] = useState<DefaultKeySummary>(initialSummary);
   const [usageLedger, setUsageLedger] = useState<UsageLedger | null>(null);
 
@@ -42,13 +45,15 @@ export function OverviewPage() {
 
     const loadOverview = async () => {
       try {
-        const [nextSummary, nextLogSummary, accountList, relayList, nextLedger] = await Promise.all([
-          getDefaultKeySummary(),
-          getLogSummary(),
-          listAccounts(),
-          listRelays(),
-          queryUsageLedger(),
-        ]);
+        const [nextSummary, nextLogSummary, accountList, relayList, nextLedger, nextRuntimeLogMetadata] =
+          await Promise.all([
+            getDefaultKeySummary(),
+            getLogSummary(),
+            listAccounts(),
+            listRelays(),
+            queryUsageLedger(),
+            getRuntimeLogMetadata(),
+          ]);
 
         const [nextAccountBalances, nextRelayBalances] = await Promise.all([
           Promise.all(
@@ -86,6 +91,7 @@ export function OverviewPage() {
         setAccountRefreshFailures(nextAccountBalances.filter((snapshot) => snapshot === null).length);
         setRelayRefreshFailures(nextRelayBalances.filter((snapshot) => snapshot === null).length);
         setUsageLedger(nextLedger);
+        setRuntimeLogMetadata(nextRuntimeLogMetadata);
         setErrorMessage(null);
       } catch {
         if (isMounted) {
@@ -167,6 +173,11 @@ export function OverviewPage() {
           <h3>Usage ledger</h3>
           <p>Total ledger tokens: {usageLedger?.total_tokens ?? 0}</p>
           <p>Usage cost provenance: {usageLedger?.total_cost.provenance ?? "unknown"}</p>
+        </article>
+        <article className="status-card">
+          <h3>Runtime diagnostics</h3>
+          <p>Log directory: {runtimeLogMetadata?.log_dir ?? "loading"}</p>
+          <p>Tracked log files: {runtimeLogMetadata?.files.length ?? 0}</p>
         </article>
       </div>
       <DefaultKeyModeToggle

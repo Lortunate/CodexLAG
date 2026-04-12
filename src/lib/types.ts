@@ -130,3 +130,8 @@ export interface LogSummary {
   last_event: string;
   level: string;
 }
+
+export interface RuntimeLogMetadata {
+  log_dir: string;
+  files: string[];
+}

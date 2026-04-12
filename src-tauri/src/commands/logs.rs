@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::time::SystemTime;
 use tauri::State;
 
 use crate::logging::usage::{
@@ -11,6 +12,12 @@ use crate::state::RuntimeState;
 pub struct LogSummary {
     pub last_event: String,
     pub level: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RuntimeLogMetadata {
+    pub log_dir: String,
+    pub files: Vec<String>,
 }
 
 pub fn log_summary_from_runtime(runtime: &RuntimeState) -> LogSummary {
@@ -36,6 +43,53 @@ pub fn log_summary_from_runtime(runtime: &RuntimeState) -> LogSummary {
 #[tauri::command]
 pub fn get_log_summary(state: State<'_, RuntimeState>) -> LogSummary {
     log_summary_from_runtime(&state)
+}
+
+pub fn runtime_log_metadata_from_runtime(
+    runtime: &RuntimeState,
+) -> Result<RuntimeLogMetadata, String> {
+    const MAX_FILES: usize = 20;
+
+    let log_dir = runtime.runtime_log().log_dir.clone();
+    let mut files = match std::fs::read_dir(&log_dir) {
+        Ok(entries) => entries
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| {
+                let file_type = entry.file_type().ok()?;
+                if !file_type.is_file() {
+                    return None;
+                }
+
+                let file_name = entry.file_name().to_string_lossy().to_string();
+                let modified = entry
+                    .metadata()
+                    .and_then(|metadata| metadata.modified())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+
+                Some((file_name, modified))
+            })
+            .collect::<Vec<_>>(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(format!("failed to read runtime log directory: {error}")),
+    };
+
+    files.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+
+    Ok(RuntimeLogMetadata {
+        log_dir: log_dir.to_string_lossy().to_string(),
+        files: files
+            .into_iter()
+            .take(MAX_FILES)
+            .map(|(file_name, _)| file_name)
+            .collect(),
+    })
+}
+
+#[tauri::command]
+pub fn get_runtime_log_metadata(
+    state: State<'_, RuntimeState>,
+) -> Result<RuntimeLogMetadata, String> {
+    runtime_log_metadata_from_runtime(&state)
 }
 
 #[tauri::command]

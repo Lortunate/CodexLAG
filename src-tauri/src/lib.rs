@@ -58,6 +58,7 @@ pub fn run() {
             commands::keys::set_default_key_mode,
             commands::policies::list_policies,
             commands::logs::get_log_summary,
+            commands::logs::get_runtime_log_metadata,
             commands::logs::get_usage_request_detail,
             commands::logs::list_usage_request_history,
             commands::logs::query_usage_ledger
