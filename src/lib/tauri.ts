@@ -125,6 +125,10 @@ export function getRuntimeLogMetadata() {
   return invoke<RuntimeLogMetadata>("get_runtime_log_metadata");
 }
 
+export function exportRuntimeDiagnostics() {
+  return invoke<string>("export_runtime_diagnostics");
+}
+
 export function getUsageRequestDetail(requestId: string) {
   return invoke<UsageRequestDetail | null>("get_usage_request_detail", { request_id: requestId });
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  exportRuntimeDiagnostics,
   getDefaultKeySummary,
   getLogSummary,
   getRuntimeLogMetadata,
@@ -37,6 +38,8 @@ export function OverviewPage() {
   const [relayBalances, setRelayBalances] = useState<RelayBalanceSnapshot[]>([]);
   const [runtimeLogMetadata, setRuntimeLogMetadata] = useState<RuntimeLogMetadata | null>(null);
   const [runtimeLogDiagnosticsUnavailable, setRuntimeLogDiagnosticsUnavailable] = useState(false);
+  const [runtimeDiagnosticsManifestPath, setRuntimeDiagnosticsManifestPath] = useState<string | null>(null);
+  const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
   const [summary, setSummary] = useState<DefaultKeySummary>(initialSummary);
   const [usageLedger, setUsageLedger] = useState<UsageLedger | null>(null);
 
@@ -160,6 +163,22 @@ export function OverviewPage() {
     }
   }
 
+  async function handleExportDiagnostics() {
+    if (isExportingDiagnostics) {
+      return;
+    }
+
+    setIsExportingDiagnostics(true);
+    try {
+      const manifestPath = await exportRuntimeDiagnostics();
+      setRuntimeDiagnosticsManifestPath(manifestPath);
+    } catch {
+      setRuntimeDiagnosticsManifestPath("unavailable");
+    } finally {
+      setIsExportingDiagnostics(false);
+    }
+  }
+
   const nonQueryableAccountCount = accountBalances.filter(
     (snapshot) => snapshot.balance.kind === "non_queryable",
   ).length;
@@ -197,6 +216,12 @@ export function OverviewPage() {
             {runtimeLogMetadata?.log_dir ?? (runtimeLogDiagnosticsUnavailable ? "unavailable" : "loading")}
           </p>
           <p>Tracked log files: {runtimeLogMetadata?.files.length ?? 0}</p>
+          <button type="button" onClick={handleExportDiagnostics} disabled={isExportingDiagnostics}>
+            Export diagnostics
+          </button>
+          {runtimeDiagnosticsManifestPath ? (
+            <p>Diagnostics manifest: {runtimeDiagnosticsManifestPath}</p>
+          ) : null}
         </article>
       </div>
       <DefaultKeyModeToggle

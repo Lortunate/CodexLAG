@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   emitDefaultKeySummaryChanged,
+  exportRuntimeDiagnostics,
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
@@ -36,6 +37,7 @@ const {
     }) {
       listener?.(summary);
     },
+    exportRuntimeDiagnostics: vi.fn(),
     getAccountCapabilityDetail: vi.fn(),
     getDefaultKeySummary: vi.fn(),
     getLogSummary: vi.fn(),
@@ -64,6 +66,7 @@ vi.mock("../lib/tauri", () => ({
   getDefaultKeySummary,
   getLogSummary,
   getRuntimeLogMetadata,
+  exportRuntimeDiagnostics,
   getRelayCapabilityDetail,
   getUsageRequestDetail,
   listenForDefaultKeySummaryChanged,
@@ -81,6 +84,7 @@ import App from "../App";
 
 describe("App shell", () => {
   beforeEach(() => {
+    exportRuntimeDiagnostics.mockReset();
     getAccountCapabilityDetail.mockReset();
     getDefaultKeySummary.mockReset();
     getLogSummary.mockReset();
@@ -110,6 +114,9 @@ describe("App shell", () => {
       log_dir: "<app-local-data>/logs",
       files: ["gateway.log", "gateway.1.log"],
     });
+    exportRuntimeDiagnostics.mockResolvedValue(
+      "<app-local-data>/logs/diagnostics/diagnostics-manifest.txt",
+    );
     listAccounts.mockResolvedValue([
       { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
     ]);
@@ -245,6 +252,7 @@ describe("App shell", () => {
     expect(screen.getByText("Balance observability")).toBeInTheDocument();
     expect(screen.getByText("Usage ledger")).toBeInTheDocument();
     expect(screen.getByText("Runtime diagnostics")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export diagnostics" })).toBeInTheDocument();
     expect(screen.getByText("Default key state | Current mode: hybrid")).toBeInTheDocument();
     expect(screen.getByText("Non-queryable accounts: 1")).toBeInTheDocument();
     expect(screen.getByText("Queryable relays: 1")).toBeInTheDocument();
@@ -255,6 +263,25 @@ describe("App shell", () => {
     expect(screen.getByText("Log directory: <app-local-data>/logs")).toBeInTheDocument();
     expect(screen.getByText("Tracked log files: 2")).toBeInTheDocument();
     expect(queryUsageLedger).toHaveBeenCalledTimes(1);
+  });
+
+  it("exports runtime diagnostics and renders manifest path fallback", async () => {
+    render(<App />);
+
+    const exportButton = await screen.findByRole("button", { name: "Export diagnostics" });
+    fireEvent.click(exportButton);
+
+    expect(exportRuntimeDiagnostics).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText(
+        "Diagnostics manifest: <app-local-data>/logs/diagnostics/diagnostics-manifest.txt",
+      ),
+    ).toBeInTheDocument();
+
+    exportRuntimeDiagnostics.mockRejectedValueOnce(new Error("export failed"));
+    fireEvent.click(exportButton);
+
+    expect(await screen.findByText("Diagnostics manifest: unavailable")).toBeInTheDocument();
   });
 
   it("keeps overview available when runtime diagnostics loading fails", async () => {

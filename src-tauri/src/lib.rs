@@ -59,6 +59,7 @@ pub fn run() {
             commands::policies::list_policies,
             commands::logs::get_log_summary,
             commands::logs::get_runtime_log_metadata,
+            commands::logs::export_runtime_diagnostics,
             commands::logs::get_usage_request_detail,
             commands::logs::list_usage_request_history,
             commands::logs::query_usage_ledger

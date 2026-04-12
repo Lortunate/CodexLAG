@@ -111,6 +111,41 @@ pub fn get_runtime_log_metadata(
     runtime_log_metadata_from_runtime(&state)
 }
 
+#[tauri::command]
+pub fn export_runtime_diagnostics(state: State<'_, RuntimeState>) -> Result<String, String> {
+    export_runtime_diagnostics_from_runtime(&state)
+}
+
+pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result<String, String> {
+    let metadata = runtime_log_metadata_from_runtime(runtime)?;
+    let log_dir = runtime.runtime_log().log_dir.clone();
+    let diagnostics_dir = log_dir.join("diagnostics");
+    std::fs::create_dir_all(&diagnostics_dir)
+        .map_err(|error| format!("failed to create diagnostics directory: {error}"))?;
+
+    let generated_at_unix = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(|error| format!("failed to derive diagnostics timestamp: {error}"))?
+        .as_secs();
+
+    let manifest_path = diagnostics_dir.join("diagnostics-manifest.txt");
+    let mut manifest = format!(
+        "generated_at_unix={generated_at_unix}\nlog_dir={}\nfiles_count={}\nfiles:\n",
+        metadata.log_dir,
+        metadata.files.len()
+    );
+    for file_name in metadata.files {
+        manifest.push_str("- ");
+        manifest.push_str(&file_name);
+        manifest.push('\n');
+    }
+
+    std::fs::write(&manifest_path, manifest)
+        .map_err(|error| format!("failed to write diagnostics manifest: {error}"))?;
+
+    Ok(manifest_path.to_string_lossy().to_string())
+}
+
 fn sanitize_log_dir_for_display(path: &Path) -> String {
     match path.file_name().and_then(|name| name.to_str()) {
         Some("logs") => "<app-local-data>/logs".into(),

@@ -2,7 +2,10 @@ use codexlag_lib::{
     bootstrap::{bootstrap_runtime_for_test, runtime_database_path},
     commands::{
         keys::{default_key_summary_from_state, set_default_key_mode_from_runtime},
-        logs::{log_summary_from_runtime, runtime_log_metadata_from_runtime},
+        logs::{
+            export_runtime_diagnostics_from_runtime, log_summary_from_runtime,
+            runtime_log_metadata_from_runtime,
+        },
         policies::policy_summaries_from_state,
     },
     routing::policy::{RoutingMode, HYBRID, RELAY_ONLY},
@@ -101,4 +104,30 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
     assert_ne!(metadata.log_dir, log_dir.to_string_lossy());
     assert!(metadata.files.iter().all(|file_name| file_name.ends_with(".log")));
     assert!(metadata.files.len() <= 20);
+}
+
+#[tokio::test]
+async fn diagnostics_export_returns_manifest_path() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let log_dir = runtime.runtime_log().log_dir.clone();
+    std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
+    std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
+
+    let manifest_path =
+        export_runtime_diagnostics_from_runtime(&runtime).expect("export runtime diagnostics");
+    let manifest_path = std::path::PathBuf::from(manifest_path);
+
+    assert_eq!(manifest_path.file_name().and_then(|name| name.to_str()), Some("diagnostics-manifest.txt"));
+    assert!(manifest_path.ends_with("diagnostics/diagnostics-manifest.txt"));
+    assert!(manifest_path.exists());
+
+    let manifest_contents =
+        std::fs::read_to_string(&manifest_path).expect("read diagnostics manifest content");
+    assert!(manifest_contents.contains("generated_at_unix="));
+    assert!(manifest_contents.contains("log_dir=<app-local-data>/logs"));
+    assert!(manifest_contents.contains("files_count="));
+    assert!(manifest_contents.contains("- gateway-export.log"));
 }
