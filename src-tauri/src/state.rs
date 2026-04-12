@@ -92,11 +92,11 @@ pub struct RuntimeState {
     app_state: Arc<RwLock<AppState>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     loopback_gateway: LoopbackGateway,
-    pub runtime_log: RuntimeLogConfig,
+    runtime_log: RuntimeLogConfig,
 }
 
 impl RuntimeState {
-    pub fn new(app_state: AppState) -> Self {
+    pub fn new(app_state: AppState, runtime_log: RuntimeLogConfig) -> Self {
         let app_state = Arc::new(RwLock::new(app_state));
         let usage_records = Arc::new(RwLock::new(Vec::new()));
         let loopback_gateway =
@@ -106,9 +106,7 @@ impl RuntimeState {
             app_state,
             usage_records,
             loopback_gateway,
-            runtime_log: RuntimeLogConfig {
-                log_dir: PathBuf::new(),
-            },
+            runtime_log,
         }
     }
 
@@ -120,6 +118,10 @@ impl RuntimeState {
 
     pub fn loopback_gateway(&self) -> &LoopbackGateway {
         &self.loopback_gateway
+    }
+
+    pub fn runtime_log(&self) -> &RuntimeLogConfig {
+        &self.runtime_log
     }
 
     pub fn usage_records(&self) -> Vec<UsageRecord> {

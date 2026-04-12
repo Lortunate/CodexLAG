@@ -8,7 +8,7 @@ use crate::{
     models::{PlatformKey, RoutingPolicy},
     routing::policy::HYBRID,
     secret_store::{SecretKey, SecretStore},
-    state::{AppState, RuntimeState},
+    state::{AppState, RuntimeLogConfig, RuntimeState},
 };
 
 const DEFAULT_POLICY_ID: &str = "policy-default";
@@ -66,7 +66,16 @@ pub fn bootstrap_state_at(database_path: impl AsRef<Path>) -> Result<AppState> {
 }
 
 pub fn bootstrap_runtime_at(database_path: impl AsRef<Path>) -> Result<RuntimeState> {
-    bootstrap_state_at(database_path).map(RuntimeState::new)
+    let database_path = database_path.as_ref();
+    let app_state = bootstrap_state_at(database_path)?;
+    let app_local_data_dir = database_path
+        .parent()
+        .ok_or_else(|| CodexLagError::new("runtime database path has no parent directory"))?;
+    let runtime_log = RuntimeLogConfig {
+        log_dir: runtime_log_dir(app_local_data_dir),
+    };
+
+    Ok(RuntimeState::new(app_state, runtime_log))
 }
 
 pub fn runtime_database_path(app_local_data_dir: impl AsRef<Path>) -> PathBuf {
@@ -87,7 +96,16 @@ pub async fn bootstrap_state_for_test_at(database_path: impl AsRef<Path>) -> Res
 }
 
 pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
-    bootstrap_state_for_test().await.map(RuntimeState::new)
+    let database_path = test_database_path();
+    let app_state = bootstrap_state_for_test_at(&database_path).await?;
+    let app_local_data_dir = database_path
+        .parent()
+        .ok_or_else(|| CodexLagError::new("runtime database path has no parent directory"))?;
+    let runtime_log = RuntimeLogConfig {
+        log_dir: runtime_log_dir(app_local_data_dir),
+    };
+
+    Ok(RuntimeState::new(app_state, runtime_log))
 }
 
 fn test_database_path() -> PathBuf {
