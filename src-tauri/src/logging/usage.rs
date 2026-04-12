@@ -1,5 +1,7 @@
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
 
+pub const USAGE_RECORD_RETENTION_CAP: usize = 10_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageRecordInput {
     pub request_id: String,
@@ -118,6 +120,20 @@ pub fn record_request(input: UsageRecordInput) -> UsageRecord {
         cache_write_tokens: input.cache_write_tokens,
         estimated_cost: input.estimated_cost,
     }
+}
+
+pub fn append_usage_record(records: &mut Vec<UsageRecord>, input: UsageRecordInput) {
+    records.push(record_request(input));
+    enforce_usage_record_retention(records);
+}
+
+fn enforce_usage_record_retention(records: &mut Vec<UsageRecord>) {
+    if records.len() <= USAGE_RECORD_RETENTION_CAP {
+        return;
+    }
+
+    let overflow = records.len() - USAGE_RECORD_RETENTION_CAP;
+    records.drain(0..overflow);
 }
 
 pub fn request_detail(records: &[UsageRecord], request_id: &str) -> Option<UsageRequestDetail> {

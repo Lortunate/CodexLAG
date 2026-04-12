@@ -65,7 +65,7 @@ async fn codex_request(
 
     let endpoint_id = selected.id.clone();
     gateway_state.record_usage_request(UsageRecordInput {
-        request_id: format!("{}:{now_ms}:{endpoint_id}", platform_key.name),
+        request_id: gateway_state.next_request_id(&platform_key.name, now_ms, &endpoint_id),
         endpoint_id: endpoint_id.clone(),
         input_tokens: 0,
         output_tokens: 0,

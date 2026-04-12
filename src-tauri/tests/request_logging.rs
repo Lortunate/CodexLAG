@@ -1,6 +1,6 @@
 use codexlag_lib::logging::usage::{
-    query_usage_ledger, record_request, request_detail, request_history, UsageLedgerQuery,
-    UsageProvenance, UsageRecordInput,
+    append_usage_record, query_usage_ledger, record_request, request_detail, request_history,
+    UsageLedgerQuery, UsageProvenance, UsageRecordInput, USAGE_RECORD_RETENTION_CAP,
 };
 use serde_json::{from_str, to_string};
 
@@ -124,4 +124,37 @@ fn usage_query_helpers_expose_estimated_and_unknown_provenance() {
     assert_eq!(filtered.total_tokens, 62);
     assert_eq!(filtered.total_cost.provenance, UsageProvenance::Unknown);
     assert_eq!(filtered.total_cost.amount, None);
+}
+
+#[test]
+fn append_usage_record_caps_history_and_drops_oldest_entries() {
+    let overflow = 3;
+    let total = USAGE_RECORD_RETENTION_CAP + overflow;
+    let mut records = Vec::new();
+
+    for idx in 0..total {
+        append_usage_record(
+            &mut records,
+            UsageRecordInput {
+                request_id: format!("req-{idx}"),
+                endpoint_id: "official-default".into(),
+                input_tokens: 1,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                estimated_cost: String::new(),
+            },
+        );
+    }
+
+    assert_eq!(records.len(), USAGE_RECORD_RETENTION_CAP);
+    assert_eq!(
+        records.first().map(|record| record.request_id.as_str()),
+        Some("req-3")
+    );
+    let expected_last = format!("req-{}", total - 1);
+    assert_eq!(
+        records.last().map(|record| record.request_id.as_str()),
+        Some(expected_last.as_str())
+    );
 }

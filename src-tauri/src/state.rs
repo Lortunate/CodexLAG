@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use crate::db::repositories::Repositories;
 use crate::gateway::server::LoopbackGateway;
-use crate::logging::usage::{record_request, UsageRecord, UsageRecordInput};
+use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
 use crate::models::{PlatformKey, RoutingPolicy};
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
@@ -122,7 +122,7 @@ impl RuntimeState {
             .usage_records
             .write()
             .expect("runtime usage records lock poisoned");
-        records.push(record_request(input));
+        append_usage_record(&mut records, input);
     }
 
     pub fn tray_model(&self) -> TrayModel {

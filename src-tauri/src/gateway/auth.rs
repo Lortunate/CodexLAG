@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, RwLock, RwLockReadGuard,
+};
 
 use axum::{
     extract::FromRequestParts,
@@ -6,7 +9,7 @@ use axum::{
 };
 
 use crate::{
-    logging::usage::{record_request, UsageRecord, UsageRecordInput},
+    logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
     models::{PlatformKey, RoutingPolicy},
     state::AppState,
 };
@@ -15,6 +18,7 @@ use crate::{
 pub struct GatewayState {
     app_state: Arc<RwLock<AppState>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+    request_sequence: Arc<AtomicU64>,
 }
 
 impl GatewayState {
@@ -25,6 +29,7 @@ impl GatewayState {
         Self {
             app_state,
             usage_records,
+            request_sequence: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -56,7 +61,17 @@ impl GatewayState {
             .usage_records
             .write()
             .expect("gateway usage records lock poisoned");
-        records.push(record_request(input));
+        append_usage_record(&mut records, input);
+    }
+
+    pub fn next_request_id(
+        &self,
+        platform_key_name: &str,
+        now_ms: u64,
+        endpoint_id: &str,
+    ) -> String {
+        let sequence = self.request_sequence.fetch_add(1, Ordering::Relaxed);
+        format!("{platform_key_name}:{now_ms}:{endpoint_id}:{sequence}")
     }
 }
 

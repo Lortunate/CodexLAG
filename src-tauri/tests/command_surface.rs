@@ -4,15 +4,16 @@ use axum::{
 };
 use codexlag_lib::commands::accounts::get_account_capability_detail;
 use codexlag_lib::commands::logs::{
-    usage_ledger_from_runtime, usage_request_detail_from_runtime, usage_request_history_from_runtime,
+    usage_ledger_from_runtime, usage_request_detail_from_runtime,
+    usage_request_history_from_runtime,
 };
 use codexlag_lib::commands::relays::{get_relay_capability_detail, RelayCapabilityDetail};
-use codexlag_lib::{
-    bootstrap::bootstrap_runtime_for_test, routing::policy::RoutingMode, secret_store::SecretKey,
-};
 use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance, UsageRecordInput};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
+use codexlag_lib::{
+    bootstrap::bootstrap_runtime_for_test, routing::policy::RoutingMode, secret_store::SecretKey,
+};
 use tower::ServiceExt;
 
 #[test]
@@ -96,11 +97,14 @@ async fn usage_commands_expose_request_detail_history_and_ledger_provenance() {
     let history = usage_request_history_from_runtime(&runtime, Some(1));
     assert_eq!(history.len(), 1);
 
-    let ledger = usage_ledger_from_runtime(&runtime, Some(UsageLedgerQuery {
-        endpoint_id: Some("relay-default".to_string()),
-        request_id_prefix: None,
-        limit: None,
-    }));
+    let ledger = usage_ledger_from_runtime(
+        &runtime,
+        Some(UsageLedgerQuery {
+            endpoint_id: Some("relay-default".to_string()),
+            request_id_prefix: None,
+            limit: None,
+        }),
+    );
     assert_eq!(ledger.entries.len(), 1);
     assert_eq!(ledger.total_cost.provenance, UsageProvenance::Unknown);
     assert_eq!(ledger.total_cost.amount, None);
@@ -147,22 +151,29 @@ async fn usage_commands_reflect_runtime_gateway_requests_only() {
         "exactly one data-plane request should be recorded after one request"
     );
 
-    let relay_entries = usage_ledger_from_runtime(&runtime, Some(UsageLedgerQuery {
-        endpoint_id: Some("relay-default".to_string()),
-        request_id_prefix: None,
-        limit: None,
-    }));
-    assert_eq!(relay_entries.entries.len(), 1);
-    let key_entries = usage_ledger_from_runtime(&runtime, Some(UsageLedgerQuery {
-        endpoint_id: None,
-        request_id_prefix: Some("default:".to_string()),
-        limit: None,
-    }));
-    assert_eq!(key_entries.entries.len(), 1);
-    assert!(
-        usage_request_detail_from_runtime(&runtime, relay_entries.entries[0].request_id.as_str())
-            .is_some()
+    let relay_entries = usage_ledger_from_runtime(
+        &runtime,
+        Some(UsageLedgerQuery {
+            endpoint_id: Some("relay-default".to_string()),
+            request_id_prefix: None,
+            limit: None,
+        }),
     );
+    assert_eq!(relay_entries.entries.len(), 1);
+    let key_entries = usage_ledger_from_runtime(
+        &runtime,
+        Some(UsageLedgerQuery {
+            endpoint_id: None,
+            request_id_prefix: Some("default:".to_string()),
+            limit: None,
+        }),
+    );
+    assert_eq!(key_entries.entries.len(), 1);
+    assert!(usage_request_detail_from_runtime(
+        &runtime,
+        relay_entries.entries[0].request_id.as_str()
+    )
+    .is_some());
 
     runtime
         .set_current_mode(RoutingMode::Hybrid)
@@ -172,5 +183,36 @@ async fn usage_commands_reflect_runtime_gateway_requests_only() {
         history_after_control_plane.len(),
         1,
         "control-plane mode changes must not add usage request entries"
+    );
+}
+
+#[tokio::test]
+async fn unauthorized_gateway_request_does_not_create_usage_record() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    assert!(
+        usage_request_history_from_runtime(&runtime, None).is_empty(),
+        "history should start empty"
+    );
+
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", "bearer wrong-platform-secret")
+                .body(Body::empty())
+                .expect("gateway request"),
+        )
+        .await
+        .expect("gateway response");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        usage_request_history_from_runtime(&runtime, None).is_empty(),
+        "unauthorized requests must not be recorded"
     );
 }
