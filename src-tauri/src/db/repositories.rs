@@ -7,15 +7,11 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::db::migrations::ensure_schema_up_to_date;
 use crate::error::{CodexLagError, Result};
-use crate::models::{
-    ExpandedRoutingPolicy, PlatformKey, PricingProfile, RequestAttemptLog, RequestLog,
-    RoutingPolicy,
-};
+use crate::models::{PlatformKey, PricingProfile, RequestAttemptLog, RequestLog, RoutingPolicy};
 
 pub struct Repositories {
     database_path: PathBuf,
     policies: HashMap<String, RoutingPolicy>,
-    expanded_policies: HashMap<String, ExpandedRoutingPolicy>,
     keys: HashMap<String, PlatformKey>,
 }
 
@@ -35,17 +31,12 @@ impl Repositories {
         let connection = Self::open_sqlite(&database_path)?;
         ensure_schema_up_to_date(&connection)?;
 
-        let expanded_policies = Self::load_policies(&connection)?;
-        let policies = expanded_policies
-            .values()
-            .map(|policy| (policy.name.clone(), policy.as_routing_policy()))
-            .collect();
+        let policies = Self::load_policies(&connection)?;
         let keys = Self::load_platform_keys(&connection)?;
 
         Ok(Self {
             database_path,
             policies,
-            expanded_policies,
             keys,
         })
     }
@@ -60,10 +51,10 @@ impl Repositories {
             )));
         }
 
-        self.save_policy(ExpandedRoutingPolicy::from_routing_policy(policy))
+        self.save_policy(policy)
     }
 
-    pub fn save_policy(&mut self, policy: ExpandedRoutingPolicy) -> Result<()> {
+    pub fn save_policy(&mut self, policy: RoutingPolicy) -> Result<()> {
         let selection_order = encode_json(&policy.selection_order, "selection_order")?;
         let failure_rules = encode_json(&policy.failure_rules, "failure_rules")?;
         let recovery_rules = encode_json(&policy.recovery_rules, "recovery_rules")?;
@@ -108,8 +99,7 @@ impl Repositories {
             })?;
 
         self.policies
-            .insert(policy.name.clone(), policy.as_routing_policy());
-        self.expanded_policies.insert(policy.name.clone(), policy);
+            .insert(policy.name.clone(), policy);
         Ok(())
     }
 
@@ -149,10 +139,6 @@ impl Repositories {
 
     pub fn policy(&self, name: &str) -> Option<&RoutingPolicy> {
         self.policies.get(name)
-    }
-
-    pub fn expanded_policy(&self, name: &str) -> Option<&ExpandedRoutingPolicy> {
-        self.expanded_policies.get(name)
     }
 
     pub fn platform_key(&self, name: &str) -> Option<&PlatformKey> {
@@ -195,10 +181,6 @@ impl Repositories {
 
     pub fn iter_policies(&self) -> impl Iterator<Item = &RoutingPolicy> {
         self.policies.values()
-    }
-
-    pub fn iter_expanded_policies(&self) -> impl Iterator<Item = &ExpandedRoutingPolicy> {
-        self.expanded_policies.values()
     }
 
     pub fn iter_platform_keys(&self) -> impl Iterator<Item = &PlatformKey> {
@@ -469,7 +451,7 @@ impl Repositories {
         Ok(connection)
     }
 
-    fn load_policies(connection: &Connection) -> Result<HashMap<String, ExpandedRoutingPolicy>> {
+    fn load_policies(connection: &Connection) -> Result<HashMap<String, RoutingPolicy>> {
         let mut statement = connection
             .prepare(
                 "
@@ -531,7 +513,7 @@ impl Repositories {
                 ))
             })?;
 
-            let policy = ExpandedRoutingPolicy {
+            let policy = RoutingPolicy {
                 id,
                 name: name.clone(),
                 selection_order: decode_json(&selection_order_raw, "selection_order")?,

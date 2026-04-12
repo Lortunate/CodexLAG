@@ -25,42 +25,24 @@ impl PlatformKey {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingPolicy {
     pub id: String,
     pub name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExpandedRoutingPolicy {
-    pub id: String,
-    pub name: String,
+    #[serde(default)]
     pub selection_order: Vec<String>,
+    #[serde(default = "default_cross_pool_fallback")]
     pub cross_pool_fallback: bool,
+    #[serde(default)]
     pub retry_budget: u32,
+    #[serde(default)]
     pub failure_rules: FailureRules,
+    #[serde(default)]
     pub recovery_rules: RecoveryRules,
 }
 
-impl ExpandedRoutingPolicy {
-    pub fn from_routing_policy(policy: RoutingPolicy) -> Self {
-        Self {
-            id: policy.id,
-            name: policy.name,
-            selection_order: Vec::new(),
-            cross_pool_fallback: true,
-            retry_budget: 0,
-            failure_rules: FailureRules::default(),
-            recovery_rules: RecoveryRules::default(),
-        }
-    }
-
-    pub fn as_routing_policy(&self) -> RoutingPolicy {
-        RoutingPolicy {
-            id: self.id.clone(),
-            name: self.name.clone(),
-        }
-    }
+fn default_cross_pool_fallback() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

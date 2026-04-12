@@ -1,16 +1,16 @@
 use std::path::PathBuf;
 
 use codexlag_lib::db::repositories::Repositories;
-use codexlag_lib::models::{ExpandedRoutingPolicy, FailureRules, RecoveryRules};
+use codexlag_lib::models::{FailureRules, RecoveryRules, RoutingPolicy};
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::Connection;
 
 #[test]
-fn expanded_policy_roundtrips_through_sqlite_repository() {
+fn routing_policy_roundtrips_through_sqlite_repository() {
     let database_path = temp_database_path("codexlag-policy-roundtrip");
 
     let mut repositories = Repositories::open(&database_path).expect("open repositories");
-    let policy = ExpandedRoutingPolicy {
+    let policy = RoutingPolicy {
         id: "policy-v1".into(),
         name: "spec-default".into(),
         selection_order: vec![
@@ -33,7 +33,7 @@ fn expanded_policy_roundtrips_through_sqlite_repository() {
 
     repositories
         .save_policy(policy.clone())
-        .expect("save expanded policy");
+        .expect("save routing policy");
     drop(repositories);
 
     {
@@ -56,7 +56,7 @@ fn expanded_policy_roundtrips_through_sqlite_repository() {
 
     let repositories = Repositories::open(&database_path).expect("re-open repositories");
     let persisted = repositories
-        .expanded_policy("spec-default")
+        .policy("spec-default")
         .cloned()
         .expect("persisted policy");
     assert_eq!(persisted, policy);

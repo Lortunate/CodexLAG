@@ -5,7 +5,7 @@ use rand::{rngs::OsRng, RngCore};
 use crate::{
     db::repositories::Repositories,
     error::{CodexLagError, Result},
-    models::{PlatformKey, RoutingPolicy},
+    models::{FailureRules, PlatformKey, RecoveryRules, RoutingPolicy},
     routing::policy::HYBRID,
     secret_store::{SecretKey, SecretStore},
     state::{AppState, RuntimeLogConfig, RuntimeState},
@@ -26,6 +26,11 @@ fn build_default_app_state(
     let default_policy = RoutingPolicy {
         id: DEFAULT_POLICY_ID.into(),
         name: DEFAULT_POLICY_NAME.into(),
+        selection_order: Vec::new(),
+        cross_pool_fallback: true,
+        retry_budget: 0,
+        failure_rules: FailureRules::default(),
+        recovery_rules: RecoveryRules::default(),
     };
 
     if repositories.policy(DEFAULT_POLICY_NAME).is_none() {
