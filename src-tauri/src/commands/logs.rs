@@ -49,18 +49,31 @@ pub fn get_log_summary(state: State<'_, RuntimeState>) -> LogSummary {
 pub fn runtime_log_metadata_from_runtime(
     runtime: &RuntimeState,
 ) -> Result<RuntimeLogMetadata, String> {
-    const MAX_SCAN_ENTRIES: usize = 200;
+    const MAX_SCAN_ENTRIES: usize = 5_000;
     const MAX_FILES: usize = 20;
 
     let log_dir = runtime.runtime_log().log_dir.clone();
     let mut files = match std::fs::read_dir(&log_dir) {
-        Ok(entries) => entries
-            .take(MAX_SCAN_ENTRIES)
-            .filter_map(|entry| entry.ok())
-            .filter_map(|entry| {
-                let file_type = entry.file_type().ok()?;
+        Ok(entries) => {
+            let mut scanned = 0_usize;
+            let mut collected = Vec::new();
+
+            for entry in entries {
+                if scanned >= MAX_SCAN_ENTRIES {
+                    break;
+                }
+                scanned += 1;
+
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => continue,
+                };
+                let file_type = match entry.file_type() {
+                    Ok(file_type) => file_type,
+                    Err(_) => continue,
+                };
                 if !file_type.is_file() {
-                    return None;
+                    continue;
                 }
 
                 let file_name = entry.file_name().to_string_lossy().to_string();
@@ -68,10 +81,11 @@ pub fn runtime_log_metadata_from_runtime(
                     .metadata()
                     .and_then(|metadata| metadata.modified())
                     .unwrap_or(SystemTime::UNIX_EPOCH);
+                collected.push((file_name, modified));
+            }
 
-                Some((file_name, modified))
-            })
-            .collect::<Vec<_>>(),
+            collected
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(error) => return Err(format!("failed to read runtime log directory: {error}")),
     };
