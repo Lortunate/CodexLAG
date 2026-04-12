@@ -65,8 +65,10 @@ struct PlannedInvocationFailure {
 #[derive(Clone, Default)]
 pub struct ProviderInvocationPipeline {
     planned_failures: Arc<RwLock<HashMap<String, VecDeque<PlannedInvocationFailure>>>>,
-    attempts: Arc<RwLock<Vec<InvocationAttemptRecord>>>,
+    attempts: Arc<RwLock<VecDeque<InvocationAttemptRecord>>>,
 }
+
+pub const INVOCATION_ATTEMPT_RETENTION_CAP: usize = 256;
 
 impl ProviderInvocationPipeline {
     pub fn invoke(
@@ -74,14 +76,18 @@ impl ProviderInvocationPipeline {
         endpoint: &CandidateEndpoint,
         context: &RoutingAttemptContext,
     ) -> InvocationOutcome {
-        self.attempts
+        let mut attempts = self
+            .attempts
             .write()
-            .expect("provider invocation attempts lock poisoned")
-            .push(InvocationAttemptRecord {
-                request_id: context.request_id.clone(),
-                attempt_id: context.attempt_id.clone(),
-                endpoint_id: endpoint.id.clone(),
-            });
+            .expect("provider invocation attempts lock poisoned");
+        if attempts.len() >= INVOCATION_ATTEMPT_RETENTION_CAP {
+            let _ = attempts.pop_front();
+        }
+        attempts.push_back(InvocationAttemptRecord {
+            request_id: context.request_id.clone(),
+            attempt_id: context.attempt_id.clone(),
+            endpoint_id: endpoint.id.clone(),
+        });
 
         if let Some(planned_failure) = self.pop_planned_failure(endpoint.id.as_str()) {
             return Err(InvocationFailure {
@@ -127,7 +133,9 @@ impl ProviderInvocationPipeline {
         self.attempts
             .read()
             .expect("provider invocation attempts lock poisoned")
-            .clone()
+            .iter()
+            .cloned()
+            .collect()
     }
 
     fn pop_planned_failure(&self, endpoint_id: &str) -> Option<PlannedInvocationFailure> {
@@ -152,5 +160,37 @@ pub fn models_for_endpoint(endpoint: &CandidateEndpoint) -> &'static [&'static s
             PoolKind::Official => OFFICIAL_MODEL_MATRIX,
             PoolKind::Relay => RELAY_MODEL_MATRIX,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::routing::engine::CandidateEndpoint;
+
+    #[test]
+    fn invocation_attempts_are_bounded_to_retention_limit() {
+        let pipeline = ProviderInvocationPipeline::default();
+        let endpoint = CandidateEndpoint::official("official-default", 1, true);
+
+        for idx in 0..(INVOCATION_ATTEMPT_RETENTION_CAP + 5) {
+            let request_id = format!("req-{idx}");
+            let context = RoutingAttemptContext {
+                request_id: request_id.clone(),
+                attempt_id: format!("{request_id}:0"),
+                attempt_index: 0,
+                mode: "hybrid".to_string(),
+            };
+            let _ = pipeline.invoke(&endpoint, &context);
+        }
+
+        let attempts = pipeline.attempts_for_test();
+        assert_eq!(attempts.len(), INVOCATION_ATTEMPT_RETENTION_CAP);
+        assert_eq!(attempts.first().expect("first attempt").request_id, "req-5");
+        assert_eq!(
+            attempts.last().expect("last attempt").request_id,
+            format!("req-{}", INVOCATION_ATTEMPT_RETENTION_CAP + 4)
+        );
     }
 }

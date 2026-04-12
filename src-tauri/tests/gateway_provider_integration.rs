@@ -62,6 +62,165 @@ async fn request_and_attempt_ids_are_carried_across_failover_attempts() {
 }
 
 #[tokio::test]
+async fn rate_limited_failover_opens_endpoint_and_models_only_show_routable_pool() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let gateway_state = runtime.loopback_gateway().state();
+    gateway_state
+        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Http429);
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("default key secret");
+
+    let first_response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(first_response.status(), StatusCode::OK);
+    let first_body = to_bytes(first_response.into_body(), usize::MAX)
+        .await
+        .expect("route body");
+    let first_payload: Value = serde_json::from_slice(first_body.as_ref()).expect("route json");
+    assert_eq!(first_payload["endpoint_id"], "relay-default");
+
+    let models_response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/models")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("models request"),
+        )
+        .await
+        .expect("models response");
+    assert_eq!(models_response.status(), StatusCode::OK);
+    let models_body = to_bytes(models_response.into_body(), usize::MAX)
+        .await
+        .expect("models body");
+    let models_payload: Value =
+        serde_json::from_slice(models_body.as_ref()).expect("models route json");
+    assert_eq!(models_payload["allowed_mode"], "hybrid");
+    assert_eq!(
+        models_payload["models"],
+        json!(["gpt-4.1-mini", "gpt-4o-mini"])
+    );
+
+    let second_response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(second_response.status(), StatusCode::OK);
+    let second_body = to_bytes(second_response.into_body(), usize::MAX)
+        .await
+        .expect("route body");
+    let second_payload: Value = serde_json::from_slice(second_body.as_ref()).expect("route json");
+    assert_eq!(second_payload["endpoint_id"], "relay-default");
+}
+
+#[tokio::test]
+async fn auth_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let gateway_state = runtime.loopback_gateway().state();
+    gateway_state.plan_provider_failure_for_test("official-default", InvocationFailureClass::Auth);
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("default key secret");
+
+    let first_response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(first_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let first_body = to_bytes(first_response.into_body(), usize::MAX)
+        .await
+        .expect("route body");
+    let first_payload: Value = serde_json::from_slice(first_body.as_ref()).expect("route json");
+    assert_eq!(first_payload["error"], "no_available_endpoint");
+    assert_eq!(first_payload["attempt_count"], 1);
+
+    let attempts = gateway_state.invocation_attempts_for_test();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0].endpoint_id, "official-default");
+}
+
+#[tokio::test]
+async fn config_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let gateway_state = runtime.loopback_gateway().state();
+    gateway_state
+        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Config);
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("default key secret");
+
+    let first_response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(first_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let first_body = to_bytes(first_response.into_body(), usize::MAX)
+        .await
+        .expect("route body");
+    let first_payload: Value = serde_json::from_slice(first_body.as_ref()).expect("route json");
+    assert_eq!(first_payload["error"], "no_available_endpoint");
+    assert_eq!(first_payload["attempt_count"], 1);
+
+    let attempts = gateway_state.invocation_attempts_for_test();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0].endpoint_id, "official-default");
+}
+
+#[tokio::test]
 async fn models_route_returns_allowed_model_list_for_current_policy_mode() {
     let account_only = models_payload_for_mode(RoutingMode::AccountOnly).await;
     assert_eq!(account_only["allowed_mode"], "account_only");

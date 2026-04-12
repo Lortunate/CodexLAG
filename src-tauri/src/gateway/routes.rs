@@ -182,7 +182,7 @@ async fn models(
         }
     };
     let candidates = gateway_state.current_candidates();
-    let models = allowed_models_for_mode(&candidates, mode)
+    let models = allowed_models_for_mode(&candidates, mode, now_ms)
         .map_err(|error| map_routing_error(request_id.as_str(), 0, mode, error))?;
 
     Ok(Json(ModelsResponse {
@@ -238,6 +238,7 @@ fn map_routing_error(
 fn allowed_models_for_mode(
     candidates: &[crate::routing::engine::CandidateEndpoint],
     mode: &str,
+    now_ms: u64,
 ) -> Result<Vec<String>, RoutingError> {
     let parsed_mode = RoutingMode::parse(mode).ok_or(RoutingError::InvalidMode)?;
     let mut models = BTreeSet::<String>::new();
@@ -249,6 +250,9 @@ fn allowed_models_for_mode(
             RoutingMode::Hybrid => true,
         };
         if !pool_allowed {
+            continue;
+        }
+        if endpoint_rejection_reason(candidate, now_ms).is_some() {
             continue;
         }
         for model in models_for_endpoint(candidate) {
