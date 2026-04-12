@@ -131,17 +131,14 @@ pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result
         .map_err(|error| format!("failed to derive diagnostics timestamp: {error}"))?
         .as_secs();
 
+    let files_payload = serde_json::to_string(&metadata.files)
+        .map_err(|error| format!("failed to serialize diagnostics manifest files: {error}"))?;
     let manifest_path = diagnostics_dir.join("diagnostics-manifest.txt");
-    let mut manifest = format!(
-        "generated_at_unix={generated_at_unix}\nlog_dir={}\nfiles_count={}\nfiles:\n",
+    let manifest = format!(
+        "generated_at_unix={generated_at_unix}\nlog_dir={}\nfiles_count={}\nfiles={files_payload}\n",
         metadata.log_dir,
         metadata.files.len()
     );
-    for file_name in metadata.files {
-        manifest.push_str("- ");
-        manifest.push_str(&file_name);
-        manifest.push('\n');
-    }
 
     write_file_atomically(&manifest_path, &manifest)?;
 
