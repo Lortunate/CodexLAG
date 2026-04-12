@@ -1,7 +1,14 @@
-use codexlag_lib::{bootstrap::bootstrap_state_for_test, secret_store::SecretKey};
+use codexlag_lib::{
+    bootstrap::{bootstrap_state_for_test, bootstrap_state_for_test_at},
+    routing::policy::RoutingMode,
+    secret_store::SecretKey,
+};
 use codexlag_lib::routing::policy::HYBRID;
+use rand::{rngs::OsRng, RngCore};
+use rusqlite::Connection;
 
 const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
+const LEGACY_DEFAULT_PLATFORM_KEY_SECRET_SEED: &str = "ck_local_default_seed";
 
 #[tokio::test]
 async fn bootstrap_creates_default_policy_and_default_key() {
@@ -30,6 +37,73 @@ async fn bootstrap_persists_default_key_secret_in_secret_store() {
 
     assert!(secret.starts_with(DEFAULT_PLATFORM_KEY_SECRET_PREFIX));
     assert!(secret.len() > DEFAULT_PLATFORM_KEY_SECRET_PREFIX.len());
+    assert_ne!(secret, LEGACY_DEFAULT_PLATFORM_KEY_SECRET_SEED);
+}
+
+#[tokio::test]
+async fn bootstrap_persists_default_state_across_restarts() {
+    let database_path = std::env::temp_dir().join(format!(
+        "codexlag-bootstrap-persistence-{}.sqlite3",
+        random_suffix()
+    ));
+
+    let mut first_state = bootstrap_state_for_test_at(&database_path)
+        .await
+        .expect("first bootstrap");
+    let first_key = first_state
+        .get_platform_key_by_name("default")
+        .expect("first default key");
+
+    assert_eq!(first_state.iter_policies().count(), 1);
+    assert_eq!(first_state.iter_platform_keys().count(), 1);
+    assert_eq!(first_key.allowed_mode.as_str(), HYBRID);
+
+    first_state
+        .set_default_key_allowed_mode(RoutingMode::RelayOnly)
+        .expect("persist default key mode change");
+
+    drop(first_state);
+
+    assert!(database_path.exists(), "bootstrap should create sqlite file");
+
+    let connection = Connection::open(&database_path).expect("open sqlite database");
+    let policy_rows: i64 = connection
+        .query_row("SELECT COUNT(*) FROM routing_policies", [], |row| row.get(0))
+        .expect("count routing policies");
+    let key_rows: i64 = connection
+        .query_row("SELECT COUNT(*) FROM platform_keys", [], |row| row.get(0))
+        .expect("count platform keys");
+    let persisted_mode: String = connection
+        .query_row(
+            "SELECT allowed_mode FROM platform_keys WHERE name = 'default'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("select default key mode");
+
+    assert_eq!(policy_rows, 1);
+    assert_eq!(key_rows, 1);
+    assert_eq!(persisted_mode, RoutingMode::RelayOnly.as_str());
+
+    let second_state = bootstrap_state_for_test_at(&database_path)
+        .await
+        .expect("second bootstrap");
+    let second_key = second_state
+        .get_platform_key_by_name("default")
+        .expect("second default key");
+
+    assert_eq!(second_key.allowed_mode.as_str(), RoutingMode::RelayOnly.as_str());
+    assert_eq!(second_state.iter_policies().count(), 1);
+    assert_eq!(second_state.iter_platform_keys().count(), 1);
+
+    drop(second_state);
+    let _ = std::fs::remove_file(&database_path);
+}
+
+fn random_suffix() -> String {
+    let mut bytes = [0_u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[tokio::test]

@@ -1,4 +1,7 @@
-use codexlag_lib::logging::usage::{record_request, UsageRecordInput};
+use codexlag_lib::logging::usage::{
+    append_usage_record, query_usage_ledger, record_request, request_detail, request_history,
+    UsageLedgerQuery, UsageProvenance, UsageRecordInput, USAGE_RECORD_RETENTION_CAP,
+};
 use serde_json::{from_str, to_string};
 
 #[test]
@@ -74,5 +77,84 @@ fn usage_record_deserialization_rejects_invalid_total_tokens() {
             .to_string()
             .contains("total_tokens must equal the sum of component token fields"),
         "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn usage_query_helpers_expose_estimated_and_unknown_provenance() {
+    let records = vec![
+        record_request(UsageRecordInput {
+            request_id: "req-1".into(),
+            endpoint_id: "official-1".into(),
+            input_tokens: 120,
+            output_tokens: 30,
+            cache_read_tokens: 10,
+            cache_write_tokens: 0,
+            estimated_cost: "0.0123".into(),
+        }),
+        record_request(UsageRecordInput {
+            request_id: "req-2".into(),
+            endpoint_id: "relay-1".into(),
+            input_tokens: 40,
+            output_tokens: 15,
+            cache_read_tokens: 5,
+            cache_write_tokens: 2,
+            estimated_cost: "".into(),
+        }),
+    ];
+
+    let detail = request_detail(&records, "req-1").expect("request detail");
+    assert_eq!(detail.cost.provenance, UsageProvenance::Estimated);
+    assert_eq!(detail.cost.amount.as_deref(), Some("0.0123"));
+    assert!(request_detail(&records, "missing").is_none());
+
+    let history = request_history(&records, Some(1));
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].request_id, "req-2");
+
+    let filtered = query_usage_ledger(
+        &records,
+        UsageLedgerQuery {
+            endpoint_id: Some("relay-1".into()),
+            request_id_prefix: Some("req-".into()),
+            limit: Some(5),
+        },
+    );
+    assert_eq!(filtered.entries.len(), 1);
+    assert_eq!(filtered.total_tokens, 62);
+    assert_eq!(filtered.total_cost.provenance, UsageProvenance::Unknown);
+    assert_eq!(filtered.total_cost.amount, None);
+}
+
+#[test]
+fn append_usage_record_caps_history_and_drops_oldest_entries() {
+    let overflow = 3;
+    let total = USAGE_RECORD_RETENTION_CAP + overflow;
+    let mut records = Vec::new();
+
+    for idx in 0..total {
+        append_usage_record(
+            &mut records,
+            UsageRecordInput {
+                request_id: format!("req-{idx}"),
+                endpoint_id: "official-default".into(),
+                input_tokens: 1,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                estimated_cost: String::new(),
+            },
+        );
+    }
+
+    assert_eq!(records.len(), USAGE_RECORD_RETENTION_CAP);
+    assert_eq!(
+        records.first().map(|record| record.request_id.as_str()),
+        Some("req-3")
+    );
+    let expected_last = format!("req-{}", total - 1);
+    assert_eq!(
+        records.last().map(|record| record.request_id.as_str()),
+        Some(expected_last.as_str())
     );
 }

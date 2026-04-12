@@ -5,6 +5,7 @@ use axum::{
 use codexlag_lib::{
     bootstrap::bootstrap_state_for_test,
     gateway::build_router_for_test,
+    routing::policy::RoutingMode,
     secret_store::SecretKey,
 };
 use serde_json::Value;
@@ -83,4 +84,67 @@ async fn gateway_auth_codex_route_accepts_valid_platform_key() {
     assert_eq!(payload["platform_key"], "default");
     assert_eq!(payload["policy"], "default");
     assert_eq!(payload["allowed_mode"], "hybrid");
+    assert_eq!(payload["endpoint_id"], "official-default");
+}
+
+#[tokio::test]
+async fn gateway_auth_codex_route_respects_account_only_mode() {
+    let mut state = bootstrap_state_for_test().await.expect("bootstrap");
+    state
+        .set_default_key_allowed_mode(RoutingMode::AccountOnly)
+        .expect("set account-only mode");
+    let secret = state
+        .secret(&SecretKey::default_platform_key())
+        .expect("platform key secret");
+    let app = build_router_for_test(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {}", secret))
+                .body(Body::empty())
+                .expect("codex request"),
+        )
+        .await
+        .expect("codex response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("codex body");
+    let payload: Value = serde_json::from_slice(body.as_ref()).expect("gateway response json");
+    assert_eq!(payload["endpoint_id"], "official-default");
+}
+
+#[tokio::test]
+async fn gateway_auth_codex_route_respects_relay_only_mode() {
+    let mut state = bootstrap_state_for_test().await.expect("bootstrap");
+    state
+        .set_default_key_allowed_mode(RoutingMode::RelayOnly)
+        .expect("set relay-only mode");
+    let secret = state
+        .secret(&SecretKey::default_platform_key())
+        .expect("platform key secret");
+    let app = build_router_for_test(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {}", secret))
+                .body(Body::empty())
+                .expect("codex request"),
+        )
+        .await
+        .expect("codex response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("codex body");
+    let payload: Value = serde_json::from_slice(body.as_ref()).expect("gateway response json");
+    assert_eq!(payload["endpoint_id"], "relay-default");
 }

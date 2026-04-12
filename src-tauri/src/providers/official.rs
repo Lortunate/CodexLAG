@@ -8,6 +8,12 @@ pub enum OfficialAuthMode {
     Unknown(String),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OfficialBalanceCapability {
+    NonQueryable,
+}
+
 impl From<String> for OfficialAuthMode {
     fn from(value: String) -> Self {
         match value.as_str() {
@@ -34,4 +40,10 @@ pub struct OfficialSession {
     pub account_identity: Option<String>,
     pub auth_mode: Option<OfficialAuthMode>,
     pub refresh_capability: Option<bool>,
+}
+
+impl OfficialSession {
+    pub fn balance_capability(&self) -> OfficialBalanceCapability {
+        OfficialBalanceCapability::NonQueryable
+    }
 }

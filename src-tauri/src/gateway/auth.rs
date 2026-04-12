@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, RwLock, RwLockReadGuard,
+};
 
 use axum::{
     extract::FromRequestParts,
@@ -6,6 +9,7 @@ use axum::{
 };
 
 use crate::{
+    logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
     models::{PlatformKey, RoutingPolicy},
     state::AppState,
 };
@@ -13,17 +17,26 @@ use crate::{
 #[derive(Clone)]
 pub struct GatewayState {
     app_state: Arc<RwLock<AppState>>,
+    usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+    request_sequence: Arc<AtomicU64>,
 }
 
 impl GatewayState {
-    pub fn new(app_state: Arc<RwLock<AppState>>) -> Self {
+    pub fn new(
+        app_state: Arc<RwLock<AppState>>,
+        usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+    ) -> Self {
         Self {
             app_state,
+            usage_records,
+            request_sequence: Arc::new(AtomicU64::new(0)),
         }
     }
 
     pub fn app_state(&self) -> RwLockReadGuard<'_, AppState> {
-        self.app_state.read().expect("gateway app state lock poisoned")
+        self.app_state
+            .read()
+            .expect("gateway app state lock poisoned")
     }
 
     pub fn policy_for_platform_key(&self, platform_key: &PlatformKey) -> Option<RoutingPolicy> {
@@ -34,6 +47,31 @@ impl GatewayState {
 
     fn authenticate_platform_key(&self, provided_secret: &str) -> Option<PlatformKey> {
         self.app_state().authenticate_platform_key(provided_secret)
+    }
+
+    pub fn usage_records(&self) -> Vec<UsageRecord> {
+        self.usage_records
+            .read()
+            .expect("gateway usage records lock poisoned")
+            .clone()
+    }
+
+    pub fn record_usage_request(&self, input: UsageRecordInput) {
+        let mut records = self
+            .usage_records
+            .write()
+            .expect("gateway usage records lock poisoned");
+        append_usage_record(&mut records, input);
+    }
+
+    pub fn next_request_id(
+        &self,
+        platform_key_name: &str,
+        now_ms: u64,
+        endpoint_id: &str,
+    ) -> String {
+        let sequence = self.request_sequence.fetch_add(1, Ordering::Relaxed);
+        format!("{platform_key_name}:{now_ms}:{endpoint_id}:{sequence}")
     }
 }
 

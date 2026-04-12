@@ -4,6 +4,8 @@ use axum::Router;
 
 use crate::{
     gateway::{auth::GatewayState, routes::build_routes},
+    logging::usage::UsageRecord,
+    routing::engine::{choose_endpoint, CandidateEndpoint},
     state::AppState,
 };
 
@@ -14,8 +16,11 @@ pub struct LoopbackGateway {
 }
 
 impl LoopbackGateway {
-    pub fn new(app_state: Arc<RwLock<AppState>>) -> Self {
-        let state = GatewayState::new(app_state);
+    pub fn new(
+        app_state: Arc<RwLock<AppState>>,
+        usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+    ) -> Self {
+        let state = GatewayState::new(app_state, usage_records);
         let router = build_routes().with_state(state.clone());
 
         Self { state, router }
@@ -30,14 +35,25 @@ impl LoopbackGateway {
     }
 
     pub fn is_ready(&self) -> bool {
-        true
+        choose_endpoint("hybrid", &default_candidates()).is_ok()
     }
 }
 
 pub fn build_router(app_state: AppState) -> Router {
-    LoopbackGateway::new(Arc::new(RwLock::new(app_state))).router()
+    LoopbackGateway::new(
+        Arc::new(RwLock::new(app_state)),
+        Arc::new(RwLock::new(Vec::new())),
+    )
+    .router()
 }
 
 pub fn build_router_for_test(app_state: AppState) -> Router {
     build_router(app_state)
+}
+
+pub fn default_candidates() -> Vec<CandidateEndpoint> {
+    vec![
+        CandidateEndpoint::official("official-default", 10, true),
+        CandidateEndpoint::relay("relay-default", 20, true),
+    ]
 }
