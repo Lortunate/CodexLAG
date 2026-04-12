@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::db::migrations::ensure_schema_up_to_date;
@@ -244,9 +244,15 @@ impl Repositories {
         account: ImportedOfficialAccount,
     ) -> Result<()> {
         let session_payload = encode_json(&account.session, "session_payload")?;
-        let connection = self.open_connection()?;
+        let mut connection = self.open_connection()?;
+        let transaction = connection.transaction().map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to begin imported official account transaction for '{}': {error}",
+                account.account_id
+            ))
+        })?;
 
-        connection
+        transaction
             .execute(
                 "
                 INSERT INTO imported_official_accounts (
@@ -281,16 +287,24 @@ impl Repositories {
                 ))
             })?;
 
-        self.upsert_credential_ref(
+        Self::upsert_credential_ref(
+            &transaction,
             account.session_credential_ref.as_str(),
             account.account_id.as_str(),
             CredentialKind::OfficialSession,
         )?;
-        self.upsert_credential_ref(
+        Self::upsert_credential_ref(
+            &transaction,
             account.token_credential_ref.as_str(),
             account.account_id.as_str(),
             CredentialKind::OfficialSession,
         )?;
+        transaction.commit().map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to commit imported official account transaction for '{}': {error}",
+                account.account_id
+            ))
+        })?;
 
         self.imported_official_accounts
             .insert(account.account_id.clone(), account);
@@ -899,14 +913,13 @@ impl Repositories {
     }
 
     fn upsert_credential_ref(
-        &self,
+        transaction: &Transaction<'_>,
         id: &str,
         target_name: &str,
         credential_kind: CredentialKind,
     ) -> Result<()> {
         let kind = encode_json(&credential_kind, "credential_kind")?;
-        let connection = self.open_connection()?;
-        connection
+        transaction
             .execute(
                 "
                 INSERT INTO credential_refs (

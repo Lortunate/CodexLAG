@@ -183,6 +183,24 @@ async fn account_import_login_command_validates_and_persists_entry() {
         "session credential ref must start with 'credential://official/session/'"
     );
 
+    let reserved_error = import_official_account_login_from_runtime(
+        &first_runtime,
+        OfficialAccountImportInput {
+            account_id: "official-primary".to_string(),
+            name: "Reserved Account".to_string(),
+            provider: "openai".to_string(),
+            session_credential_ref: format!("credential://official/session/{suffix}-reserved"),
+            token_credential_ref: format!("credential://official/token/{suffix}-reserved"),
+            account_identity: None,
+            auth_mode: None,
+        },
+    )
+    .expect_err("reserved built-in account ids should be rejected");
+    assert_eq!(
+        reserved_error,
+        "account_id is reserved and cannot be imported: official-primary"
+    );
+
     drop(first_runtime);
 
     let second_runtime =
@@ -207,6 +225,87 @@ async fn account_import_login_command_validates_and_persists_entry() {
     assert_eq!(
         credential_ref_rows, 1,
         "account import should persist a credential reference"
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn account_import_login_rolls_back_when_credential_ref_persistence_fails() {
+    let isolated_root = isolated_test_root("command-account-import-rollback");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let suffix = unique_suffix();
+    let account_id = format!("official-imported-rollback-{suffix}");
+    let session_ref = format!("credential://official/session/{suffix}-rollback");
+    let token_ref = format!("credential://official/token/{suffix}-rollback");
+    let escaped_session_ref = session_ref.replace('\'', "''");
+
+    let connection = Connection::open(&database_path).expect("open sqlite");
+    connection
+        .execute_batch(&format!(
+            "
+            DROP TRIGGER IF EXISTS fail_credential_ref_insert;
+            CREATE TRIGGER fail_credential_ref_insert
+            BEFORE INSERT ON credential_refs
+            WHEN NEW.id = '{escaped_session_ref}'
+            BEGIN
+                SELECT RAISE(ABORT, 'simulated credential ref failure');
+            END;
+            "
+        ))
+        .expect("install failing credential_ref trigger");
+
+    let error = import_official_account_login_from_runtime(
+        &runtime,
+        OfficialAccountImportInput {
+            account_id: account_id.clone(),
+            name: "Rollback Candidate".to_string(),
+            provider: "openai".to_string(),
+            session_credential_ref: session_ref.clone(),
+            token_credential_ref: token_ref.clone(),
+            account_identity: None,
+            auth_mode: None,
+        },
+    )
+    .expect_err("credential ref write failures should fail import");
+    assert!(
+        error.contains("failed to persist credential reference"),
+        "expected credential persistence failure error, got: {error}"
+    );
+    assert!(
+        list_accounts_from_runtime(&runtime)
+            .iter()
+            .all(|account| account.account_id != account_id),
+        "failed import should not leave account visible in runtime state"
+    );
+
+    drop(runtime);
+
+    let verification = Connection::open(&database_path).expect("open sqlite for verification");
+    let persisted_account_rows: i64 = verification
+        .query_row(
+            "SELECT COUNT(*) FROM imported_official_accounts WHERE account_id = ?1",
+            params![account_id],
+            |row| row.get(0),
+        )
+        .expect("count imported account rows");
+    assert_eq!(
+        persisted_account_rows, 0,
+        "failed import should roll back imported_official_accounts row"
+    );
+
+    let persisted_credential_rows: i64 = verification
+        .query_row(
+            "SELECT COUNT(*) FROM credential_refs WHERE id IN (?1, ?2)",
+            params![session_ref, token_ref],
+            |row| row.get(0),
+        )
+        .expect("count credential refs");
+    assert_eq!(
+        persisted_credential_rows, 0,
+        "failed import should not persist credential references"
     );
 
     let _ = std::fs::remove_dir_all(&isolated_root);
@@ -392,10 +491,14 @@ async fn policy_update_command_enforces_strict_validation() {
     )
     .expect("default policy update should succeed");
     assert_eq!(updated.retry_budget, 2);
+    let summaries = policy_summaries_from_state(&first_runtime.app_state());
+    let default_summary = summaries
+        .iter()
+        .find(|summary| summary.policy_id == default_policy_id)
+        .expect("default policy should remain visible by id");
+    assert_eq!(default_summary.name, "default");
     assert!(
-        policy_summaries_from_state(&first_runtime.app_state())
-            .iter()
-            .any(|summary| summary.name == "default"),
+        summaries.iter().any(|summary| summary.name == "default"),
         "updated policy should remain visible via list_policies view"
     );
     assert_eq!(
@@ -416,6 +519,19 @@ async fn policy_update_command_enforces_strict_validation() {
     )
     .expect_err("retry_budget must be strictly positive");
     assert_eq!(invalid_error, "retry_budget must be greater than 0");
+
+    let unknown_endpoint_error = update_policy_from_runtime(
+        &first_runtime,
+        PolicyUpdateInput {
+            selection_order: vec!["official-primary".to_string(), "relay-missing".to_string()],
+            ..updated.clone()
+        },
+    )
+    .expect_err("selection_order should reject unknown endpoint ids");
+    assert_eq!(
+        unknown_endpoint_error,
+        "unknown selection_order endpoint id: relay-missing"
+    );
 
     let unknown_error = update_policy_from_runtime(
         &first_runtime,

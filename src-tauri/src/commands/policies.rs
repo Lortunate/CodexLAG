@@ -2,11 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tauri::State;
 
+use crate::commands::accounts::list_accounts_from_state;
+use crate::commands::relays::list_relays_from_state;
 use crate::models::{FailureRules, RecoveryRules, RoutingPolicy};
 use crate::state::{AppState, RuntimeState};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PolicySummary {
+    pub policy_id: String,
     pub name: String,
     pub status: String,
 }
@@ -39,6 +42,7 @@ pub fn policy_summaries_from_state(state: &AppState) -> Vec<PolicySummary> {
             };
 
             PolicySummary {
+                policy_id: policy.id.clone(),
                 name: policy.name.clone(),
                 status: status.into(),
             }
@@ -67,6 +71,10 @@ pub fn update_policy_from_runtime(
     input: PolicyUpdateInput,
 ) -> Result<PolicyUpdateInput, String> {
     validate_policy_update_input(&input)?;
+    {
+        let app_state = runtime.app_state();
+        validate_selection_order_endpoint_ids(&app_state, &input.selection_order)?;
+    }
 
     let mut app_state = runtime.app_state_mut();
     if app_state
@@ -147,6 +155,32 @@ fn validate_policy_update_input(input: &PolicyUpdateInput) -> Result<(), String>
     }
     if input.success_close_after == 0 {
         return Err("success_close_after must be greater than 0".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_selection_order_endpoint_ids(
+    state: &AppState,
+    selection_order: &[String],
+) -> Result<(), String> {
+    let known_endpoint_ids = list_accounts_from_state(state)
+        .into_iter()
+        .map(|account| account.account_id)
+        .chain(
+            list_relays_from_state(state)
+                .into_iter()
+                .map(|relay| relay.relay_id),
+        )
+        .collect::<HashSet<_>>();
+
+    for endpoint_id in selection_order {
+        let endpoint_id = endpoint_id.trim();
+        if !known_endpoint_ids.contains(endpoint_id) {
+            return Err(format!(
+                "unknown selection_order endpoint id: {endpoint_id}"
+            ));
+        }
     }
 
     Ok(())

@@ -6,6 +6,9 @@ use crate::models::ImportedOfficialAccount;
 use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
 use crate::state::{AppState, RuntimeState};
 
+const OFFICIAL_PRIMARY_ACCOUNT_ID: &str = "official-primary";
+const RESERVED_BUILTIN_ACCOUNT_IDS: &[&str] = &[OFFICIAL_PRIMARY_ACCOUNT_ID];
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AccountSummary {
     pub account_id: String,
@@ -47,9 +50,9 @@ pub struct OfficialAccountImportInput {
     pub auth_mode: Option<String>,
 }
 
-fn list_accounts_from_state(state: &AppState) -> Vec<AccountSummary> {
+pub(crate) fn list_accounts_from_state(state: &AppState) -> Vec<AccountSummary> {
     let mut accounts = vec![AccountSummary {
-        account_id: "official-primary".into(),
+        account_id: OFFICIAL_PRIMARY_ACCOUNT_ID.into(),
         name: "Primary Publisher".into(),
         provider: "openai".into(),
     }];
@@ -134,6 +137,7 @@ pub fn import_official_account_login_from_runtime(
     input: OfficialAccountImportInput,
 ) -> Result<AccountSummary, String> {
     let account_id = validate_identifier(input.account_id, "account_id")?;
+    validate_not_reserved_account_id(account_id.as_str())?;
     let name = validate_non_empty(input.name, "name")?;
     let provider = validate_non_empty(input.provider, "provider")?;
     if provider != "openai" {
@@ -195,7 +199,7 @@ fn official_primary_session() -> OfficialSession {
 }
 
 fn official_session_for(state: &AppState, account_id: &str) -> Result<OfficialSession, String> {
-    if account_id == "official-primary" {
+    if account_id == OFFICIAL_PRIMARY_ACCOUNT_ID {
         return Ok(official_primary_session());
     }
 
@@ -223,6 +227,19 @@ fn validate_identifier(raw: String, field_name: &str) -> Result<String, String> 
         Err(format!(
             "{field_name} must use only ascii letters, numbers, '-' or '_'"
         ))
+    }
+}
+
+fn validate_not_reserved_account_id(account_id: &str) -> Result<(), String> {
+    if RESERVED_BUILTIN_ACCOUNT_IDS
+        .iter()
+        .any(|reserved_id| account_id == *reserved_id)
+    {
+        Err(format!(
+            "account_id is reserved and cannot be imported: {account_id}"
+        ))
+    } else {
+        Ok(())
     }
 }
 

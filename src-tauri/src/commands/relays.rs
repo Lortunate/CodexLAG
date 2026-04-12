@@ -206,8 +206,10 @@ pub fn test_relay_connection_from_runtime(
     runtime: &RuntimeState,
     relay_id: String,
 ) -> Result<RelayConnectionTestResult, String> {
-    let state = runtime.app_state();
-    let summary = relay_summary_by_id_from_state(&state, relay_id.as_str())?;
+    let summary = {
+        let state = runtime.app_state();
+        relay_summary_by_id_from_state(&state, relay_id.as_str())?
+    };
     if !is_http_endpoint(summary.endpoint.as_str()) {
         return Err("relay endpoint must start with 'http://' or 'https://'".to_string());
     }
@@ -233,7 +235,7 @@ pub fn test_relay_connection(
     test_relay_connection_from_runtime(&state, relay_id)
 }
 
-fn list_relays_from_state(state: &AppState) -> Vec<RelaySummary> {
+pub(crate) fn list_relays_from_state(state: &AppState) -> Vec<RelaySummary> {
     let mut relays = default_relays()
         .into_iter()
         .map(|relay| relay_summary(&relay))
