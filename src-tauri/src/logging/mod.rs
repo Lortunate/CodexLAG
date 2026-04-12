@@ -6,6 +6,13 @@ use crate::routing::engine::{
 };
 use crate::logging::runtime::format_event_fields;
 
+fn routing_error_code(error: &RoutingError) -> &'static str {
+    match error {
+        RoutingError::InvalidMode => "invalid_mode",
+        RoutingError::NoAvailableEndpoint => "no_available_endpoint",
+    }
+}
+
 pub fn log_route_downgrade(mode: &str, selected: &CandidateEndpoint, candidates: &[CandidateEndpoint], now_ms: u64) {
     let mut reasons = Vec::new();
     for candidate in candidates {
@@ -46,11 +53,11 @@ pub fn log_route_rejection(mode: &str, error: &RoutingError, candidates: &[Candi
     } else {
         reasons.join(",")
     };
-    let error_repr = format!("{error:?}");
+    let error_code = routing_error_code(error);
     let line = format_event_fields(&[
         ("event", "routing.endpoint.rejected"),
         ("mode", mode),
-        ("error", error_repr.as_str()),
+        ("error", error_code),
         ("reasons", detail.as_str()),
     ]);
     log::warn!("{line}");

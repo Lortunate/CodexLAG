@@ -34,7 +34,7 @@ fn redact_secret_value_masks_sensitive_tokens() {
     assert_eq!(redact_secret_value("abcd"), "****");
     assert_eq!(
         redact_secret_value("ck_local_1234567890"),
-        "ck_l****************"
+        "ck_l***************"
     );
 }
 
@@ -53,4 +53,20 @@ fn format_event_fields_outputs_stable_key_value_pairs() {
     assert!(formatted.contains("event="));
     assert!(formatted.contains("request_id="));
     assert!(formatted.contains("endpoint_id="));
+}
+
+#[test]
+fn format_event_fields_escapes_unsafe_values_and_stays_single_line() {
+    let formatted = format_event_fields(&[
+        ("event", "routing.endpoint.rejected"),
+        ("request_id", "req 123"),
+        ("error", "invalid=mode"),
+        ("detail", "line1\nline2"),
+    ]);
+
+    assert_eq!(
+        formatted,
+        "event=routing.endpoint.rejected request_id=\"req 123\" error=\"invalid=mode\" detail=\"line1\\nline2\""
+    );
+    assert!(!formatted.contains('\n'));
 }
