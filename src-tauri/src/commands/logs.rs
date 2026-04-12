@@ -1,4 +1,6 @@
 use serde::Serialize;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::path::Path;
 use std::time::SystemTime;
 use tauri::State;
@@ -49,21 +51,14 @@ pub fn get_log_summary(state: State<'_, RuntimeState>) -> LogSummary {
 pub fn runtime_log_metadata_from_runtime(
     runtime: &RuntimeState,
 ) -> Result<RuntimeLogMetadata, String> {
-    const MAX_SCAN_ENTRIES: usize = 5_000;
     const MAX_FILES: usize = 20;
 
     let log_dir = runtime.runtime_log().log_dir.clone();
-    let mut files = match std::fs::read_dir(&log_dir) {
+    let files = match std::fs::read_dir(&log_dir) {
         Ok(entries) => {
-            let mut scanned = 0_usize;
-            let mut collected = Vec::new();
+            let mut recent_files: BinaryHeap<Reverse<(SystemTime, String)>> = BinaryHeap::new();
 
             for entry in entries {
-                if scanned >= MAX_SCAN_ENTRIES {
-                    break;
-                }
-                scanned += 1;
-
                 let entry = match entry {
                     Ok(entry) => entry,
                     Err(_) => continue,
@@ -81,16 +76,23 @@ pub fn runtime_log_metadata_from_runtime(
                     .metadata()
                     .and_then(|metadata| metadata.modified())
                     .unwrap_or(SystemTime::UNIX_EPOCH);
-                collected.push((file_name, modified));
+
+                recent_files.push(Reverse((modified, file_name)));
+                if recent_files.len() > MAX_FILES {
+                    recent_files.pop();
+                }
             }
 
-            collected
+            let mut files = recent_files
+                .into_iter()
+                .map(|Reverse((modified, file_name))| (file_name, modified))
+                .collect::<Vec<_>>();
+            files.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+            files
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(error) => return Err(format!("failed to read runtime log directory: {error}")),
     };
-
-    files.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
 
     Ok(RuntimeLogMetadata {
         log_dir: sanitize_log_dir_for_display(&log_dir),
