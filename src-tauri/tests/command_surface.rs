@@ -150,6 +150,10 @@ async fn usage_commands_reflect_runtime_gateway_requests_only() {
         1,
         "exactly one data-plane request should be recorded after one request"
     );
+    assert!(
+        history[0].request_id.contains(":relay-default:"),
+        "successful request ids should preserve endpoint segment compatibility"
+    );
 
     let relay_entries = usage_ledger_from_runtime(
         &runtime,

@@ -13,7 +13,14 @@ fn routing_error_code(error: &RoutingError) -> &'static str {
     }
 }
 
-pub fn log_route_downgrade(mode: &str, selected: &CandidateEndpoint, candidates: &[CandidateEndpoint], now_ms: u64) {
+pub fn log_route_downgrade(
+    request_id: &str,
+    attempt_id: &str,
+    mode: &str,
+    selected: &CandidateEndpoint,
+    candidates: &[CandidateEndpoint],
+    now_ms: u64,
+) {
     let mut reasons = Vec::new();
     for candidate in candidates {
         if candidate.id == selected.id {
@@ -33,7 +40,10 @@ pub fn log_route_downgrade(mode: &str, selected: &CandidateEndpoint, candidates:
     let reasons_joined = reasons.join(",");
     let line = format_event_fields(&[
         ("event", "routing.endpoint.downgraded"),
+        ("request_id", request_id),
+        ("attempt_id", attempt_id),
         ("mode", mode),
+        ("endpoint_id", selected.id.as_str()),
         ("selected", selected.id.as_str()),
         ("reasons", reasons_joined.as_str()),
     ]);
