@@ -1,5 +1,5 @@
 use codexlag_lib::{
-    bootstrap::bootstrap_runtime_for_test,
+    bootstrap::{bootstrap_runtime_for_test, runtime_database_path},
     commands::{
         keys::{default_key_summary_from_state, set_default_key_mode_from_runtime},
         logs::log_summary_from_runtime,
@@ -69,4 +69,15 @@ async fn set_default_key_mode_rejects_invalid_mode_strings() {
         .expect_err("invalid mode should fail");
 
     assert!(error.to_string().contains("unsupported default key mode"));
+}
+
+#[test]
+fn runtime_database_path_uses_app_local_data_dir_with_sqlite_filename() {
+    let app_local_data_dir = std::path::Path::new("/tmp/codexlag-app");
+    let derived = runtime_database_path(app_local_data_dir);
+
+    assert_eq!(
+        derived,
+        std::path::PathBuf::from("/tmp/codexlag-app").join("codexlag.sqlite3")
+    );
 }

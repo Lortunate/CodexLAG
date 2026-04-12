@@ -23,7 +23,7 @@ pub fn run() {
                 .path()
                 .app_local_data_dir()
                 .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
-            let database_path = app_local_data_dir.join("codexlag.sqlite3");
+            let database_path = bootstrap::runtime_database_path(app_local_data_dir);
 
             let runtime = bootstrap::bootstrap_runtime_at(database_path)
                 .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;

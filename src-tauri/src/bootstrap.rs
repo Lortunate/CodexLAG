@@ -47,7 +47,10 @@ fn build_default_app_state(
 
     let default_key_secret = SecretKey::platform_key(default_key.id.clone());
 
-    if repositories.platform_key(DEFAULT_PLATFORM_KEY_NAME).is_none() {
+    if repositories
+        .platform_key(DEFAULT_PLATFORM_KEY_NAME)
+        .is_none()
+    {
         repositories.insert_platform_key(default_key)?;
     }
 
@@ -64,6 +67,10 @@ pub fn bootstrap_state_at(database_path: impl AsRef<Path>) -> Result<AppState> {
 
 pub fn bootstrap_runtime_at(database_path: impl AsRef<Path>) -> Result<RuntimeState> {
     bootstrap_state_at(database_path).map(RuntimeState::new)
+}
+
+pub fn runtime_database_path(app_local_data_dir: impl AsRef<Path>) -> PathBuf {
+    app_local_data_dir.as_ref().join("codexlag.sqlite3")
 }
 
 pub async fn bootstrap_state_for_test() -> Result<AppState> {
