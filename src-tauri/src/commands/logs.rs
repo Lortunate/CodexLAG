@@ -158,11 +158,15 @@ fn sanitize_log_dir_for_display(path: &Path) -> String {
 
 fn is_runtime_log_file_name(file_name: &str) -> bool {
     let file_name = file_name.to_ascii_lowercase();
-    file_name.ends_with(".log")
-        || file_name.contains(".log.")
-        || file_name == "gateway"
-        || file_name.starts_with("gateway.")
-        || file_name.starts_with("gateway-")
+    if file_name.ends_with(".log") {
+        return true;
+    }
+
+    if let Some((_, suffix)) = file_name.split_once(".log.") {
+        return !suffix.is_empty();
+    }
+
+    false
 }
 
 fn diagnostics_manifest_display_path(log_dir: &Path) -> String {
@@ -185,26 +189,24 @@ fn write_file_atomically(target_path: &Path, content: &str) -> Result<(), String
         std::process::id()
     ));
 
-    std::fs::write(&temp_path, content)
-        .map_err(|error| format!("failed to write diagnostics temp manifest: {error}"))?;
+    std::fs::write(&temp_path, content).map_err(|error| {
+        let _ = std::fs::remove_file(&temp_path);
+        format!("failed to write diagnostics temp manifest: {error}")
+    })?;
 
-    match std::fs::rename(&temp_path, target_path) {
-        Ok(()) => Ok(()),
-        Err(rename_error) => {
-            if target_path.exists() {
-                std::fs::remove_file(target_path)
-                    .map_err(|error| format!("failed to replace diagnostics manifest: {error}"))?;
-                std::fs::rename(&temp_path, target_path)
-                    .map_err(|error| format!("failed to finalize diagnostics manifest: {error}"))?;
-                return Ok(());
-            }
-
-            let _ = std::fs::remove_file(&temp_path);
-            Err(format!(
-                "failed to atomically replace diagnostics manifest: {rename_error}"
-            ))
-        }
+    if let Err(rename_error) = std::fs::rename(&temp_path, target_path) {
+        let cleanup_error = std::fs::remove_file(&temp_path).err();
+        return Err(match cleanup_error {
+            Some(cleanup_error) => format!(
+                "failed to atomically replace diagnostics manifest without touching existing target: {rename_error}; failed to cleanup temp file: {cleanup_error}"
+            ),
+            None => format!(
+                "failed to atomically replace diagnostics manifest without touching existing target: {rename_error}"
+            ),
+        });
     }
+
+    Ok(())
 }
 
 #[tauri::command]

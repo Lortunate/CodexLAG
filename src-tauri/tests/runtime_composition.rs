@@ -99,6 +99,10 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
     }
     std::fs::write(log_dir.join("gateway.log.2026-04-12"), "rotated-entry")
         .expect("write rotated gateway log file");
+    std::fs::write(log_dir.join("gateway.backup"), "non-log gateway backup")
+        .expect("write non-log gateway backup");
+    std::fs::write(log_dir.join("gateway-snapshot"), "non-log gateway snapshot")
+        .expect("write non-log gateway snapshot");
     std::fs::write(log_dir.join("notes.txt"), "non-log").expect("write non-log file");
 
     let metadata = runtime_log_metadata_from_runtime(&runtime).expect("runtime log metadata");
@@ -107,6 +111,8 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
     assert_ne!(metadata.log_dir, log_dir.to_string_lossy());
     assert!(metadata.files.iter().all(|file_name| !file_name.ends_with(".txt")));
     assert!(!metadata.files.iter().any(|file_name| file_name == "notes.txt"));
+    assert!(!metadata.files.iter().any(|file_name| file_name == "gateway.backup"));
+    assert!(!metadata.files.iter().any(|file_name| file_name == "gateway-snapshot"));
     assert!(
         metadata
             .files
@@ -145,6 +151,41 @@ async fn diagnostics_export_returns_manifest_path() {
 
     let diagnostics_entries = std::fs::read_dir(log_dir.join("diagnostics"))
         .expect("read diagnostics directory entries");
+    for entry in diagnostics_entries {
+        let entry = entry.expect("diagnostics directory entry");
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        assert!(!file_name.starts_with(".diagnostics-manifest.tmp-"));
+    }
+}
+
+#[tokio::test]
+async fn diagnostics_export_preserves_existing_target_on_replace_failure() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let log_dir = runtime.runtime_log().log_dir.clone();
+    std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
+    std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
+
+    let diagnostics_dir = log_dir.join("diagnostics");
+    std::fs::create_dir_all(&diagnostics_dir).expect("create diagnostics dir");
+    let manifest_path = diagnostics_dir.join("diagnostics-manifest.txt");
+    if manifest_path.exists() {
+        if manifest_path.is_dir() {
+            std::fs::remove_dir_all(&manifest_path).expect("remove stale conflicting manifest directory");
+        } else {
+            std::fs::remove_file(&manifest_path).expect("remove stale manifest file");
+        }
+    }
+    std::fs::create_dir_all(&manifest_path).expect("create conflicting manifest directory");
+
+    let error = export_runtime_diagnostics_from_runtime(&runtime).expect_err("export should fail");
+    assert!(error.contains("failed to atomically replace diagnostics manifest"));
+    assert!(manifest_path.is_dir());
+
+    let diagnostics_entries = std::fs::read_dir(&diagnostics_dir).expect("read diagnostics directory entries");
     for entry in diagnostics_entries {
         let entry = entry.expect("diagnostics directory entry");
         let file_name = entry.file_name();
