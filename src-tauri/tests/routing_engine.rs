@@ -139,3 +139,53 @@ fn timeout_threshold_opens_and_success_resets_health() {
     let selected = choose_endpoint_at("relay_only", &[endpoint], now_ms + 3).expect("recovered");
     assert_eq!(selected.id, "relay-1");
 }
+
+#[test]
+fn timeout_and_server_error_streaks_reset_each_other() {
+    let rules = FailureRules {
+        timeout_open_after: 2,
+        server_error_open_after: 2,
+        ..FailureRules::default()
+    };
+    let mut endpoint = CandidateEndpoint::relay("relay-1", 10, true);
+    let now_ms = 11_000;
+
+    assert_eq!(
+        record_failure(&mut endpoint, EndpointFailure::Timeout, now_ms, &rules),
+        EndpointHealthState::Degraded
+    );
+    assert_eq!(
+        record_failure(&mut endpoint, EndpointFailure::HttpStatus(500), now_ms + 1, &rules),
+        EndpointHealthState::Degraded
+    );
+    assert_eq!(
+        record_failure(&mut endpoint, EndpointFailure::Timeout, now_ms + 2, &rules),
+        EndpointHealthState::Degraded
+    );
+    assert_eq!(
+        record_failure(&mut endpoint, EndpointFailure::Timeout, now_ms + 3, &rules),
+        EndpointHealthState::Open
+    );
+}
+
+#[test]
+fn cooldown_recovery_updates_health_state_before_selection() {
+    let rules = FailureRules {
+        cooldown_ms: 50,
+        ..FailureRules::default()
+    };
+    let now_ms = 12_000;
+    let mut endpoint = CandidateEndpoint::relay("relay-1", 10, true);
+
+    assert_eq!(
+        record_failure(
+            &mut endpoint,
+            EndpointFailure::HttpStatus(429),
+            now_ms,
+            &rules
+        ),
+        EndpointHealthState::Open
+    );
+    let selected = choose_endpoint_at("relay_only", &[endpoint], now_ms + 60).expect("recovered");
+    assert_eq!(selected.health.state, EndpointHealthState::Degraded);
+}

@@ -45,7 +45,7 @@ pub fn build_router_for_test(app_state: AppState) -> Router {
 
 pub fn default_candidates() -> Vec<CandidateEndpoint> {
     vec![
-        CandidateEndpoint::official("official-default", 10, true),
-        CandidateEndpoint::relay("relay-default", 20, false),
+        CandidateEndpoint::official("official-default", 10, false),
+        CandidateEndpoint::relay("relay-default", 20, true),
     ]
 }

@@ -50,8 +50,8 @@ fn timeout_and_5xx_classification_follow_configured_thresholds() {
 async fn codex_request_returns_user_facing_error_when_no_candidate_matches() {
     let mut state = bootstrap_state_for_test().await.expect("bootstrap");
     state
-        .set_default_key_allowed_mode(RoutingMode::RelayOnly)
-        .expect("set relay_only mode");
+        .set_default_key_allowed_mode(RoutingMode::AccountOnly)
+        .expect("set account_only mode");
     let secret = state
         .secret(&SecretKey::default_platform_key())
         .expect("platform key secret");
@@ -77,7 +77,7 @@ async fn codex_request_returns_user_facing_error_when_no_candidate_matches() {
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
 
     assert_eq!(payload["error"], "no_available_endpoint");
-    assert_eq!(payload["mode"], "relay_only");
+    assert_eq!(payload["mode"], "account_only");
 }
 
 #[test]

@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::gateway::server::default_candidates;
 use crate::logging::{log_route_downgrade, log_route_rejection};
-use crate::routing::engine::{RoutingError, choose_endpoint_at};
+use crate::routing::engine::{RoutingError, choose_endpoint_at, wall_clock_now_ms};
 
 #[derive(Debug, Serialize)]
 struct CodexRequestSummary {
@@ -49,7 +49,7 @@ async fn codex_request(
                 mode: platform_key.allowed_mode.clone(),
             }),
         ))?;
-    let now_ms = 0;
+    let now_ms = wall_clock_now_ms();
     let mode = platform_key.allowed_mode.as_str();
     let candidates = default_candidates();
     let selected = choose_endpoint_at(mode, &candidates, now_ms).map_err(|error| {
