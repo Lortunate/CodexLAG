@@ -9,7 +9,13 @@ use axum::{
 };
 
 use crate::{
-    gateway::runtime_routing::{RouteDebugSnapshot, RuntimeRoutingState},
+    gateway::{
+        runtime_routing::{
+            data_plane_executor_from_outcomes, default_data_plane_executor, DataPlaneExecutor,
+            RouteDebugSnapshot, RuntimeRoutingState,
+        },
+        server::default_candidates,
+    },
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
     models::{PlatformKey, RoutingPolicy},
     routing::engine::{CandidateEndpoint, FailureRules, RoutingError},
@@ -28,7 +34,20 @@ impl GatewayState {
     pub fn new(
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+    ) -> Self {
+        Self::new_with_runtime(
+            app_state,
+            usage_records,
+            default_candidates(),
+            default_data_plane_executor(),
+        )
+    }
+
+    pub fn new_with_runtime(
+        app_state: Arc<RwLock<AppState>>,
+        usage_records: Arc<RwLock<Vec<UsageRecord>>>,
         candidates: Vec<CandidateEndpoint>,
+        executor: DataPlaneExecutor,
     ) -> Self {
         Self {
             app_state,
@@ -36,6 +55,7 @@ impl GatewayState {
             routing: Arc::new(RwLock::new(RuntimeRoutingState::new(
                 candidates,
                 FailureRules::default(),
+                executor,
             ))),
             request_sequence: Arc::new(AtomicU64::new(0)),
         }
@@ -104,7 +124,7 @@ impl GatewayState {
         self.routing
             .write()
             .expect("gateway routing lock poisoned")
-            .set_test_outcomes(outcomes);
+            .set_data_plane_executor(data_plane_executor_from_outcomes(outcomes));
     }
 
     pub fn last_route_debug(&self) -> Option<RouteDebugSnapshot> {
