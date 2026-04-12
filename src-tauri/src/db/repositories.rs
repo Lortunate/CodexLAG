@@ -7,12 +7,17 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::db::migrations::ensure_schema_up_to_date;
 use crate::error::{CodexLagError, Result};
-use crate::models::{PlatformKey, PricingProfile, RequestAttemptLog, RequestLog, RoutingPolicy};
+use crate::models::{
+    CredentialKind, ImportedOfficialAccount, ManagedRelay, PlatformKey, PricingProfile,
+    RequestAttemptLog, RequestLog, RoutingPolicy,
+};
 
 pub struct Repositories {
     database_path: PathBuf,
     policies: HashMap<String, RoutingPolicy>,
     keys: HashMap<String, PlatformKey>,
+    imported_official_accounts: HashMap<String, ImportedOfficialAccount>,
+    managed_relays: HashMap<String, ManagedRelay>,
 }
 
 impl Repositories {
@@ -33,11 +38,15 @@ impl Repositories {
 
         let policies = Self::load_policies(&connection)?;
         let keys = Self::load_platform_keys(&connection)?;
+        let imported_official_accounts = Self::load_imported_official_accounts(&connection)?;
+        let managed_relays = Self::load_managed_relays(&connection)?;
 
         Ok(Self {
             database_path,
             policies,
             keys,
+            imported_official_accounts,
+            managed_relays,
         })
     }
 
@@ -101,20 +110,20 @@ impl Repositories {
         let policy_id = policy.id.clone();
         let policy_name = policy.name.clone();
 
-        self.policies.retain(|name, cached_policy| {
-            cached_policy.id != policy_id || name == &policy_name
-        });
+        self.policies
+            .retain(|name, cached_policy| cached_policy.id != policy_id || name == &policy_name);
         self.policies.insert(policy_name, policy);
         Ok(())
     }
 
     pub fn insert_platform_key(&mut self, key: PlatformKey) -> Result<()> {
         let name = key.name.clone();
+        let id = key.id.clone();
 
-        if self.keys.contains_key(&name) {
+        if self.keys.contains_key(&name) || self.keys.values().any(|existing| existing.id == id) {
             return Err(CodexLagError::new(format!(
                 "platform key '{}' already exists",
-                name
+                id
             )));
         }
 
@@ -148,6 +157,10 @@ impl Repositories {
 
     pub fn platform_key(&self, name: &str) -> Option<&PlatformKey> {
         self.keys.get(name)
+    }
+
+    pub fn platform_key_by_id(&self, id: &str) -> Option<&PlatformKey> {
+        self.keys.values().find(|key| key.id == id)
     }
 
     pub fn update_platform_key_allowed_mode(
@@ -184,12 +197,172 @@ impl Repositories {
         Ok(())
     }
 
+    pub fn update_platform_key_enabled_by_id(&mut self, key_id: &str, enabled: bool) -> Result<()> {
+        let Some((name, _)) = self
+            .keys
+            .iter()
+            .find(|(_, key)| key.id == key_id)
+            .map(|(name, key)| (name.clone(), key.clone()))
+        else {
+            return Err(CodexLagError::new(format!(
+                "platform key '{}' not found",
+                key_id
+            )));
+        };
+
+        let connection = self.open_connection()?;
+        connection
+            .execute(
+                "UPDATE platform_keys SET enabled = ?1 WHERE id = ?2",
+                params![enabled as i64, key_id],
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to update platform key '{}' enabled state: {error}",
+                    key_id
+                ))
+            })?;
+
+        let key = self
+            .keys
+            .get_mut(&name)
+            .expect("platform key existence checked before enabled update");
+        key.enabled = enabled;
+        Ok(())
+    }
+
     pub fn iter_policies(&self) -> impl Iterator<Item = &RoutingPolicy> {
         self.policies.values()
     }
 
     pub fn iter_platform_keys(&self) -> impl Iterator<Item = &PlatformKey> {
         self.keys.values()
+    }
+
+    pub fn save_imported_official_account(
+        &mut self,
+        account: ImportedOfficialAccount,
+    ) -> Result<()> {
+        let session_payload = encode_json(&account.session, "session_payload")?;
+        let connection = self.open_connection()?;
+
+        connection
+            .execute(
+                "
+                INSERT INTO imported_official_accounts (
+                    account_id,
+                    name,
+                    provider,
+                    session_payload,
+                    session_credential_ref,
+                    token_credential_ref
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                ON CONFLICT(account_id) DO UPDATE SET
+                    name = excluded.name,
+                    provider = excluded.provider,
+                    session_payload = excluded.session_payload,
+                    session_credential_ref = excluded.session_credential_ref,
+                    token_credential_ref = excluded.token_credential_ref
+                ",
+                params![
+                    &account.account_id,
+                    &account.name,
+                    &account.provider,
+                    session_payload,
+                    &account.session_credential_ref,
+                    &account.token_credential_ref
+                ],
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to persist imported official account '{}': {error}",
+                    account.account_id
+                ))
+            })?;
+
+        self.upsert_credential_ref(
+            account.session_credential_ref.as_str(),
+            account.account_id.as_str(),
+            CredentialKind::OfficialSession,
+        )?;
+        self.upsert_credential_ref(
+            account.token_credential_ref.as_str(),
+            account.account_id.as_str(),
+            CredentialKind::OfficialSession,
+        )?;
+
+        self.imported_official_accounts
+            .insert(account.account_id.clone(), account);
+        Ok(())
+    }
+
+    pub fn imported_official_account(&self, account_id: &str) -> Option<&ImportedOfficialAccount> {
+        self.imported_official_accounts.get(account_id)
+    }
+
+    pub fn iter_imported_official_accounts(
+        &self,
+    ) -> impl Iterator<Item = &ImportedOfficialAccount> {
+        self.imported_official_accounts.values()
+    }
+
+    pub fn save_managed_relay(&mut self, relay: ManagedRelay) -> Result<()> {
+        let adapter = encode_json(&relay.adapter, "relay_adapter")?;
+        let connection = self.open_connection()?;
+        connection
+            .execute(
+                "
+                INSERT INTO managed_relays (
+                    relay_id,
+                    name,
+                    endpoint,
+                    adapter
+                )
+                VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT(relay_id) DO UPDATE SET
+                    name = excluded.name,
+                    endpoint = excluded.endpoint,
+                    adapter = excluded.adapter
+                ",
+                params![&relay.relay_id, &relay.name, &relay.endpoint, adapter],
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to persist relay '{}': {error}",
+                    relay.relay_id
+                ))
+            })?;
+
+        self.managed_relays.insert(relay.relay_id.clone(), relay);
+        Ok(())
+    }
+
+    pub fn delete_managed_relay(&mut self, relay_id: &str) -> Result<bool> {
+        if !self.managed_relays.contains_key(relay_id) {
+            return Ok(false);
+        }
+
+        let connection = self.open_connection()?;
+        connection
+            .execute(
+                "DELETE FROM managed_relays WHERE relay_id = ?1",
+                params![relay_id],
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!("failed to delete relay '{}': {error}", relay_id))
+            })?;
+
+        self.managed_relays.remove(relay_id);
+        Ok(true)
+    }
+
+    pub fn managed_relay(&self, relay_id: &str) -> Option<&ManagedRelay> {
+        self.managed_relays.get(relay_id)
+    }
+
+    pub fn iter_managed_relays(&self) -> impl Iterator<Item = &ManagedRelay> {
+        self.managed_relays.values()
     }
 
     pub fn append_request_with_attempts(
@@ -584,6 +757,178 @@ impl Repositories {
         }
 
         Ok(keys)
+    }
+
+    fn load_imported_official_accounts(
+        connection: &Connection,
+    ) -> Result<HashMap<String, ImportedOfficialAccount>> {
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT
+                    account_id,
+                    name,
+                    provider,
+                    session_payload,
+                    session_credential_ref,
+                    token_credential_ref
+                FROM imported_official_accounts
+                ",
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to prepare imported official account query: {error}"
+                ))
+            })?;
+
+        let mut rows = statement.query([]).map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to query imported official accounts: {error}"
+            ))
+        })?;
+
+        let mut accounts = HashMap::new();
+        while let Some(row) = rows.next().map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to read imported official account row from sqlite cursor: {error}"
+            ))
+        })? {
+            let account_id: String = row.get(0).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode imported official account id: {error}"
+                ))
+            })?;
+            let name: String = row.get(1).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode imported official account name for '{account_id}': {error}"
+                ))
+            })?;
+            let provider: String = row.get(2).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode imported official account provider for '{account_id}': {error}"
+                ))
+            })?;
+            let session_payload: String = row.get(3).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode imported official account session payload for '{account_id}': {error}"
+                ))
+            })?;
+            let session_credential_ref: String = row.get(4).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode imported official account session credential ref for '{account_id}': {error}"
+                ))
+            })?;
+            let token_credential_ref: String = row.get(5).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode imported official account token credential ref for '{account_id}': {error}"
+                ))
+            })?;
+
+            let account = ImportedOfficialAccount {
+                account_id: account_id.clone(),
+                name,
+                provider,
+                session: decode_json(&session_payload, "session_payload")?,
+                session_credential_ref,
+                token_credential_ref,
+            };
+            accounts.insert(account_id, account);
+        }
+
+        Ok(accounts)
+    }
+
+    fn load_managed_relays(connection: &Connection) -> Result<HashMap<String, ManagedRelay>> {
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT
+                    relay_id,
+                    name,
+                    endpoint,
+                    adapter
+                FROM managed_relays
+                ",
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!("failed to prepare managed relay query: {error}"))
+            })?;
+
+        let mut rows = statement.query([]).map_err(|error| {
+            CodexLagError::new(format!("failed to query managed relays: {error}"))
+        })?;
+        let mut relays = HashMap::new();
+
+        while let Some(row) = rows.next().map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to read managed relay row from sqlite cursor: {error}"
+            ))
+        })? {
+            let relay_id: String = row.get(0).map_err(|error| {
+                CodexLagError::new(format!("failed to decode managed relay id: {error}"))
+            })?;
+            let name: String = row.get(1).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode managed relay name for '{relay_id}': {error}"
+                ))
+            })?;
+            let endpoint: String = row.get(2).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode managed relay endpoint for '{relay_id}': {error}"
+                ))
+            })?;
+            let adapter_raw: String = row.get(3).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode managed relay adapter for '{relay_id}': {error}"
+                ))
+            })?;
+            let adapter = decode_json(&adapter_raw, "relay_adapter")?;
+
+            relays.insert(
+                relay_id.clone(),
+                ManagedRelay {
+                    relay_id,
+                    name,
+                    endpoint,
+                    adapter,
+                },
+            );
+        }
+
+        Ok(relays)
+    }
+
+    fn upsert_credential_ref(
+        &self,
+        id: &str,
+        target_name: &str,
+        credential_kind: CredentialKind,
+    ) -> Result<()> {
+        let kind = encode_json(&credential_kind, "credential_kind")?;
+        let connection = self.open_connection()?;
+        connection
+            .execute(
+                "
+                INSERT INTO credential_refs (
+                    id,
+                    target_name,
+                    version,
+                    credential_kind,
+                    last_verified_at_ms
+                )
+                VALUES (?1, ?2, 1, ?3, NULL)
+                ON CONFLICT(id) DO UPDATE SET
+                    target_name = excluded.target_name,
+                    credential_kind = excluded.credential_kind
+                ",
+                params![id, target_name, kind],
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to persist credential reference '{id}': {error}"
+                ))
+            })?;
+        Ok(())
     }
 }
 

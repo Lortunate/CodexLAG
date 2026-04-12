@@ -3,28 +3,37 @@ use axum::{
     http::{Request, StatusCode},
 };
 use codexlag_lib::commands::accounts::{
-    get_account_capability_detail, import_official_account_login, list_accounts,
-    OfficialAccountImportInput,
+    get_account_capability_detail_from_runtime, import_official_account_login_from_runtime,
+    list_accounts_from_runtime, OfficialAccountImportInput,
 };
 use codexlag_lib::commands::keys::{
-    create_platform_key, disable_platform_key, enable_platform_key, list_platform_keys,
-    CreatePlatformKeyInput,
+    create_platform_key_from_runtime, disable_platform_key_from_runtime,
+    enable_platform_key_from_runtime, list_platform_keys_from_runtime, CreatePlatformKeyInput,
 };
 use codexlag_lib::commands::logs::{
     export_runtime_diagnostics_from_runtime, usage_ledger_from_runtime,
     usage_request_detail_from_runtime, usage_request_history_from_runtime,
 };
-use codexlag_lib::commands::policies::{update_policy, PolicyUpdateInput};
+use codexlag_lib::commands::policies::{
+    policy_summaries_from_state, update_policy_from_runtime, PolicyUpdateInput,
+};
 use codexlag_lib::commands::relays::{
-    add_relay, delete_relay, get_relay_capability_detail, test_relay_connection, update_relay,
+    add_relay_from_runtime, delete_relay_from_runtime, get_relay_capability_detail_from_runtime,
+    list_relays_from_runtime, test_relay_connection_from_runtime, update_relay_from_runtime,
     RelayCapabilityDetail, RelayUpsertInput,
 };
 use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance, UsageRecordInput};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
 use codexlag_lib::{
-    bootstrap::bootstrap_runtime_for_test, routing::policy::RoutingMode, secret_store::SecretKey,
+    bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test_at},
+    routing::policy::RoutingMode,
+    secret_store::SecretKey,
+    state::{RuntimeLogConfig, RuntimeState},
 };
+use rusqlite::{params, Connection};
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::ServiceExt;
 
@@ -36,10 +45,44 @@ fn unique_suffix() -> String {
     nanos.to_string()
 }
 
-#[test]
-fn account_and_relay_capability_details_expose_balance_metadata() {
-    let account = get_account_capability_detail("official-primary".to_string())
-        .expect("official account should succeed");
+async fn runtime_for_paths(database_path: &Path, log_dir: &Path) -> RuntimeState {
+    let app_state = bootstrap_state_for_test_at(database_path)
+        .await
+        .expect("bootstrap isolated app state");
+    RuntimeState::new(
+        app_state,
+        RuntimeLogConfig {
+            log_dir: log_dir.to_path_buf(),
+        },
+    )
+}
+
+fn isolated_test_root(prefix: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "{prefix}-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ))
+}
+
+fn spawn_single_accept_listener() -> (String, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let endpoint = format!("http://{}", listener.local_addr().expect("listener addr"));
+    let accept_once = std::thread::spawn(move || {
+        let _ = listener.accept();
+    });
+    (endpoint, accept_once)
+}
+
+#[tokio::test]
+async fn account_and_relay_capability_details_expose_balance_metadata() {
+    let isolated_root = isolated_test_root("command-capabilities");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let account =
+        get_account_capability_detail_from_runtime(&runtime, "official-primary".to_string())
+            .expect("official account should succeed");
     assert_eq!(account.account_id, "official-primary");
     assert_eq!(account.refresh_capability, Some(true));
     assert_eq!(
@@ -47,8 +90,8 @@ fn account_and_relay_capability_details_expose_balance_metadata() {
         OfficialBalanceCapability::NonQueryable
     );
 
-    let relay =
-        get_relay_capability_detail("relay-newapi".to_string()).expect("relay should succeed");
+    let relay = get_relay_capability_detail_from_runtime(&runtime, "relay-newapi".to_string())
+        .expect("relay should succeed");
     assert_eq!(relay.relay_id, "relay-newapi");
     assert_eq!(
         relay.balance_capability,
@@ -57,8 +100,9 @@ fn account_and_relay_capability_details_expose_balance_metadata() {
         }
     );
 
-    let unsupported = get_relay_capability_detail("relay-nobalance".to_string())
-        .expect("unsupported relay should still return capability details");
+    let unsupported =
+        get_relay_capability_detail_from_runtime(&runtime, "relay-nobalance".to_string())
+            .expect("unsupported relay should still return capability details");
     assert_eq!(
         unsupported,
         RelayCapabilityDetail {
@@ -67,36 +111,53 @@ fn account_and_relay_capability_details_expose_balance_metadata() {
             balance_capability: RelayBalanceCapability::Unsupported,
         }
     );
+    let _ = std::fs::remove_dir_all(&isolated_root);
 }
 
-#[test]
-fn capability_detail_commands_return_explicit_errors_for_unknown_ids() {
-    let account_error = get_account_capability_detail("unknown-account".to_string())
-        .expect_err("unknown account should be reported");
+#[tokio::test]
+async fn capability_detail_commands_return_explicit_errors_for_unknown_ids() {
+    let isolated_root = isolated_test_root("command-capability-errors");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let account_error =
+        get_account_capability_detail_from_runtime(&runtime, "unknown-account".to_string())
+            .expect_err("unknown account should be reported");
     assert_eq!(account_error, "unknown account id: unknown-account");
 
-    let relay_error = get_relay_capability_detail("relay-missing".to_string())
-        .expect_err("unknown relay should be reported");
+    let relay_error =
+        get_relay_capability_detail_from_runtime(&runtime, "relay-missing".to_string())
+            .expect_err("unknown relay should be reported");
     assert_eq!(relay_error, "unknown relay id: relay-missing");
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
 }
 
-#[test]
-fn account_import_login_command_validates_and_persists_entry() {
+#[tokio::test]
+async fn account_import_login_command_validates_and_persists_entry() {
+    let isolated_root = isolated_test_root("command-account-import");
+    let database_path = isolated_root.join("state.sqlite3");
+    let first_runtime = runtime_for_paths(&database_path, &isolated_root.join("logs-first")).await;
+
     let suffix = unique_suffix();
     let account_id = format!("official-imported-{suffix}");
-    let imported = import_official_account_login(OfficialAccountImportInput {
-        account_id: account_id.clone(),
-        name: "Imported Official Account".to_string(),
-        provider: "openai".to_string(),
-        session_credential_ref: format!("credential://official/session/{suffix}"),
-        token_credential_ref: format!("credential://official/token/{suffix}"),
-        account_identity: Some(format!("user-{suffix}@example.test")),
-        auth_mode: Some("oauth".to_string()),
-    })
+    let session_ref = format!("credential://official/session/{suffix}");
+    let imported = import_official_account_login_from_runtime(
+        &first_runtime,
+        OfficialAccountImportInput {
+            account_id: account_id.clone(),
+            name: "Imported Official Account".to_string(),
+            provider: "openai".to_string(),
+            session_credential_ref: session_ref.clone(),
+            token_credential_ref: format!("credential://official/token/{suffix}"),
+            account_identity: Some(format!("user-{suffix}@example.test")),
+            auth_mode: Some("oauth".to_string()),
+        },
+    )
     .expect("account import should succeed");
     assert_eq!(imported.account_id, account_id);
 
-    let accounts = list_accounts();
+    let accounts = list_accounts_from_runtime(&first_runtime);
     assert!(
         accounts
             .iter()
@@ -104,126 +165,283 @@ fn account_import_login_command_validates_and_persists_entry() {
         "imported account should be visible in list_accounts"
     );
 
-    let invalid_error = import_official_account_login(OfficialAccountImportInput {
-        account_id: format!("official-invalid-{suffix}"),
-        name: "Invalid Official Account".to_string(),
-        provider: "openai".to_string(),
-        session_credential_ref: "credential://official/token/not-a-session".to_string(),
-        token_credential_ref: format!("credential://official/token/{suffix}-bad"),
-        account_identity: None,
-        auth_mode: None,
-    })
+    let invalid_error = import_official_account_login_from_runtime(
+        &first_runtime,
+        OfficialAccountImportInput {
+            account_id: format!("official-invalid-{suffix}"),
+            name: "Invalid Official Account".to_string(),
+            provider: "openai".to_string(),
+            session_credential_ref: "credential://official/token/not-a-session".to_string(),
+            token_credential_ref: format!("credential://official/token/{suffix}-bad"),
+            account_identity: None,
+            auth_mode: None,
+        },
+    )
     .expect_err("invalid session credential ref should be rejected");
     assert_eq!(
         invalid_error,
         "session credential ref must start with 'credential://official/session/'"
     );
+
+    drop(first_runtime);
+
+    let second_runtime =
+        runtime_for_paths(&database_path, &isolated_root.join("logs-second")).await;
+    let reloaded_accounts = list_accounts_from_runtime(&second_runtime);
+    assert!(
+        reloaded_accounts
+            .iter()
+            .any(|account| account.account_id == account_id),
+        "imported account should persist across runtime restart"
+    );
+    drop(second_runtime);
+
+    let connection = Connection::open(&database_path).expect("open sqlite");
+    let credential_ref_rows: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM credential_refs WHERE id = ?1",
+            params![session_ref],
+            |row| row.get(0),
+        )
+        .expect("count credential refs");
+    assert_eq!(
+        credential_ref_rows, 1,
+        "account import should persist a credential reference"
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
 }
 
-#[test]
-fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
+#[tokio::test]
+async fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
+    let isolated_root = isolated_test_root("command-relays");
+    let database_path = isolated_root.join("state.sqlite3");
+    let first_runtime = runtime_for_paths(&database_path, &isolated_root.join("logs-first")).await;
+
     let suffix = unique_suffix();
     let relay_id = format!("relay-managed-{suffix}");
-    let created = add_relay(RelayUpsertInput {
-        relay_id: relay_id.clone(),
-        name: "Managed Relay".to_string(),
-        endpoint: format!("https://relay-{suffix}.example.test"),
-        adapter: Some("newapi".to_string()),
-    })
+    let (first_endpoint, first_accept) = spawn_single_accept_listener();
+    let created = add_relay_from_runtime(
+        &first_runtime,
+        RelayUpsertInput {
+            relay_id: relay_id.clone(),
+            name: "Managed Relay".to_string(),
+            endpoint: first_endpoint,
+            adapter: Some("newapi".to_string()),
+        },
+    )
     .expect("relay add should succeed");
     assert_eq!(created.relay_id, relay_id);
 
-    let tested = test_relay_connection(relay_id.clone()).expect("relay test should succeed");
+    let tested = test_relay_connection_from_runtime(&first_runtime, relay_id.clone())
+        .expect("relay test should succeed");
     assert_eq!(tested.status, "ok");
+    first_accept.join().expect("relay probe listener thread");
 
-    let updated = update_relay(RelayUpsertInput {
-        relay_id: relay_id.clone(),
-        name: "Managed Relay Updated".to_string(),
-        endpoint: format!("https://relay-updated-{suffix}.example.test"),
-        adapter: Some("newapi".to_string()),
-    })
+    let (updated_endpoint, second_accept) = spawn_single_accept_listener();
+
+    let updated = update_relay_from_runtime(
+        &first_runtime,
+        RelayUpsertInput {
+            relay_id: relay_id.clone(),
+            name: "Managed Relay Updated".to_string(),
+            endpoint: updated_endpoint.clone(),
+            adapter: Some("newapi".to_string()),
+        },
+    )
     .expect("relay update should succeed");
     assert_eq!(updated.name, "Managed Relay Updated");
+    let tested_updated = test_relay_connection_from_runtime(&first_runtime, relay_id.clone())
+        .expect("updated relay test should succeed");
+    assert_eq!(tested_updated.status, "ok");
+    second_accept
+        .join()
+        .expect("updated relay probe listener thread");
 
-    delete_relay(relay_id.clone()).expect("relay delete should succeed");
+    drop(first_runtime);
 
-    let unknown_error =
-        test_relay_connection(relay_id.clone()).expect_err("deleted relay should be unknown");
+    let second_runtime =
+        runtime_for_paths(&database_path, &isolated_root.join("logs-second")).await;
+    assert!(
+        list_relays_from_runtime(&second_runtime)
+            .iter()
+            .any(|relay| relay.relay_id == relay_id && relay.endpoint == updated_endpoint),
+        "managed relay should persist across runtime restart"
+    );
+
+    delete_relay_from_runtime(&second_runtime, relay_id.clone())
+        .expect("relay delete should succeed");
+    drop(second_runtime);
+
+    let third_runtime = runtime_for_paths(&database_path, &isolated_root.join("logs-third")).await;
+    assert!(
+        !list_relays_from_runtime(&third_runtime)
+            .iter()
+            .any(|relay| relay.relay_id == relay_id),
+        "deleted relay should remain absent after restart"
+    );
+
+    let unknown_error = test_relay_connection_from_runtime(&third_runtime, relay_id.clone())
+        .expect_err("deleted relay should be unknown");
     assert_eq!(unknown_error, format!("unknown relay id: {relay_id}"));
 
-    let invalid_error = add_relay(RelayUpsertInput {
-        relay_id: format!("relay-invalid-{suffix}"),
-        name: "Invalid Relay".to_string(),
-        endpoint: "ftp://relay.example.test".to_string(),
-        adapter: Some("newapi".to_string()),
-    })
+    let invalid_error = add_relay_from_runtime(
+        &third_runtime,
+        RelayUpsertInput {
+            relay_id: format!("relay-invalid-{suffix}"),
+            name: "Invalid Relay".to_string(),
+            endpoint: "ftp://relay.example.test".to_string(),
+            adapter: Some("newapi".to_string()),
+        },
+    )
     .expect_err("invalid endpoint scheme should be rejected");
     assert_eq!(
         invalid_error,
         "relay endpoint must start with 'http://' or 'https://'"
     );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
 }
 
-#[test]
-fn key_inventory_commands_create_list_disable_and_enable() {
+#[tokio::test]
+async fn key_inventory_commands_create_list_disable_and_enable() {
+    let isolated_root = isolated_test_root("command-keys");
+    let database_path = isolated_root.join("state.sqlite3");
+    let first_runtime = runtime_for_paths(&database_path, &isolated_root.join("logs-first")).await;
+
     let suffix = unique_suffix();
     let key_id = format!("pk-{suffix}");
     let key_name = format!("managed-key-{suffix}");
-    let created = create_platform_key(CreatePlatformKeyInput {
-        key_id: key_id.clone(),
-        name: key_name.clone(),
-        policy_id: "default".to_string(),
-        allowed_mode: "hybrid".to_string(),
-    })
+    let created = create_platform_key_from_runtime(
+        &first_runtime,
+        CreatePlatformKeyInput {
+            key_id: key_id.clone(),
+            name: key_name.clone(),
+            policy_id: "policy-default".to_string(),
+            allowed_mode: "hybrid".to_string(),
+        },
+    )
     .expect("key create should succeed");
     assert!(created.enabled);
 
-    let listed = list_platform_keys();
+    let listed = list_platform_keys_from_runtime(&first_runtime);
     assert!(
         listed.iter().any(|entry| entry.id == key_id),
         "created key should be visible in list_platform_keys"
     );
+    assert!(
+        first_runtime
+            .app_state()
+            .iter_platform_keys()
+            .any(|key| key.id == key_id),
+        "created key should be visible to runtime auth state"
+    );
 
-    let disabled = disable_platform_key(key_id.clone()).expect("disable should succeed");
+    let disabled = disable_platform_key_from_runtime(&first_runtime, key_id.clone())
+        .expect("disable should succeed");
     assert!(!disabled.enabled);
-    let enabled = enable_platform_key(key_id.clone()).expect("enable should succeed");
+    let enabled = enable_platform_key_from_runtime(&first_runtime, key_id.clone())
+        .expect("enable should succeed");
     assert!(enabled.enabled);
 
-    let unknown_error = disable_platform_key(format!("missing-{suffix}"))
-        .expect_err("unknown ids should return explicit errors");
+    let unknown_error =
+        disable_platform_key_from_runtime(&first_runtime, format!("missing-{suffix}"))
+            .expect_err("unknown ids should return explicit errors");
     assert_eq!(unknown_error, format!("unknown key id: missing-{suffix}"));
+
+    drop(first_runtime);
+
+    let second_runtime =
+        runtime_for_paths(&database_path, &isolated_root.join("logs-second")).await;
+    assert!(
+        list_platform_keys_from_runtime(&second_runtime)
+            .iter()
+            .any(|entry| entry.id == key_id && entry.enabled),
+        "key inventory changes should persist across runtime restart"
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
 }
 
-#[test]
-fn policy_update_command_enforces_strict_validation() {
-    let updated = update_policy(PolicyUpdateInput {
-        policy_id: "default".to_string(),
-        name: "Default Policy".to_string(),
-        selection_order: vec!["official-primary".to_string(), "relay-newapi".to_string()],
-        cross_pool_fallback: true,
-        retry_budget: 2,
-        timeout_open_after: 3,
-        server_error_open_after: 3,
-        cooldown_ms: 30_000,
-        half_open_after_ms: 15_000,
-        success_close_after: 1,
-    })
+#[tokio::test]
+async fn policy_update_command_enforces_strict_validation() {
+    let isolated_root = isolated_test_root("command-policies");
+    let database_path = isolated_root.join("state.sqlite3");
+    let first_runtime = runtime_for_paths(&database_path, &isolated_root.join("logs-first")).await;
+    let default_policy_id = first_runtime
+        .app_state()
+        .default_policy()
+        .expect("default policy")
+        .id
+        .clone();
+
+    let updated = update_policy_from_runtime(
+        &first_runtime,
+        PolicyUpdateInput {
+            policy_id: default_policy_id.clone(),
+            name: "default".to_string(),
+            selection_order: vec!["official-primary".to_string(), "relay-newapi".to_string()],
+            cross_pool_fallback: true,
+            retry_budget: 2,
+            timeout_open_after: 3,
+            server_error_open_after: 3,
+            cooldown_ms: 30_000,
+            half_open_after_ms: 15_000,
+            success_close_after: 1,
+        },
+    )
     .expect("default policy update should succeed");
     assert_eq!(updated.retry_budget, 2);
+    assert!(
+        policy_summaries_from_state(&first_runtime.app_state())
+            .iter()
+            .any(|summary| summary.name == "default"),
+        "updated policy should remain visible via list_policies view"
+    );
+    assert_eq!(
+        first_runtime
+            .app_state()
+            .get_policy_by_id(&default_policy_id)
+            .expect("updated default policy in runtime")
+            .retry_budget,
+        2
+    );
 
-    let invalid_error = update_policy(PolicyUpdateInput {
-        retry_budget: 0,
-        ..updated.clone()
-    })
+    let invalid_error = update_policy_from_runtime(
+        &first_runtime,
+        PolicyUpdateInput {
+            retry_budget: 0,
+            ..updated.clone()
+        },
+    )
     .expect_err("retry_budget must be strictly positive");
     assert_eq!(invalid_error, "retry_budget must be greater than 0");
 
-    let unknown_error = update_policy(PolicyUpdateInput {
-        policy_id: "missing-policy".to_string(),
-        ..updated
-    })
+    let unknown_error = update_policy_from_runtime(
+        &first_runtime,
+        PolicyUpdateInput {
+            policy_id: "missing-policy".to_string(),
+            ..updated
+        },
+    )
     .expect_err("unknown policy id should be explicit");
     assert_eq!(unknown_error, "unknown policy id: missing-policy");
+
+    drop(first_runtime);
+
+    let second_runtime =
+        runtime_for_paths(&database_path, &isolated_root.join("logs-second")).await;
+    assert_eq!(
+        second_runtime
+            .app_state()
+            .get_policy_by_id(&default_policy_id)
+            .expect("default policy after restart")
+            .retry_budget,
+        2,
+        "policy update should persist to repository-backed state"
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
 }
 
 #[tokio::test]

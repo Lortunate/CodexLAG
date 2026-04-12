@@ -87,6 +87,24 @@ pub struct CredentialRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportedOfficialAccount {
+    pub account_id: String,
+    pub name: String,
+    pub provider: String,
+    pub session: OfficialSession,
+    pub session_credential_ref: String,
+    pub token_credential_ref: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedRelay {
+    pub relay_id: String,
+    pub name: String,
+    pub endpoint: String,
+    pub adapter: RelayBalanceAdapter,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PricingProfile {
     pub id: String,
     pub model: String,

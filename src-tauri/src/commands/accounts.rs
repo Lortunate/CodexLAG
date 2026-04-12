@@ -1,11 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{
-    collections::HashMap,
-    sync::{Mutex, OnceLock},
-};
+use tauri::State;
 
+use crate::models::ImportedOfficialAccount;
 use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
+use crate::state::{AppState, RuntimeState};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AccountSummary {
@@ -48,41 +47,42 @@ pub struct OfficialAccountImportInput {
     pub auth_mode: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-struct ImportedOfficialAccount {
-    summary: AccountSummary,
-    session: OfficialSession,
-    session_credential_ref: String,
-    token_credential_ref: String,
-}
-
-static IMPORTED_ACCOUNTS: OnceLock<Mutex<HashMap<String, ImportedOfficialAccount>>> =
-    OnceLock::new();
-
-fn imported_accounts() -> &'static Mutex<HashMap<String, ImportedOfficialAccount>> {
-    IMPORTED_ACCOUNTS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-#[tauri::command]
-pub fn list_accounts() -> Vec<AccountSummary> {
+fn list_accounts_from_state(state: &AppState) -> Vec<AccountSummary> {
     let mut accounts = vec![AccountSummary {
         account_id: "official-primary".into(),
         name: "Primary Publisher".into(),
         provider: "openai".into(),
     }];
 
-    let imported = imported_accounts()
-        .lock()
-        .expect("imported accounts store lock poisoned");
-    accounts.extend(imported.values().map(|entry| entry.summary.clone()));
+    accounts.extend(
+        state
+            .iter_imported_official_accounts()
+            .map(|account| AccountSummary {
+                account_id: account.account_id.clone(),
+                name: account.name.clone(),
+                provider: account.provider.clone(),
+            }),
+    );
     accounts.sort_by(|left, right| left.account_id.cmp(&right.account_id));
     accounts
 }
 
+pub fn list_accounts_from_runtime(runtime: &RuntimeState) -> Vec<AccountSummary> {
+    list_accounts_from_state(&runtime.app_state())
+}
+
 #[tauri::command]
-pub fn refresh_account_balance(account_id: String) -> Result<AccountBalanceSnapshot, String> {
-    let summary = account_summary_by_id(account_id.as_str())?;
-    let session = official_session_for(account_id.as_str())?;
+pub fn list_accounts(state: State<'_, RuntimeState>) -> Vec<AccountSummary> {
+    list_accounts_from_runtime(&state)
+}
+
+pub fn refresh_account_balance_from_runtime(
+    runtime: &RuntimeState,
+    account_id: String,
+) -> Result<AccountBalanceSnapshot, String> {
+    let state = runtime.app_state();
+    let summary = account_summary_by_id(&state, account_id.as_str())?;
+    let session = official_session_for(&state, account_id.as_str())?;
     let balance = match session.balance_capability() {
         OfficialBalanceCapability::NonQueryable => AccountBalanceAvailability::NonQueryable {
             reason: "official accounts do not expose a balance endpoint".into(),
@@ -98,11 +98,20 @@ pub fn refresh_account_balance(account_id: String) -> Result<AccountBalanceSnaps
 }
 
 #[tauri::command]
-pub fn get_account_capability_detail(
+pub fn refresh_account_balance(
+    account_id: String,
+    state: State<'_, RuntimeState>,
+) -> Result<AccountBalanceSnapshot, String> {
+    refresh_account_balance_from_runtime(&state, account_id)
+}
+
+pub fn get_account_capability_detail_from_runtime(
+    runtime: &RuntimeState,
     account_id: String,
 ) -> Result<AccountCapabilityDetail, String> {
-    let summary = account_summary_by_id(account_id.as_str())?;
-    let session = official_session_for(account_id.as_str())?;
+    let state = runtime.app_state();
+    let summary = account_summary_by_id(&state, account_id.as_str())?;
+    let session = official_session_for(&state, account_id.as_str())?;
 
     Ok(AccountCapabilityDetail {
         account_id: summary.account_id,
@@ -113,7 +122,15 @@ pub fn get_account_capability_detail(
 }
 
 #[tauri::command]
-pub fn import_official_account_login(
+pub fn get_account_capability_detail(
+    account_id: String,
+    state: State<'_, RuntimeState>,
+) -> Result<AccountCapabilityDetail, String> {
+    get_account_capability_detail_from_runtime(&state, account_id)
+}
+
+pub fn import_official_account_login_from_runtime(
+    runtime: &RuntimeState,
     input: OfficialAccountImportInput,
 ) -> Result<AccountSummary, String> {
     let account_id = validate_identifier(input.account_id, "account_id")?;
@@ -134,30 +151,38 @@ pub fn import_official_account_login(
         "token credential ref",
     )?;
 
-    let session = OfficialSession {
-        session_id: format!("session:{account_id}"),
-        account_identity: input.account_identity.map(|value| value.trim().to_string()),
-        auth_mode: parse_auth_mode(input.auth_mode.as_deref()),
-        refresh_capability: Some(true),
-    };
-    let summary = AccountSummary {
+    let account = ImportedOfficialAccount {
         account_id: account_id.clone(),
-        name,
-        provider,
-    };
-    let imported = ImportedOfficialAccount {
-        summary: summary.clone(),
-        session,
+        name: name.clone(),
+        provider: provider.clone(),
+        session: OfficialSession {
+            session_id: format!("session:{account_id}"),
+            account_identity: input.account_identity.map(|value| value.trim().to_string()),
+            auth_mode: parse_auth_mode(input.auth_mode.as_deref()),
+            refresh_capability: Some(true),
+        },
         session_credential_ref: input.session_credential_ref.trim().to_string(),
         token_credential_ref: input.token_credential_ref.trim().to_string(),
     };
 
-    imported_accounts()
-        .lock()
-        .expect("imported accounts store lock poisoned")
-        .insert(account_id, imported);
+    runtime
+        .app_state_mut()
+        .save_imported_official_account(account)
+        .map_err(|error| error.to_string())?;
 
-    Ok(summary)
+    Ok(AccountSummary {
+        account_id,
+        name,
+        provider,
+    })
+}
+
+#[tauri::command]
+pub fn import_official_account_login(
+    input: OfficialAccountImportInput,
+    state: State<'_, RuntimeState>,
+) -> Result<AccountSummary, String> {
+    import_official_account_login_from_runtime(&state, input)
 }
 
 fn official_primary_session() -> OfficialSession {
@@ -169,27 +194,19 @@ fn official_primary_session() -> OfficialSession {
     }
 }
 
-fn official_session_for(account_id: &str) -> Result<OfficialSession, String> {
+fn official_session_for(state: &AppState, account_id: &str) -> Result<OfficialSession, String> {
     if account_id == "official-primary" {
         return Ok(official_primary_session());
     }
 
-    let imported = imported_accounts()
-        .lock()
-        .expect("imported accounts store lock poisoned");
-    let entry = imported
-        .get(account_id)
+    let entry = state
+        .imported_official_account(account_id)
         .ok_or_else(|| format!("unknown account id: {account_id}"))?;
-    // Touch credential refs so they are considered part of the persisted entry lifecycle.
-    let _ = (
-        entry.session_credential_ref.as_str(),
-        entry.token_credential_ref.as_str(),
-    );
     Ok(entry.session.clone())
 }
 
-fn account_summary_by_id(account_id: &str) -> Result<AccountSummary, String> {
-    list_accounts()
+fn account_summary_by_id(state: &AppState, account_id: &str) -> Result<AccountSummary, String> {
+    list_accounts_from_state(state)
         .into_iter()
         .find(|candidate| candidate.account_id == account_id)
         .ok_or_else(|| format!("unknown account id: {account_id}"))

@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{Mutex, OnceLock},
-};
+use std::collections::HashSet;
 use tauri::State;
 
 use crate::models::{FailureRules, RecoveryRules, RoutingPolicy};
@@ -26,27 +23,6 @@ pub struct PolicyUpdateInput {
     pub cooldown_ms: u64,
     pub half_open_after_ms: u64,
     pub success_close_after: u32,
-}
-
-static MANAGED_POLICIES: OnceLock<Mutex<HashMap<String, RoutingPolicy>>> = OnceLock::new();
-
-fn managed_policies() -> &'static Mutex<HashMap<String, RoutingPolicy>> {
-    MANAGED_POLICIES.get_or_init(|| {
-        let mut seeded = HashMap::new();
-        seeded.insert(
-            "default".to_string(),
-            RoutingPolicy {
-                id: "default".to_string(),
-                name: "Default Policy".to_string(),
-                selection_order: vec!["official-primary".to_string(), "relay-newapi".to_string()],
-                cross_pool_fallback: true,
-                retry_budget: 1,
-                failure_rules: FailureRules::default(),
-                recovery_rules: RecoveryRules::default(),
-            },
-        );
-        Mutex::new(seeded)
-    })
 }
 
 pub fn policy_summaries_from_state(state: &AppState) -> Vec<PolicySummary> {
@@ -79,13 +55,24 @@ pub fn list_policies(state: State<'_, RuntimeState>) -> Vec<PolicySummary> {
 }
 
 #[tauri::command]
-pub fn update_policy(input: PolicyUpdateInput) -> Result<PolicyUpdateInput, String> {
+pub fn update_policy(
+    input: PolicyUpdateInput,
+    state: State<'_, RuntimeState>,
+) -> Result<PolicyUpdateInput, String> {
+    update_policy_from_runtime(&state, input)
+}
+
+pub fn update_policy_from_runtime(
+    runtime: &RuntimeState,
+    input: PolicyUpdateInput,
+) -> Result<PolicyUpdateInput, String> {
     validate_policy_update_input(&input)?;
 
-    let mut policies = managed_policies()
-        .lock()
-        .expect("managed policy store lock poisoned");
-    if !policies.contains_key(input.policy_id.as_str()) {
+    let mut app_state = runtime.app_state_mut();
+    if app_state
+        .get_policy_by_id(input.policy_id.as_str())
+        .is_none()
+    {
         return Err(format!("unknown policy id: {}", input.policy_id));
     }
 
@@ -105,7 +92,9 @@ pub fn update_policy(input: PolicyUpdateInput) -> Result<PolicyUpdateInput, Stri
             success_close_after: input.success_close_after,
         },
     };
-    policies.insert(policy.id.clone(), policy);
+    app_state
+        .save_policy(policy)
+        .map_err(|error| error.to_string())?;
     Ok(input)
 }
 

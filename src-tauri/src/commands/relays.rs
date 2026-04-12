@@ -1,13 +1,15 @@
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    sync::{Mutex, OnceLock},
-};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use crate::models::ManagedRelay;
 use crate::providers::relay::{
     normalize_relay_balance_response, relay_balance_capability, NormalizedBalance,
     RelayBalanceAdapter, RelayBalanceCapability,
 };
+use crate::state::{AppState, RuntimeState};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RelaySummary {
@@ -58,57 +60,23 @@ pub struct RelayConnectionTestResult {
     pub latency_ms: u64,
 }
 
-#[derive(Debug, Clone)]
-struct ManagedRelay {
-    summary: RelaySummary,
-    adapter: RelayBalanceAdapter,
-}
-
-static MANAGED_RELAYS: OnceLock<Mutex<HashMap<String, ManagedRelay>>> = OnceLock::new();
-
-fn managed_relays() -> &'static Mutex<HashMap<String, ManagedRelay>> {
-    MANAGED_RELAYS.get_or_init(|| Mutex::new(HashMap::new()))
+pub fn list_relays_from_runtime(runtime: &RuntimeState) -> Vec<RelaySummary> {
+    list_relays_from_state(&runtime.app_state())
 }
 
 #[tauri::command]
-pub fn list_relays() -> Vec<RelaySummary> {
-    let mut relays = default_relays();
-    relays.extend(
-        managed_relays()
-            .lock()
-            .expect("managed relays store lock poisoned")
-            .values()
-            .map(|entry| entry.summary.clone()),
-    );
-    relays.sort_by(|left, right| left.relay_id.cmp(&right.relay_id));
-    relays
+pub fn list_relays(state: State<'_, RuntimeState>) -> Vec<RelaySummary> {
+    list_relays_from_runtime(&state)
 }
 
-fn default_relays() -> Vec<RelaySummary> {
-    vec![
-        RelaySummary {
-            relay_id: "relay-newapi".into(),
-            name: "Local Gateway".into(),
-            endpoint: "http://127.0.0.1:8787".into(),
-        },
-        RelaySummary {
-            relay_id: "relay-nobalance".into(),
-            name: "Upstream Proxy".into(),
-            endpoint: "https://relay.example.test".into(),
-        },
-        RelaySummary {
-            relay_id: "relay-badpayload".into(),
-            name: "Broken Upstream".into(),
-            endpoint: "https://badpayload.example.test".into(),
-        },
-    ]
-}
-
-#[tauri::command]
-pub fn refresh_relay_balance(relay_id: String) -> Result<RelayBalanceSnapshot, String> {
-    let summary = relay_summary_by_id(relay_id.as_str())?;
-    let adapter = relay_adapter_for(summary.relay_id.as_str())?;
-    let payload = relay_balance_fixture_payload(summary.relay_id.as_str());
+pub fn refresh_relay_balance_from_runtime(
+    runtime: &RuntimeState,
+    relay_id: String,
+) -> Result<RelayBalanceSnapshot, String> {
+    let state = runtime.app_state();
+    let summary = relay_summary_by_id_from_state(&state, relay_id.as_str())?;
+    let adapter = relay_adapter_for_state(&state, summary.relay_id.as_str())?;
+    let payload = relay_balance_fixture_payload(&state, summary.relay_id.as_str());
     let balance = normalize_relay_balance_response(adapter, payload)
         .map_err(|error| format!("relay balance payload parse error: {error:?}"))?;
     let balance = match balance {
@@ -129,9 +97,20 @@ pub fn refresh_relay_balance(relay_id: String) -> Result<RelayBalanceSnapshot, S
 }
 
 #[tauri::command]
-pub fn get_relay_capability_detail(relay_id: String) -> Result<RelayCapabilityDetail, String> {
-    let summary = relay_summary_by_id(relay_id.as_str())?;
-    let adapter = relay_adapter_for(summary.relay_id.as_str())?;
+pub fn refresh_relay_balance(
+    relay_id: String,
+    state: State<'_, RuntimeState>,
+) -> Result<RelayBalanceSnapshot, String> {
+    refresh_relay_balance_from_runtime(&state, relay_id)
+}
+
+pub fn get_relay_capability_detail_from_runtime(
+    runtime: &RuntimeState,
+    relay_id: String,
+) -> Result<RelayCapabilityDetail, String> {
+    let state = runtime.app_state();
+    let summary = relay_summary_by_id_from_state(&state, relay_id.as_str())?;
+    let adapter = relay_adapter_for_state(&state, summary.relay_id.as_str())?;
 
     Ok(RelayCapabilityDetail {
         relay_id: summary.relay_id,
@@ -141,44 +120,77 @@ pub fn get_relay_capability_detail(relay_id: String) -> Result<RelayCapabilityDe
 }
 
 #[tauri::command]
-pub fn add_relay(input: RelayUpsertInput) -> Result<RelaySummary, String> {
+pub fn get_relay_capability_detail(
+    relay_id: String,
+    state: State<'_, RuntimeState>,
+) -> Result<RelayCapabilityDetail, String> {
+    get_relay_capability_detail_from_runtime(&state, relay_id)
+}
+
+pub fn add_relay_from_runtime(
+    runtime: &RuntimeState,
+    input: RelayUpsertInput,
+) -> Result<RelaySummary, String> {
     let relay_id = validate_identifier(input.relay_id.clone(), "relay_id")?;
-    if list_relays().iter().any(|relay| relay.relay_id == relay_id) {
+    if list_relays_from_runtime(runtime)
+        .iter()
+        .any(|relay| relay.relay_id == relay_id)
+    {
         return Err(format!("relay id already exists: {relay_id}"));
     }
 
     let created = build_managed_relay(relay_id, input)?;
-    let summary = created.summary.clone();
-    managed_relays()
-        .lock()
-        .expect("managed relays store lock poisoned")
-        .insert(summary.relay_id.clone(), created);
-    Ok(summary)
+    runtime
+        .app_state_mut()
+        .save_managed_relay(created.clone())
+        .map_err(|error| error.to_string())?;
+    Ok(relay_summary(&created))
 }
 
 #[tauri::command]
-pub fn update_relay(input: RelayUpsertInput) -> Result<RelaySummary, String> {
+pub fn add_relay(
+    input: RelayUpsertInput,
+    state: State<'_, RuntimeState>,
+) -> Result<RelaySummary, String> {
+    add_relay_from_runtime(&state, input)
+}
+
+pub fn update_relay_from_runtime(
+    runtime: &RuntimeState,
+    input: RelayUpsertInput,
+) -> Result<RelaySummary, String> {
     let relay_id = validate_identifier(input.relay_id.clone(), "relay_id")?;
-    let mut store = managed_relays()
-        .lock()
-        .expect("managed relays store lock poisoned");
-    if !store.contains_key(relay_id.as_str()) {
+    if runtime
+        .app_state()
+        .managed_relay(relay_id.as_str())
+        .is_none()
+    {
         return Err(format!("unknown relay id: {relay_id}"));
     }
+
     let updated = build_managed_relay(relay_id, input)?;
-    let summary = updated.summary.clone();
-    store.insert(summary.relay_id.clone(), updated);
-    Ok(summary)
+    runtime
+        .app_state_mut()
+        .save_managed_relay(updated.clone())
+        .map_err(|error| error.to_string())?;
+    Ok(relay_summary(&updated))
 }
 
 #[tauri::command]
-pub fn delete_relay(relay_id: String) -> Result<(), String> {
+pub fn update_relay(
+    input: RelayUpsertInput,
+    state: State<'_, RuntimeState>,
+) -> Result<RelaySummary, String> {
+    update_relay_from_runtime(&state, input)
+}
+
+pub fn delete_relay_from_runtime(runtime: &RuntimeState, relay_id: String) -> Result<(), String> {
     let relay_id = validate_identifier(relay_id, "relay_id")?;
-    let removed = managed_relays()
-        .lock()
-        .expect("managed relays store lock poisoned")
-        .remove(relay_id.as_str());
-    if removed.is_some() {
+    let removed = runtime
+        .app_state_mut()
+        .delete_managed_relay(relay_id.as_str())
+        .map_err(|error| error.to_string())?;
+    if removed {
         Ok(())
     } else {
         Err(format!("unknown relay id: {relay_id}"))
@@ -186,51 +198,113 @@ pub fn delete_relay(relay_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn test_relay_connection(relay_id: String) -> Result<RelayConnectionTestResult, String> {
-    let summary = relay_summary_by_id(relay_id.as_str())?;
+pub fn delete_relay(relay_id: String, state: State<'_, RuntimeState>) -> Result<(), String> {
+    delete_relay_from_runtime(&state, relay_id)
+}
+
+pub fn test_relay_connection_from_runtime(
+    runtime: &RuntimeState,
+    relay_id: String,
+) -> Result<RelayConnectionTestResult, String> {
+    let state = runtime.app_state();
+    let summary = relay_summary_by_id_from_state(&state, relay_id.as_str())?;
     if !is_http_endpoint(summary.endpoint.as_str()) {
         return Err("relay endpoint must start with 'http://' or 'https://'".to_string());
     }
 
-    let status = if summary.endpoint.contains("badpayload") || summary.endpoint.contains("offline")
-    {
-        "failed"
-    } else {
-        "ok"
+    let (status, latency_ms) = match probe_relay_endpoint(summary.endpoint.as_str()) {
+        Ok(latency_ms) => ("ok".to_string(), latency_ms),
+        Err(_) => ("failed".to_string(), 0),
     };
-    let latency_ms = if status == "ok" { 18 } else { 250 };
 
     Ok(RelayConnectionTestResult {
         relay_id: summary.relay_id,
         endpoint: summary.endpoint,
-        status: status.to_string(),
+        status,
         latency_ms,
     })
 }
 
-fn relay_adapter_for(relay_id: &str) -> Result<RelayBalanceAdapter, String> {
-    if let Some(adapter) = managed_relays()
-        .lock()
-        .expect("managed relays store lock poisoned")
-        .get(relay_id)
-        .map(|entry| entry.adapter)
-    {
-        return Ok(adapter);
-    }
-
-    match relay_id {
-        "relay-newapi" | "relay-badpayload" => Ok(RelayBalanceAdapter::NewApi),
-        "relay-nobalance" => Ok(RelayBalanceAdapter::NoBalance),
-        _ => Err(format!("unknown relay id: {relay_id}")),
-    }
+#[tauri::command]
+pub fn test_relay_connection(
+    relay_id: String,
+    state: State<'_, RuntimeState>,
+) -> Result<RelayConnectionTestResult, String> {
+    test_relay_connection_from_runtime(&state, relay_id)
 }
 
-fn relay_balance_fixture_payload(relay_id: &str) -> &'static str {
-    if managed_relays()
-        .lock()
-        .expect("managed relays store lock poisoned")
-        .contains_key(relay_id)
-    {
+fn list_relays_from_state(state: &AppState) -> Vec<RelaySummary> {
+    let mut relays = default_relays()
+        .into_iter()
+        .map(|relay| relay_summary(&relay))
+        .collect::<Vec<_>>();
+    relays.extend(
+        state
+            .iter_managed_relays()
+            .map(relay_summary)
+            .collect::<Vec<_>>(),
+    );
+    relays.sort_by(|left, right| left.relay_id.cmp(&right.relay_id));
+    relays
+}
+
+fn default_relays() -> Vec<ManagedRelay> {
+    vec![
+        ManagedRelay {
+            relay_id: "relay-newapi".into(),
+            name: "Local Gateway".into(),
+            endpoint: "http://127.0.0.1:8787".into(),
+            adapter: RelayBalanceAdapter::NewApi,
+        },
+        ManagedRelay {
+            relay_id: "relay-nobalance".into(),
+            name: "Upstream Proxy".into(),
+            endpoint: "https://relay.example.test".into(),
+            adapter: RelayBalanceAdapter::NoBalance,
+        },
+        ManagedRelay {
+            relay_id: "relay-badpayload".into(),
+            name: "Broken Upstream".into(),
+            endpoint: "https://badpayload.example.test".into(),
+            adapter: RelayBalanceAdapter::NewApi,
+        },
+    ]
+}
+
+fn default_relay_by_id(relay_id: &str) -> Option<ManagedRelay> {
+    default_relays()
+        .into_iter()
+        .find(|relay| relay.relay_id == relay_id)
+}
+
+fn relay_by_id_from_state(state: &AppState, relay_id: &str) -> Option<ManagedRelay> {
+    if let Some(managed) = state.managed_relay(relay_id) {
+        return Some(managed.clone());
+    }
+
+    default_relay_by_id(relay_id)
+}
+
+fn relay_summary_by_id_from_state(
+    state: &AppState,
+    relay_id: &str,
+) -> Result<RelaySummary, String> {
+    relay_by_id_from_state(state, relay_id)
+        .map(|relay| relay_summary(&relay))
+        .ok_or_else(|| format!("unknown relay id: {relay_id}"))
+}
+
+fn relay_adapter_for_state(
+    state: &AppState,
+    relay_id: &str,
+) -> Result<RelayBalanceAdapter, String> {
+    relay_by_id_from_state(state, relay_id)
+        .map(|relay| relay.adapter)
+        .ok_or_else(|| format!("unknown relay id: {relay_id}"))
+}
+
+fn relay_balance_fixture_payload(state: &AppState, relay_id: &str) -> &'static str {
+    if state.managed_relay(relay_id).is_some() {
         return r#"{"data":{"total_balance":"50.00","used_balance":"10.00"}}"#;
     }
 
@@ -249,11 +323,12 @@ fn adapter_name(adapter: RelayBalanceAdapter) -> String {
     }
 }
 
-fn relay_summary_by_id(relay_id: &str) -> Result<RelaySummary, String> {
-    list_relays()
-        .into_iter()
-        .find(|candidate| candidate.relay_id == relay_id)
-        .ok_or_else(|| format!("unknown relay id: {relay_id}"))
+fn relay_summary(relay: &ManagedRelay) -> RelaySummary {
+    RelaySummary {
+        relay_id: relay.relay_id.clone(),
+        name: relay.name.clone(),
+        endpoint: relay.endpoint.clone(),
+    }
 }
 
 fn build_managed_relay(relay_id: String, input: RelayUpsertInput) -> Result<ManagedRelay, String> {
@@ -265,13 +340,80 @@ fn build_managed_relay(relay_id: String, input: RelayUpsertInput) -> Result<Mana
     let adapter = parse_adapter(input.adapter.as_deref())?;
 
     Ok(ManagedRelay {
-        summary: RelaySummary {
-            relay_id,
-            name,
-            endpoint,
-        },
+        relay_id,
+        name,
+        endpoint,
         adapter,
     })
+}
+
+fn probe_relay_endpoint(endpoint: &str) -> Result<u64, String> {
+    let (host, port) = parse_host_port(endpoint)?;
+    let mut addrs = (host.as_str(), port)
+        .to_socket_addrs()
+        .map_err(|error| format!("failed to resolve relay endpoint '{endpoint}': {error}"))?;
+    let address = addrs
+        .next()
+        .ok_or_else(|| format!("failed to resolve relay endpoint '{endpoint}'"))?;
+
+    let started = Instant::now();
+    TcpStream::connect_timeout(&address, Duration::from_secs(3))
+        .map_err(|error| format!("failed to connect to relay endpoint '{endpoint}': {error}"))?;
+    Ok(started.elapsed().as_millis() as u64)
+}
+
+fn parse_host_port(endpoint: &str) -> Result<(String, u16), String> {
+    let (rest, default_port) = if let Some(value) = endpoint.strip_prefix("http://") {
+        (value, 80_u16)
+    } else if let Some(value) = endpoint.strip_prefix("https://") {
+        (value, 443_u16)
+    } else {
+        return Err("relay endpoint must start with 'http://' or 'https://'".to_string());
+    };
+
+    let authority = rest
+        .split('/')
+        .next()
+        .ok_or_else(|| "relay endpoint must include a host".to_string())?;
+    if authority.is_empty() {
+        return Err("relay endpoint must include a host".to_string());
+    }
+    let authority = authority.rsplit('@').next().unwrap_or(authority);
+
+    if authority.starts_with('[') {
+        let close = authority
+            .find(']')
+            .ok_or_else(|| "relay endpoint contains invalid IPv6 host format".to_string())?;
+        let host = authority[1..close].to_string();
+        if host.is_empty() {
+            return Err("relay endpoint must include a host".to_string());
+        }
+        let remainder = &authority[(close + 1)..];
+        if remainder.is_empty() {
+            return Ok((host, default_port));
+        }
+        let port = remainder
+            .strip_prefix(':')
+            .ok_or_else(|| "relay endpoint contains invalid host:port format".to_string())?
+            .parse::<u16>()
+            .map_err(|_| "relay endpoint contains invalid port".to_string())?;
+        return Ok((host, port));
+    }
+
+    if authority.matches(':').count() > 1 {
+        return Err("relay endpoint contains invalid host:port format".to_string());
+    }
+    if let Some((host, port_raw)) = authority.split_once(':') {
+        if host.is_empty() {
+            return Err("relay endpoint must include a host".to_string());
+        }
+        let port = port_raw
+            .parse::<u16>()
+            .map_err(|_| "relay endpoint contains invalid port".to_string())?;
+        return Ok((host.to_string(), port));
+    }
+
+    Ok((authority.to_string(), default_port))
 }
 
 fn validate_identifier(raw: String, field_name: &str) -> Result<String, String> {

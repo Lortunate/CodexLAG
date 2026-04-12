@@ -1,12 +1,12 @@
 use std::{
     path::PathBuf,
-    sync::{Arc, RwLock, RwLockReadGuard},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use crate::db::repositories::Repositories;
 use crate::gateway::server::LoopbackGateway;
 use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
-use crate::models::{PlatformKey, RoutingPolicy};
+use crate::models::{ImportedOfficialAccount, ManagedRelay, PlatformKey, RoutingPolicy};
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
 use crate::tray::{build_tray_model, TrayModel};
@@ -65,6 +65,60 @@ impl AppState {
         self.repositories.iter_platform_keys()
     }
 
+    pub fn get_platform_key_by_id(&self, id: &str) -> Option<&PlatformKey> {
+        self.repositories.platform_key_by_id(id)
+    }
+
+    pub fn insert_platform_key(&mut self, key: PlatformKey) -> crate::error::Result<()> {
+        self.repositories.insert_platform_key(key)
+    }
+
+    pub fn set_platform_key_enabled_by_id(
+        &mut self,
+        key_id: &str,
+        enabled: bool,
+    ) -> crate::error::Result<()> {
+        self.repositories
+            .update_platform_key_enabled_by_id(key_id, enabled)
+    }
+
+    pub fn save_policy(&mut self, policy: RoutingPolicy) -> crate::error::Result<()> {
+        self.repositories.save_policy(policy)
+    }
+
+    pub fn imported_official_account(&self, account_id: &str) -> Option<&ImportedOfficialAccount> {
+        self.repositories.imported_official_account(account_id)
+    }
+
+    pub fn iter_imported_official_accounts(
+        &self,
+    ) -> impl Iterator<Item = &ImportedOfficialAccount> {
+        self.repositories.iter_imported_official_accounts()
+    }
+
+    pub fn save_imported_official_account(
+        &mut self,
+        account: ImportedOfficialAccount,
+    ) -> crate::error::Result<()> {
+        self.repositories.save_imported_official_account(account)
+    }
+
+    pub fn managed_relay(&self, relay_id: &str) -> Option<&ManagedRelay> {
+        self.repositories.managed_relay(relay_id)
+    }
+
+    pub fn iter_managed_relays(&self) -> impl Iterator<Item = &ManagedRelay> {
+        self.repositories.iter_managed_relays()
+    }
+
+    pub fn save_managed_relay(&mut self, relay: ManagedRelay) -> crate::error::Result<()> {
+        self.repositories.save_managed_relay(relay)
+    }
+
+    pub fn delete_managed_relay(&mut self, relay_id: &str) -> crate::error::Result<bool> {
+        self.repositories.delete_managed_relay(relay_id)
+    }
+
     pub fn authenticate_platform_key(&self, provided_secret: &str) -> Option<PlatformKey> {
         self.iter_platform_keys()
             .find(|key| {
@@ -116,6 +170,12 @@ impl RuntimeState {
             .expect("runtime app state lock poisoned")
     }
 
+    pub fn app_state_mut(&self) -> RwLockWriteGuard<'_, AppState> {
+        self.app_state
+            .write()
+            .expect("runtime app state lock poisoned")
+    }
+
     pub fn loopback_gateway(&self) -> &LoopbackGateway {
         &self.loopback_gateway
     }
@@ -158,9 +218,6 @@ impl RuntimeState {
     }
 
     pub fn set_current_mode(&self, mode: RoutingMode) -> crate::error::Result<()> {
-        self.app_state
-            .write()
-            .expect("runtime app state lock poisoned")
-            .set_default_key_allowed_mode(mode)
+        self.app_state_mut().set_default_key_allowed_mode(mode)
     }
 }

@@ -61,6 +61,22 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
                 FOREIGN KEY(credential_ref_id) REFERENCES credential_refs(id)
             );
 
+            CREATE TABLE IF NOT EXISTS imported_official_accounts (
+                account_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                session_payload TEXT NOT NULL,
+                session_credential_ref TEXT NOT NULL,
+                token_credential_ref TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS managed_relays (
+                relay_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                endpoint TEXT NOT NULL,
+                adapter TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS request_logs (
                 request_id TEXT PRIMARY KEY,
                 platform_key_id TEXT NOT NULL,
