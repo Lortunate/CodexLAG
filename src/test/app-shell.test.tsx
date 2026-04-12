@@ -107,7 +107,7 @@ describe("App shell", () => {
       last_event: "Loopback gateway ready for key 'default' in hybrid mode",
     });
     getRuntimeLogMetadata.mockResolvedValue({
-      log_dir: "/tmp/codexlag/logs",
+      log_dir: "<app-local-data>/logs",
       files: ["gateway.log", "gateway.1.log"],
     });
     listAccounts.mockResolvedValue([
@@ -252,9 +252,24 @@ describe("App shell", () => {
     expect(screen.getByText("Relay refresh failures: 0")).toBeInTheDocument();
     expect(screen.getByText("Total ledger tokens: 222")).toBeInTheDocument();
     expect(screen.getByText("Usage cost provenance: unknown")).toBeInTheDocument();
-    expect(screen.getByText("Log directory: /tmp/codexlag/logs")).toBeInTheDocument();
+    expect(screen.getByText("Log directory: <app-local-data>/logs")).toBeInTheDocument();
     expect(screen.getByText("Tracked log files: 2")).toBeInTheDocument();
     expect(queryUsageLedger).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps overview available when runtime diagnostics loading fails", async () => {
+    getRuntimeLogMetadata.mockRejectedValueOnce(new Error("diagnostics unavailable"));
+
+    render(<App />);
+
+    expect(await screen.findByText("Runtime status")).toBeInTheDocument();
+    expect(screen.getByText("Balance observability")).toBeInTheDocument();
+    expect(screen.getByText("Usage ledger")).toBeInTheDocument();
+    expect(screen.getByText("Runtime diagnostics")).toBeInTheDocument();
+    expect(screen.getByText("Total ledger tokens: 222")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Log directory: unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Tracked log files: 0")).toBeInTheDocument();
   });
 
   it("loads account balances and capability details", async () => {

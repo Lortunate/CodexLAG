@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::path::Path;
 use std::time::SystemTime;
 use tauri::State;
 
@@ -48,11 +49,13 @@ pub fn get_log_summary(state: State<'_, RuntimeState>) -> LogSummary {
 pub fn runtime_log_metadata_from_runtime(
     runtime: &RuntimeState,
 ) -> Result<RuntimeLogMetadata, String> {
+    const MAX_SCAN_ENTRIES: usize = 200;
     const MAX_FILES: usize = 20;
 
     let log_dir = runtime.runtime_log().log_dir.clone();
     let mut files = match std::fs::read_dir(&log_dir) {
         Ok(entries) => entries
+            .take(MAX_SCAN_ENTRIES)
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| {
                 let file_type = entry.file_type().ok()?;
@@ -76,7 +79,7 @@ pub fn runtime_log_metadata_from_runtime(
     files.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
 
     Ok(RuntimeLogMetadata {
-        log_dir: log_dir.to_string_lossy().to_string(),
+        log_dir: sanitize_log_dir_for_display(&log_dir),
         files: files
             .into_iter()
             .take(MAX_FILES)
@@ -90,6 +93,14 @@ pub fn get_runtime_log_metadata(
     state: State<'_, RuntimeState>,
 ) -> Result<RuntimeLogMetadata, String> {
     runtime_log_metadata_from_runtime(&state)
+}
+
+fn sanitize_log_dir_for_display(path: &Path) -> String {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some("logs") => "<app-local-data>/logs".into(),
+        Some(tail) => format!("<app-local-data>/{tail}"),
+        None => "<app-local-data>/logs".into(),
+    }
 }
 
 #[tauri::command]

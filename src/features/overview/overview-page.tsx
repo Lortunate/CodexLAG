@@ -36,6 +36,7 @@ export function OverviewPage() {
   const [relayRefreshFailures, setRelayRefreshFailures] = useState(0);
   const [relayBalances, setRelayBalances] = useState<RelayBalanceSnapshot[]>([]);
   const [runtimeLogMetadata, setRuntimeLogMetadata] = useState<RuntimeLogMetadata | null>(null);
+  const [runtimeLogDiagnosticsUnavailable, setRuntimeLogDiagnosticsUnavailable] = useState(false);
   const [summary, setSummary] = useState<DefaultKeySummary>(initialSummary);
   const [usageLedger, setUsageLedger] = useState<UsageLedger | null>(null);
 
@@ -45,15 +46,13 @@ export function OverviewPage() {
 
     const loadOverview = async () => {
       try {
-        const [nextSummary, nextLogSummary, accountList, relayList, nextLedger, nextRuntimeLogMetadata] =
-          await Promise.all([
-            getDefaultKeySummary(),
-            getLogSummary(),
-            listAccounts(),
-            listRelays(),
-            queryUsageLedger(),
-            getRuntimeLogMetadata(),
-          ]);
+        const [nextSummary, nextLogSummary, accountList, relayList, nextLedger] = await Promise.all([
+          getDefaultKeySummary(),
+          getLogSummary(),
+          listAccounts(),
+          listRelays(),
+          queryUsageLedger(),
+        ]);
 
         const [nextAccountBalances, nextRelayBalances] = await Promise.all([
           Promise.all(
@@ -91,7 +90,6 @@ export function OverviewPage() {
         setAccountRefreshFailures(nextAccountBalances.filter((snapshot) => snapshot === null).length);
         setRelayRefreshFailures(nextRelayBalances.filter((snapshot) => snapshot === null).length);
         setUsageLedger(nextLedger);
-        setRuntimeLogMetadata(nextRuntimeLogMetadata);
         setErrorMessage(null);
       } catch {
         if (isMounted) {
@@ -100,7 +98,25 @@ export function OverviewPage() {
       }
     };
 
+    const loadRuntimeDiagnostics = async () => {
+      try {
+        const nextRuntimeLogMetadata = await getRuntimeLogMetadata();
+        if (!isMounted) {
+          return;
+        }
+
+        setRuntimeLogMetadata(nextRuntimeLogMetadata);
+        setRuntimeLogDiagnosticsUnavailable(false);
+      } catch {
+        if (isMounted) {
+          setRuntimeLogMetadata(null);
+          setRuntimeLogDiagnosticsUnavailable(true);
+        }
+      }
+    };
+
     loadOverview();
+    loadRuntimeDiagnostics();
 
     listenForDefaultKeySummaryChanged((nextSummary) => {
       if (isMounted) {
@@ -176,7 +192,10 @@ export function OverviewPage() {
         </article>
         <article className="status-card">
           <h3>Runtime diagnostics</h3>
-          <p>Log directory: {runtimeLogMetadata?.log_dir ?? "loading"}</p>
+          <p>
+            Log directory:{" "}
+            {runtimeLogMetadata?.log_dir ?? (runtimeLogDiagnosticsUnavailable ? "unavailable" : "loading")}
+          </p>
           <p>Tracked log files: {runtimeLogMetadata?.files.length ?? 0}</p>
         </article>
       </div>

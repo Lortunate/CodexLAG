@@ -90,15 +90,15 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
 
     let log_dir = runtime.runtime_log().log_dir.clone();
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
-    let first = log_dir.join("gateway.log");
-    let second = log_dir.join("gateway.1.log");
-    std::fs::write(&first, "first").expect("write first log");
-    std::fs::write(&second, "second").expect("write second log");
+    for index in 0..30 {
+        let file = log_dir.join(format!("gateway-{index:02}.log"));
+        std::fs::write(&file, format!("entry-{index}")).expect("write log file");
+    }
 
     let metadata = runtime_log_metadata_from_runtime(&runtime).expect("runtime log metadata");
 
-    assert_eq!(metadata.log_dir, log_dir.to_string_lossy());
-    assert!(metadata.files.contains(&"gateway.log".to_string()));
-    assert!(metadata.files.contains(&"gateway.1.log".to_string()));
+    assert_eq!(metadata.log_dir, "<app-local-data>/logs");
+    assert_ne!(metadata.log_dir, log_dir.to_string_lossy());
+    assert!(metadata.files.iter().all(|file_name| file_name.ends_with(".log")));
     assert!(metadata.files.len() <= 20);
 }
