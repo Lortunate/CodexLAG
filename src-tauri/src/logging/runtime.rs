@@ -21,6 +21,10 @@ pub fn format_event_fields(fields: &[(&str, &str)]) -> String {
         .join(" ")
 }
 
+pub fn build_attempt_id(request_id: &str, attempt_index: usize) -> String {
+    format!("{request_id}:{attempt_index}")
+}
+
 fn encode_field_value(value: &str) -> String {
     if !requires_quoting(value) {
         return value.to_string();

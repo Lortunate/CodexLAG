@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use codexlag_lib::bootstrap::{bootstrap_runtime_for_test, runtime_database_path, runtime_log_dir};
-use codexlag_lib::logging::runtime::{format_event_fields, redact_secret_value};
+use codexlag_lib::logging::runtime::{build_attempt_id, format_event_fields, redact_secret_value};
 
 #[test]
 fn runtime_log_dir_uses_app_local_data_logs_subfolder() {
@@ -69,4 +69,10 @@ fn format_event_fields_escapes_unsafe_values_and_stays_single_line() {
         "event=routing.endpoint.rejected request_id=\"req 123\" error=\"invalid=mode\" detail=\"line1\\nline2\""
     );
     assert!(!formatted.contains('\n'));
+}
+
+#[test]
+fn build_attempt_id_uses_request_id_and_zero_based_index() {
+    assert_eq!(build_attempt_id("req-abc", 0), "req-abc:0");
+    assert_eq!(build_attempt_id("req-abc", 2), "req-abc:2");
 }

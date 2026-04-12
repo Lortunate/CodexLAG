@@ -40,7 +40,13 @@ pub fn log_route_downgrade(mode: &str, selected: &CandidateEndpoint, candidates:
     log::warn!("{line}");
 }
 
-pub fn log_route_rejection(mode: &str, error: &RoutingError, candidates: &[CandidateEndpoint], now_ms: u64) {
+pub fn log_route_rejection(
+    request_id: &str,
+    mode: &str,
+    error: &RoutingError,
+    candidates: &[CandidateEndpoint],
+    now_ms: u64,
+) {
     let mut reasons = Vec::new();
     for candidate in candidates {
         if let Some(reason) = endpoint_rejection_reason(candidate, now_ms) {
@@ -56,6 +62,7 @@ pub fn log_route_rejection(mode: &str, error: &RoutingError, candidates: &[Candi
     let error_code = routing_error_code(error);
     let line = format_event_fields(&[
         ("event", "routing.endpoint.rejected"),
+        ("request_id", request_id),
         ("mode", mode),
         ("error", error_code),
         ("reasons", detail.as_str()),

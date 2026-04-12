@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::gateway::server::default_candidates;
+use crate::logging::runtime::{build_attempt_id, format_event_fields};
 use crate::logging::usage::UsageRecordInput;
 use crate::logging::{log_route_downgrade, log_route_rejection};
 use crate::routing::engine::{
@@ -44,6 +45,19 @@ async fn codex_request(
     auth: AuthenticatedPlatformKey,
 ) -> Result<Json<CodexRequestSummary>, (StatusCode, Json<RoutingErrorResponse>)> {
     let platform_key = auth.platform_key();
+    let now_ms = wall_clock_now_ms();
+    let mode_value = platform_key.allowed_mode.clone();
+    let mode = mode_value.as_str();
+    let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "gateway");
+
+    let accepted_line = format_event_fields(&[
+        ("event", "gateway.request.accepted"),
+        ("request_id", request_id.as_str()),
+        ("platform_key", platform_key.name.as_str()),
+        ("mode", mode),
+    ]);
+    log::info!("{accepted_line}");
+
     let policy = gateway_state.policy_for_platform_key(platform_key).ok_or((
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(RoutingErrorResponse {
@@ -51,13 +65,20 @@ async fn codex_request(
             mode: platform_key.allowed_mode.clone(),
         }),
     ))?;
-    let now_ms = wall_clock_now_ms();
-    let mode = platform_key.allowed_mode.as_str();
     let candidates = default_candidates();
     let selected = choose_endpoint_at(mode, &candidates, now_ms).map_err(|error| {
-        log_route_rejection(mode, &error, &candidates, now_ms);
+        log_route_rejection(request_id.as_str(), mode, &error, &candidates, now_ms);
         map_routing_error(mode, error)
     })?;
+
+    let attempt_id = build_attempt_id(request_id.as_str(), 0);
+    let selected_line = format_event_fields(&[
+        ("event", "routing.endpoint.selected"),
+        ("request_id", request_id.as_str()),
+        ("attempt_id", attempt_id.as_str()),
+        ("endpoint_id", selected.id.as_str()),
+    ]);
+    log::info!("{selected_line}");
 
     if should_log_downgrade(mode, &selected, &candidates, now_ms) {
         log_route_downgrade(mode, &selected, &candidates, now_ms);
@@ -65,7 +86,7 @@ async fn codex_request(
 
     let endpoint_id = selected.id.clone();
     gateway_state.record_usage_request(UsageRecordInput {
-        request_id: gateway_state.next_request_id(&platform_key.name, now_ms, &endpoint_id),
+        request_id: request_id.clone(),
         endpoint_id: endpoint_id.clone(),
         input_tokens: 0,
         output_tokens: 0,
