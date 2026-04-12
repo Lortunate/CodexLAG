@@ -54,11 +54,13 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <h1>CodexLAG</h1>
+        <p className="sidebar-subtitle">Desktop control plane</p>
         <nav>
           {sections.map((section) => (
             <button
               key={section.id}
               type="button"
+              className={section.id === activePage ? "is-active" : undefined}
               aria-pressed={section.id === activePage ? "true" : "false"}
               onClick={() => setActivePage(section.id)}
             >

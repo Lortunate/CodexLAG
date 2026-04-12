@@ -1,10 +1,22 @@
 import { useEffect, useState } from "react";
 import {
   getDefaultKeySummary,
+  getLogSummary,
+  listAccounts,
+  listRelays,
   listenForDefaultKeySummaryChanged,
+  queryUsageLedger,
+  refreshAccountBalance,
+  refreshRelayBalance,
   setDefaultKeyMode,
 } from "../../lib/tauri";
-import type { DefaultKeySummary } from "../../lib/types";
+import type {
+  AccountBalanceSnapshot,
+  DefaultKeySummary,
+  LogSummary,
+  RelayBalanceSnapshot,
+  UsageLedger,
+} from "../../lib/types";
 import { DefaultKeyModeToggle } from "../default-key/default-key-mode-toggle";
 
 const initialSummary: DefaultKeySummary = {
@@ -14,26 +26,71 @@ const initialSummary: DefaultKeySummary = {
 };
 
 export function OverviewPage() {
+  const [accountBalances, setAccountBalances] = useState<AccountBalanceSnapshot[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
+  const [logSummary, setLogSummary] = useState<LogSummary | null>(null);
+  const [relayBalances, setRelayBalances] = useState<RelayBalanceSnapshot[]>([]);
   const [summary, setSummary] = useState<DefaultKeySummary>(initialSummary);
+  const [usageLedger, setUsageLedger] = useState<UsageLedger | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     let disposeListener: (() => void) | null = null;
 
-    getDefaultKeySummary()
-      .then((nextSummary) => {
-        if (isMounted) {
-          setSummary(nextSummary);
-          setErrorMessage(null);
+    const loadOverview = async () => {
+      try {
+        const [nextSummary, nextLogSummary, accountList, relayList, nextLedger] = await Promise.all([
+          getDefaultKeySummary(),
+          getLogSummary(),
+          listAccounts(),
+          listRelays(),
+          queryUsageLedger(),
+        ]);
+
+        const [nextAccountBalances, nextRelayBalances] = await Promise.all([
+          Promise.all(
+            accountList.map(async (account) => {
+              try {
+                return await refreshAccountBalance(account.account_id);
+              } catch {
+                return null;
+              }
+            }),
+          ),
+          Promise.all(
+            relayList.map(async (relay) => {
+              try {
+                return await refreshRelayBalance(relay.relay_id);
+              } catch {
+                return null;
+              }
+            }),
+          ),
+        ]);
+
+        if (!isMounted) {
+          return;
         }
-      })
-      .catch(() => {
+
+        setSummary(nextSummary);
+        setLogSummary(nextLogSummary);
+        setAccountBalances(
+          nextAccountBalances.filter((snapshot): snapshot is AccountBalanceSnapshot => snapshot !== null),
+        );
+        setRelayBalances(
+          nextRelayBalances.filter((snapshot): snapshot is RelayBalanceSnapshot => snapshot !== null),
+        );
+        setUsageLedger(nextLedger);
+        setErrorMessage(null);
+      } catch {
         if (isMounted) {
-          setErrorMessage("Failed to load default key mode.");
+          setErrorMessage("Failed to load overview status.");
         }
-      });
+      }
+    };
+
+    loadOverview();
 
     listenForDefaultKeySummaryChanged((nextSummary) => {
       if (isMounted) {
@@ -77,11 +134,35 @@ export function OverviewPage() {
     }
   }
 
+  const nonQueryableAccountCount = accountBalances.filter(
+    (snapshot) => snapshot.balance.kind === "non_queryable",
+  ).length;
+  const queryableRelayCount = relayBalances.filter(
+    (snapshot) => snapshot.balance.kind === "queryable",
+  ).length;
+
   return (
     <section aria-labelledby="overview-heading">
       <h2 id="overview-heading">Gateway Overview</h2>
       <p>CodexLAG manages local accounts, relays, keys, policy routing, and logs.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+      <div className="status-card-grid">
+        <article className="status-card">
+          <h3>Runtime status</h3>
+          <p>Level: {logSummary?.level ?? "loading"}</p>
+          <p>{logSummary?.last_event ?? "Loading runtime summary..."}</p>
+        </article>
+        <article className="status-card">
+          <h3>Balance observability</h3>
+          <p>Non-queryable accounts: {nonQueryableAccountCount}</p>
+          <p>Queryable relays: {queryableRelayCount}</p>
+        </article>
+        <article className="status-card">
+          <h3>Usage ledger</h3>
+          <p>Total ledger tokens: {usageLedger?.total_tokens ?? 0}</p>
+          <p>Usage cost provenance: {usageLedger?.total_cost.provenance ?? "unknown"}</p>
+        </article>
+      </div>
       <DefaultKeyModeToggle
         activeMode={summary.allowedMode}
         disabled={isUpdatingMode}

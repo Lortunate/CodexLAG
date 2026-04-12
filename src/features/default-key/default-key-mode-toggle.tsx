@@ -10,6 +10,11 @@ interface DefaultKeyModeToggleProps {
   onSelectMode: (mode: DefaultKeyMode) => void;
 }
 
+function buildTraySummaryText(activeMode: DefaultKeyMode | null, rawMode: string) {
+  const modeText = activeMode ?? `unsupported (${rawMode})`;
+  return `Default key ready | Current mode: ${modeText}`;
+}
+
 export function DefaultKeyModeToggle({
   activeMode,
   disabled = false,
@@ -18,11 +23,12 @@ export function DefaultKeyModeToggle({
   onSelectMode,
 }: DefaultKeyModeToggleProps) {
   return (
-    <section>
+    <section className="panel">
       <h3>Default Key Mode</h3>
       <p>Default key: {summaryName}</p>
+      <p>{buildTraySummaryText(activeMode, rawMode)}</p>
       <p>Allowed mode: {activeMode ?? `unsupported (${rawMode})`}</p>
-      <div>
+      <div className="mode-toggle-row">
         {modes.map((mode) => (
           <button
             key={mode}

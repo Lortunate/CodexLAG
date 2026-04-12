@@ -75,7 +75,9 @@ pub enum TrayItemLabel {
 impl TrayItemLabel {
     pub fn text(self) -> Cow<'static, str> {
         match self {
-            Self::CurrentMode(mode) => format!("Current mode: {}", mode.as_str()).into(),
+            Self::CurrentMode(mode) => {
+                format!("Default key ready | Current mode: {}", mode.as_str()).into()
+            }
             Self::Mode(mode) => match mode {
                 RoutingMode::AccountOnly => Cow::Borrowed("Account only"),
                 RoutingMode::RelayOnly => Cow::Borrowed("Relay only"),
@@ -142,15 +144,19 @@ pub fn install_runtime_tray<R: Runtime>(app: &App<R>, model: &TrayModel) -> taur
             .iter()
             .find(|item| item.id == TrayItemId::CurrentMode)
             .map(|item| item.label.text())
-            .unwrap_or_else(|| Cow::Borrowed("Current mode: hybrid"))
+            .unwrap_or_else(|| Cow::Borrowed("Default key ready | Current mode: hybrid"))
             .as_ref(),
         false,
         None::<&str>,
     )?;
 
     let account_only_item = CheckMenuItemBuilder::with_id(
-        TrayItemId::Mode(RoutingMode::AccountOnly).menu_id().as_ref(),
-        TrayItemLabel::Mode(RoutingMode::AccountOnly).text().as_ref(),
+        TrayItemId::Mode(RoutingMode::AccountOnly)
+            .menu_id()
+            .as_ref(),
+        TrayItemLabel::Mode(RoutingMode::AccountOnly)
+            .text()
+            .as_ref(),
     )
     .checked(model.current_mode() == Some(RoutingMode::AccountOnly))
     .build(app)?;
@@ -250,8 +256,8 @@ fn handle_menu_event<R: Runtime>(
                 {
                     let _ = crate::commands::keys::emit_default_key_summary_changed(app, &summary);
                 }
-                let _ = current_mode_item
-                    .set_text(TrayItemLabel::CurrentMode(mode).text().as_ref());
+                let _ =
+                    current_mode_item.set_text(TrayItemLabel::CurrentMode(mode).text().as_ref());
                 let _ = account_only_item.set_checked(mode == RoutingMode::AccountOnly);
                 let _ = relay_only_item.set_checked(mode == RoutingMode::RelayOnly);
                 let _ = hybrid_item.set_checked(mode == RoutingMode::Hybrid);
