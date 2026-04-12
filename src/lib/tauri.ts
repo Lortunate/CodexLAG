@@ -81,20 +81,56 @@ function parseStructuredErrorPayload(value: unknown): AppErrorPayload | null {
   }
 
   const code = typeof value.code === "string" ? value.code : typeof value.error === "string" ? value.error : null;
-  if (!code) {
-    return null;
+  if (code) {
+    const category = isErrorCategory(value.category) ? value.category : categoryFromCode(code);
+    const message =
+      typeof value.message === "string" ? value.message : `Request failed with error code '${code}'.`;
+    const internalContext = typeof value.internal_context === "string" ? value.internal_context : null;
+
+    return {
+      code,
+      category,
+      message,
+      internal_context: internalContext,
+    };
   }
 
-  const category = isErrorCategory(value.category) ? value.category : categoryFromCode(code);
-  const message =
-    typeof value.message === "string" ? value.message : `Request failed with error code '${code}'.`;
-  const internalContext = typeof value.internal_context === "string" ? value.internal_context : null;
+  if (isRecord(value.error)) {
+    const nestedError = parseStructuredErrorPayload(value.error);
+    if (nestedError) {
+      return nestedError;
+    }
+  }
+
+  if (isRecord(value.payload)) {
+    const nestedPayload = parseStructuredErrorPayload(value.payload);
+    if (nestedPayload) {
+      return nestedPayload;
+    }
+  }
+
+  return null;
+}
+
+function payloadFromUnknown(error: unknown): AppErrorPayload {
+  const structured = parseStructuredErrorPayload(error);
+  if (structured) {
+    return structured;
+  }
+
+  if (typeof error === "string") {
+    return parseStringError(error);
+  }
+
+  if (isRecord(error) && typeof error.message === "string") {
+    return parseStringError(error.message);
+  }
 
   return {
-    code,
-    category,
-    message,
-    internal_context: internalContext,
+    code: "config.unknown",
+    category: "ConfigError",
+    message: "Unexpected runtime error.",
+    internal_context: null,
   };
 }
 
@@ -160,28 +196,7 @@ function parseStringError(value: string): AppErrorPayload {
 }
 
 function normalizeInvokeError(error: unknown): CodexLagInvokeError {
-  const structured = parseStructuredErrorPayload(error);
-  if (structured) {
-    return new CodexLagInvokeError(structured, error);
-  }
-
-  if (typeof error === "string") {
-    return new CodexLagInvokeError(parseStringError(error), error);
-  }
-
-  if (isRecord(error) && typeof error.message === "string") {
-    return new CodexLagInvokeError(parseStringError(error.message), error);
-  }
-
-  return new CodexLagInvokeError(
-    {
-      code: "config.unknown",
-      category: "ConfigError",
-      message: "Unexpected runtime error.",
-      internal_context: null,
-    },
-    error,
-  );
+  return new CodexLagInvokeError(payloadFromUnknown(error), error);
 }
 
 async function invokeWithContract<T>(command: string, args?: Record<string, unknown>): Promise<T> {

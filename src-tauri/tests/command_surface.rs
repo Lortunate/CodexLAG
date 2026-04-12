@@ -22,6 +22,7 @@ use codexlag_lib::commands::relays::{
     list_relays_from_runtime, test_relay_connection_from_runtime, update_relay_from_runtime,
     RelayCapabilityDetail, RelayUpsertInput,
 };
+use codexlag_lib::error::{CodexLagError, ErrorCategory};
 use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance, UsageRecordInput};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
@@ -72,6 +73,24 @@ fn spawn_single_accept_listener() -> (String, std::thread::JoinHandle<()>) {
         let _ = listener.accept();
     });
     (endpoint, accept_once)
+}
+
+fn assert_structured_command_error(
+    error: CodexLagError,
+    expected_code: &str,
+    expected_category: ErrorCategory,
+    expected_message: &str,
+    expected_context_fragment: &str,
+) {
+    let payload = error.to_payload();
+    assert_eq!(payload.code, expected_code);
+    assert_eq!(payload.category, expected_category);
+    assert_eq!(payload.message, expected_message);
+    let internal_context = payload.internal_context.expect("internal context should be present");
+    assert!(
+        internal_context.contains(expected_context_fragment),
+        "internal_context should include '{expected_context_fragment}', got: {internal_context}"
+    );
 }
 
 #[tokio::test]
@@ -128,7 +147,13 @@ async fn capability_detail_commands_return_explicit_errors_for_unknown_ids() {
     let relay_error =
         get_relay_capability_detail_from_runtime(&runtime, "relay-missing".to_string())
             .expect_err("unknown relay should be reported");
-    assert_eq!(relay_error, "unknown relay id: relay-missing");
+    assert_structured_command_error(
+        relay_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Unknown relay id.",
+        "command=relay_lookup;field=relay_id;value=relay-missing",
+    );
 
     let _ = std::fs::remove_dir_all(&isolated_root);
 }
@@ -382,7 +407,13 @@ async fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
 
     let unknown_error = test_relay_connection_from_runtime(&third_runtime, relay_id.clone())
         .expect_err("deleted relay should be unknown");
-    assert_eq!(unknown_error, format!("unknown relay id: {relay_id}"));
+    assert_structured_command_error(
+        unknown_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Unknown relay id.",
+        format!("command=relay_lookup;field=relay_id;value={relay_id}").as_str(),
+    );
 
     let invalid_error = add_relay_from_runtime(
         &third_runtime,
@@ -394,9 +425,12 @@ async fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
         },
     )
     .expect_err("invalid endpoint scheme should be rejected");
-    assert_eq!(
+    assert_structured_command_error(
         invalid_error,
-        "relay endpoint must start with 'http://' or 'https://'"
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Relay endpoint must start with 'http://' or 'https://'.",
+        "command=relay_validation;field=endpoint;value=ftp://relay.example.test",
     );
 
     let _ = std::fs::remove_dir_all(&isolated_root);
@@ -539,7 +573,13 @@ async fn key_inventory_commands_create_list_disable_and_enable() {
     let unknown_error =
         disable_platform_key_from_runtime(&first_runtime, format!("missing-{suffix}"))
             .expect_err("unknown ids should return explicit errors");
-    assert_eq!(unknown_error, format!("unknown key id: missing-{suffix}"));
+    assert_structured_command_error(
+        unknown_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Unknown platform key id.",
+        format!("command=set_platform_key_enabled;field=key_id;value=missing-{suffix}").as_str(),
+    );
 
     drop(first_runtime);
 

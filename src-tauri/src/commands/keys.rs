@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Runtime, State};
 
 use crate::{
-    error::{CodexLagError, Result},
+    error::{CodexLagError, ConfigErrorKind, Result},
     models::PlatformKey,
     routing::policy::RoutingMode,
     state::{AppState, RuntimeState},
@@ -50,8 +50,13 @@ pub fn set_default_key_mode_from_runtime(
     runtime: &RuntimeState,
     mode: &str,
 ) -> Result<DefaultKeySummary> {
-    let mode = RoutingMode::parse(mode)
-        .ok_or_else(|| CodexLagError::new(format!("unsupported default key mode '{}'", mode)))?;
+    let mode = RoutingMode::parse(mode).ok_or_else(|| {
+        CodexLagError::config(
+            ConfigErrorKind::UnsupportedMode,
+            "Allowed mode must be one of: hybrid, account_only, relay_only.",
+        )
+        .with_internal_context(format!("command=set_default_key_mode;mode={mode}"))
+    })?;
 
     runtime.set_current_mode(mode)?;
     default_key_summary_from_runtime(runtime)
@@ -74,10 +79,8 @@ pub fn emit_default_key_summary_changed<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn get_default_key_summary(
-    state: State<'_, RuntimeState>,
-) -> std::result::Result<DefaultKeySummary, String> {
-    default_key_summary_from_runtime(&state).map_err(|error| error.to_string())
+pub fn get_default_key_summary(state: State<'_, RuntimeState>) -> Result<DefaultKeySummary> {
+    default_key_summary_from_runtime(&state)
 }
 
 #[tauri::command]
@@ -85,10 +88,14 @@ pub fn set_default_key_mode(
     app: tauri::AppHandle,
     mode: String,
     state: State<'_, RuntimeState>,
-) -> std::result::Result<DefaultKeySummary, String> {
-    let summary =
-        set_default_key_mode_from_runtime(&state, &mode).map_err(|error| error.to_string())?;
-    emit_default_key_summary_changed(&app, &summary).map_err(|error| error.to_string())?;
+) -> Result<DefaultKeySummary> {
+    let summary = set_default_key_mode_from_runtime(&state, &mode)?;
+    emit_default_key_summary_changed(&app, &summary).map_err(|error| {
+        CodexLagError::new("Failed to emit default key summary update event.")
+            .with_internal_context(format!(
+                "command=set_default_key_mode;event={DEFAULT_KEY_SUMMARY_CHANGED_EVENT};cause={error}"
+            ))
+    })?;
     Ok(summary)
 }
 
@@ -96,14 +103,14 @@ pub fn set_default_key_mode(
 pub fn create_platform_key(
     state: State<'_, RuntimeState>,
     input: CreatePlatformKeyInput,
-) -> std::result::Result<PlatformKeyInventoryEntry, String> {
+) -> Result<PlatformKeyInventoryEntry> {
     create_platform_key_from_runtime(&state, input)
 }
 
 pub fn create_platform_key_from_runtime(
     runtime: &RuntimeState,
     input: CreatePlatformKeyInput,
-) -> std::result::Result<PlatformKeyInventoryEntry, String> {
+) -> Result<PlatformKeyInventoryEntry> {
     let key_id = validate_identifier(input.key_id, "key_id")?;
     let name = validate_non_empty(input.name, "name")?;
     let policy_id = validate_identifier(input.policy_id, "policy_id")?;
@@ -111,10 +118,22 @@ pub fn create_platform_key_from_runtime(
 
     let mut app_state = runtime.app_state_mut();
     if app_state.get_platform_key_by_id(key_id.as_str()).is_some() {
-        return Err(format!("platform key id already exists: {key_id}"));
+        return Err(CodexLagError::config(
+            ConfigErrorKind::InvalidPayload,
+            "Platform key id already exists.",
+        )
+        .with_internal_context(format!(
+            "command=create_platform_key;field=key_id;value={key_id}"
+        )));
     }
     if app_state.get_policy_by_id(policy_id.as_str()).is_none() {
-        return Err(format!("unknown policy id: {policy_id}"));
+        return Err(CodexLagError::config(
+            ConfigErrorKind::InvalidPayload,
+            "Unknown policy id.",
+        )
+        .with_internal_context(format!(
+            "command=create_platform_key;field=policy_id;value={policy_id}"
+        )));
     }
 
     app_state
@@ -125,7 +144,12 @@ pub fn create_platform_key_from_runtime(
             allowed_mode: allowed_mode.clone(),
             enabled: true,
         })
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            CodexLagError::new("Failed to persist platform key.")
+                .with_internal_context(format!(
+                    "command=create_platform_key;operation=insert_platform_key;key_id={key_id};cause={error}"
+                ))
+        })?;
 
     let created = PlatformKeyInventoryEntry {
         id: key_id,
@@ -162,14 +186,14 @@ pub fn list_platform_keys_from_runtime(runtime: &RuntimeState) -> Vec<PlatformKe
 pub fn disable_platform_key(
     state: State<'_, RuntimeState>,
     key_id: String,
-) -> std::result::Result<PlatformKeyInventoryEntry, String> {
+) -> Result<PlatformKeyInventoryEntry> {
     disable_platform_key_from_runtime(&state, key_id)
 }
 
 pub fn disable_platform_key_from_runtime(
     runtime: &RuntimeState,
     key_id: String,
-) -> std::result::Result<PlatformKeyInventoryEntry, String> {
+) -> Result<PlatformKeyInventoryEntry> {
     set_platform_key_enabled_from_runtime(runtime, key_id, false)
 }
 
@@ -177,14 +201,14 @@ pub fn disable_platform_key_from_runtime(
 pub fn enable_platform_key(
     state: State<'_, RuntimeState>,
     key_id: String,
-) -> std::result::Result<PlatformKeyInventoryEntry, String> {
+) -> Result<PlatformKeyInventoryEntry> {
     enable_platform_key_from_runtime(&state, key_id)
 }
 
 pub fn enable_platform_key_from_runtime(
     runtime: &RuntimeState,
     key_id: String,
-) -> std::result::Result<PlatformKeyInventoryEntry, String> {
+) -> Result<PlatformKeyInventoryEntry> {
     set_platform_key_enabled_from_runtime(runtime, key_id, true)
 }
 
@@ -192,16 +216,26 @@ fn set_platform_key_enabled_from_runtime(
     runtime: &RuntimeState,
     key_id: String,
     enabled: bool,
-) -> std::result::Result<PlatformKeyInventoryEntry, String> {
+) -> Result<PlatformKeyInventoryEntry> {
     let key_id = validate_identifier(key_id, "key_id")?;
     let mut app_state = runtime.app_state_mut();
     let existing = app_state
         .get_platform_key_by_id(key_id.as_str())
         .cloned()
-        .ok_or_else(|| format!("unknown key id: {key_id}"))?;
+        .ok_or_else(|| {
+            CodexLagError::config(ConfigErrorKind::InvalidPayload, "Unknown platform key id.")
+                .with_internal_context(format!(
+                    "command=set_platform_key_enabled;field=key_id;value={key_id}"
+                ))
+        })?;
     app_state
         .set_platform_key_enabled_by_id(key_id.as_str(), enabled)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            CodexLagError::new("Failed to persist platform key enabled state.")
+                .with_internal_context(format!(
+                    "command=set_platform_key_enabled;operation=set_platform_key_enabled_by_id;key_id={key_id};enabled={enabled};cause={error}"
+                ))
+        })?;
 
     Ok(PlatformKeyInventoryEntry {
         id: existing.id,
@@ -212,7 +246,7 @@ fn set_platform_key_enabled_from_runtime(
     })
 }
 
-fn validate_identifier(raw: String, field_name: &str) -> std::result::Result<String, String> {
+fn validate_identifier(raw: String, field_name: &str) -> Result<String> {
     let value = validate_non_empty(raw, field_name)?;
     if value
         .chars()
@@ -220,25 +254,41 @@ fn validate_identifier(raw: String, field_name: &str) -> std::result::Result<Str
     {
         Ok(value)
     } else {
-        Err(format!(
-            "{field_name} must use only ascii letters, numbers, '-' or '_'"
-        ))
+        Err(CodexLagError::config(
+            ConfigErrorKind::InvalidPayload,
+            format!("{field_name} must use only ascii letters, numbers, '-' or '_'"),
+        )
+        .with_internal_context(format!(
+            "command=keys_validation;field={field_name};value={value}"
+        )))
     }
 }
 
-fn validate_non_empty(raw: String, field_name: &str) -> std::result::Result<String, String> {
+fn validate_non_empty(raw: String, field_name: &str) -> Result<String> {
     let value = raw.trim().to_string();
     if value.is_empty() {
-        Err(format!("{field_name} must not be empty"))
+        Err(CodexLagError::config(
+            ConfigErrorKind::InvalidPayload,
+            format!("{field_name} must not be empty"),
+        )
+        .with_internal_context(format!(
+            "command=keys_validation;field={field_name};value=empty"
+        )))
     } else {
         Ok(value)
     }
 }
 
-fn validate_allowed_mode(raw: String) -> std::result::Result<String, String> {
+fn validate_allowed_mode(raw: String) -> Result<String> {
     let value = validate_non_empty(raw, "allowed_mode")?;
     if RoutingMode::parse(value.as_str()).is_none() {
-        return Err("allowed_mode must be one of: hybrid, account_only, relay_only".to_string());
+        return Err(CodexLagError::config(
+            ConfigErrorKind::UnsupportedMode,
+            "Allowed mode must be one of: hybrid, account_only, relay_only.",
+        )
+        .with_internal_context(format!(
+            "command=keys_validation;field=allowed_mode;value={value}"
+        )));
     }
     Ok(value)
 }

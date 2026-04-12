@@ -5,6 +5,25 @@ use codexlag_lib::commands::accounts::{
 use codexlag_lib::commands::relays::{
     refresh_relay_balance_from_runtime, RelayBalanceAvailability,
 };
+use codexlag_lib::error::{CodexLagError, ErrorCategory};
+
+fn assert_structured_command_error(
+    error: CodexLagError,
+    expected_code: &str,
+    expected_category: ErrorCategory,
+    expected_message: &str,
+    expected_context_fragment: &str,
+) {
+    let payload = error.to_payload();
+    assert_eq!(payload.code, expected_code);
+    assert_eq!(payload.category, expected_category);
+    assert_eq!(payload.message, expected_message);
+    let internal_context = payload.internal_context.expect("internal context should be present");
+    assert!(
+        internal_context.contains(expected_context_fragment),
+        "internal_context should include '{expected_context_fragment}', got: {internal_context}"
+    );
+}
 
 #[tokio::test]
 async fn refresh_account_balance_marks_official_accounts_as_non_queryable() {
@@ -73,12 +92,21 @@ async fn refresh_relay_balance_distinguishes_unknown_id_and_parse_failure() {
         .expect("bootstrap runtime");
     let unknown_error = refresh_relay_balance_from_runtime(&runtime, "relay-missing".to_string())
         .expect_err("unknown relay should be reported");
-    assert_eq!(unknown_error, "unknown relay id: relay-missing");
+    assert_structured_command_error(
+        unknown_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Unknown relay id.",
+        "command=relay_lookup;field=relay_id;value=relay-missing",
+    );
 
     let parse_error = refresh_relay_balance_from_runtime(&runtime, "relay-badpayload".to_string())
         .expect_err("bad payload relay should report parser failure");
-    assert!(
-        parse_error.starts_with("relay balance payload parse error:"),
-        "unexpected parse error: {parse_error}"
+    assert_structured_command_error(
+        parse_error,
+        "upstream.relay_payload_invalid",
+        ErrorCategory::UpstreamError,
+        "Relay returned an unsupported balance payload format.",
+        "command=refresh_relay_balance;relay_id=relay-badpayload",
     );
 }

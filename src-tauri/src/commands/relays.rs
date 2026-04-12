@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::error::{CodexLagError, ConfigErrorKind, Result};
 use crate::models::ManagedRelay;
 use crate::providers::relay::{
     normalize_relay_balance_response, relay_balance_capability, NormalizedBalance,
@@ -72,13 +73,18 @@ pub fn list_relays(state: State<'_, RuntimeState>) -> Vec<RelaySummary> {
 pub fn refresh_relay_balance_from_runtime(
     runtime: &RuntimeState,
     relay_id: String,
-) -> Result<RelayBalanceSnapshot, String> {
+) -> Result<RelayBalanceSnapshot> {
     let state = runtime.app_state();
     let summary = relay_summary_by_id_from_state(&state, relay_id.as_str())?;
     let adapter = relay_adapter_for_state(&state, summary.relay_id.as_str())?;
     let payload = relay_balance_fixture_payload(&state, summary.relay_id.as_str());
     let balance = normalize_relay_balance_response(adapter, payload)
-        .map_err(|error| format!("relay balance payload parse error: {error:?}"))?;
+        .map_err(|error| {
+            with_command_context(
+                error.into_codex_lag_error(),
+                format!("command=refresh_relay_balance;relay_id={}", summary.relay_id),
+            )
+        })?;
     let balance = match balance {
         Some(value) => RelayBalanceAvailability::Queryable {
             adapter: adapter_name(adapter),
@@ -100,14 +106,14 @@ pub fn refresh_relay_balance_from_runtime(
 pub fn refresh_relay_balance(
     relay_id: String,
     state: State<'_, RuntimeState>,
-) -> Result<RelayBalanceSnapshot, String> {
+) -> Result<RelayBalanceSnapshot> {
     refresh_relay_balance_from_runtime(&state, relay_id)
 }
 
 pub fn get_relay_capability_detail_from_runtime(
     runtime: &RuntimeState,
     relay_id: String,
-) -> Result<RelayCapabilityDetail, String> {
+) -> Result<RelayCapabilityDetail> {
     let state = runtime.app_state();
     let summary = relay_summary_by_id_from_state(&state, relay_id.as_str())?;
     let adapter = relay_adapter_for_state(&state, summary.relay_id.as_str())?;
@@ -123,27 +129,36 @@ pub fn get_relay_capability_detail_from_runtime(
 pub fn get_relay_capability_detail(
     relay_id: String,
     state: State<'_, RuntimeState>,
-) -> Result<RelayCapabilityDetail, String> {
+) -> Result<RelayCapabilityDetail> {
     get_relay_capability_detail_from_runtime(&state, relay_id)
 }
 
 pub fn add_relay_from_runtime(
     runtime: &RuntimeState,
     input: RelayUpsertInput,
-) -> Result<RelaySummary, String> {
+) -> Result<RelaySummary> {
     let relay_id = validate_identifier(input.relay_id.clone(), "relay_id")?;
     if list_relays_from_runtime(runtime)
         .iter()
         .any(|relay| relay.relay_id == relay_id)
     {
-        return Err(format!("relay id already exists: {relay_id}"));
+        return Err(invalid_payload_error(
+            "Relay id already exists.",
+            format!("command=add_relay;field=relay_id;value={relay_id}"),
+        ));
     }
 
     let created = build_managed_relay(relay_id, input)?;
     runtime
         .app_state_mut()
         .save_managed_relay(created.clone())
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            CodexLagError::new("Failed to persist relay.")
+                .with_internal_context(format!(
+                    "command=add_relay;operation=save_managed_relay;relay_id={};cause={error}",
+                    created.relay_id
+                ))
+        })?;
     Ok(relay_summary(&created))
 }
 
@@ -151,28 +166,37 @@ pub fn add_relay_from_runtime(
 pub fn add_relay(
     input: RelayUpsertInput,
     state: State<'_, RuntimeState>,
-) -> Result<RelaySummary, String> {
+) -> Result<RelaySummary> {
     add_relay_from_runtime(&state, input)
 }
 
 pub fn update_relay_from_runtime(
     runtime: &RuntimeState,
     input: RelayUpsertInput,
-) -> Result<RelaySummary, String> {
+) -> Result<RelaySummary> {
     let relay_id = validate_identifier(input.relay_id.clone(), "relay_id")?;
     if runtime
         .app_state()
         .managed_relay(relay_id.as_str())
         .is_none()
     {
-        return Err(format!("unknown relay id: {relay_id}"));
+        return Err(invalid_payload_error(
+            "Unknown relay id.",
+            format!("command=update_relay;field=relay_id;value={relay_id}"),
+        ));
     }
 
     let updated = build_managed_relay(relay_id, input)?;
     runtime
         .app_state_mut()
         .save_managed_relay(updated.clone())
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            CodexLagError::new("Failed to persist relay.")
+                .with_internal_context(format!(
+                    "command=update_relay;operation=save_managed_relay;relay_id={};cause={error}",
+                    updated.relay_id
+                ))
+        })?;
     Ok(relay_summary(&updated))
 }
 
@@ -180,38 +204,51 @@ pub fn update_relay_from_runtime(
 pub fn update_relay(
     input: RelayUpsertInput,
     state: State<'_, RuntimeState>,
-) -> Result<RelaySummary, String> {
+) -> Result<RelaySummary> {
     update_relay_from_runtime(&state, input)
 }
 
-pub fn delete_relay_from_runtime(runtime: &RuntimeState, relay_id: String) -> Result<(), String> {
+pub fn delete_relay_from_runtime(runtime: &RuntimeState, relay_id: String) -> Result<()> {
     let relay_id = validate_identifier(relay_id, "relay_id")?;
     let removed = runtime
         .app_state_mut()
         .delete_managed_relay(relay_id.as_str())
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            CodexLagError::new("Failed to persist relay deletion.").with_internal_context(format!(
+                "command=delete_relay;operation=delete_managed_relay;relay_id={relay_id};cause={error}"
+            ))
+        })?;
     if removed {
         Ok(())
     } else {
-        Err(format!("unknown relay id: {relay_id}"))
+        Err(invalid_payload_error(
+            "Unknown relay id.",
+            format!("command=delete_relay;field=relay_id;value={relay_id}"),
+        ))
     }
 }
 
 #[tauri::command]
-pub fn delete_relay(relay_id: String, state: State<'_, RuntimeState>) -> Result<(), String> {
+pub fn delete_relay(relay_id: String, state: State<'_, RuntimeState>) -> Result<()> {
     delete_relay_from_runtime(&state, relay_id)
 }
 
 pub fn test_relay_connection_from_runtime(
     runtime: &RuntimeState,
     relay_id: String,
-) -> Result<RelayConnectionTestResult, String> {
+) -> Result<RelayConnectionTestResult> {
     let summary = {
         let state = runtime.app_state();
         relay_summary_by_id_from_state(&state, relay_id.as_str())?
     };
     if !is_http_endpoint(summary.endpoint.as_str()) {
-        return Err("relay endpoint must start with 'http://' or 'https://'".to_string());
+        return Err(invalid_payload_error(
+            "Relay endpoint must start with 'http://' or 'https://'.",
+            format!(
+                "command=test_relay_connection;field=endpoint;value={}",
+                summary.endpoint
+            ),
+        ));
     }
 
     let (status, latency_ms) = match probe_relay_endpoint(summary.endpoint.as_str()) {
@@ -231,7 +268,7 @@ pub fn test_relay_connection_from_runtime(
 pub fn test_relay_connection(
     relay_id: String,
     state: State<'_, RuntimeState>,
-) -> Result<RelayConnectionTestResult, String> {
+) -> Result<RelayConnectionTestResult> {
     test_relay_connection_from_runtime(&state, relay_id)
 }
 
@@ -290,19 +327,29 @@ fn relay_by_id_from_state(state: &AppState, relay_id: &str) -> Option<ManagedRel
 fn relay_summary_by_id_from_state(
     state: &AppState,
     relay_id: &str,
-) -> Result<RelaySummary, String> {
+) -> Result<RelaySummary> {
     relay_by_id_from_state(state, relay_id)
         .map(|relay| relay_summary(&relay))
-        .ok_or_else(|| format!("unknown relay id: {relay_id}"))
+        .ok_or_else(|| {
+            invalid_payload_error(
+                "Unknown relay id.",
+                format!("command=relay_lookup;field=relay_id;value={relay_id}"),
+            )
+        })
 }
 
 fn relay_adapter_for_state(
     state: &AppState,
     relay_id: &str,
-) -> Result<RelayBalanceAdapter, String> {
+) -> Result<RelayBalanceAdapter> {
     relay_by_id_from_state(state, relay_id)
         .map(|relay| relay.adapter)
-        .ok_or_else(|| format!("unknown relay id: {relay_id}"))
+        .ok_or_else(|| {
+            invalid_payload_error(
+                "Unknown relay id.",
+                format!("command=relay_lookup;field=relay_id;value={relay_id}"),
+            )
+        })
 }
 
 fn relay_balance_fixture_payload(state: &AppState, relay_id: &str) -> &'static str {
@@ -333,11 +380,14 @@ fn relay_summary(relay: &ManagedRelay) -> RelaySummary {
     }
 }
 
-fn build_managed_relay(relay_id: String, input: RelayUpsertInput) -> Result<ManagedRelay, String> {
+fn build_managed_relay(relay_id: String, input: RelayUpsertInput) -> Result<ManagedRelay> {
     let name = validate_non_empty(input.name, "name")?;
     let endpoint = validate_non_empty(input.endpoint, "endpoint")?;
     if !is_http_endpoint(endpoint.as_str()) {
-        return Err("relay endpoint must start with 'http://' or 'https://'".to_string());
+        return Err(invalid_payload_error(
+            "Relay endpoint must start with 'http://' or 'https://'.",
+            format!("command=relay_validation;field=endpoint;value={endpoint}"),
+        ));
     }
     let adapter = parse_adapter(input.adapter.as_deref())?;
 
@@ -349,46 +399,79 @@ fn build_managed_relay(relay_id: String, input: RelayUpsertInput) -> Result<Mana
     })
 }
 
-fn probe_relay_endpoint(endpoint: &str) -> Result<u64, String> {
+fn probe_relay_endpoint(endpoint: &str) -> Result<u64> {
     let (host, port) = parse_host_port(endpoint)?;
     let mut addrs = (host.as_str(), port)
         .to_socket_addrs()
-        .map_err(|error| format!("failed to resolve relay endpoint '{endpoint}': {error}"))?;
+        .map_err(|error| {
+            CodexLagError::new("Failed to resolve relay endpoint.")
+                .with_internal_context(format!(
+                    "command=probe_relay_endpoint;endpoint={endpoint};cause={error}"
+                ))
+        })?;
     let address = addrs
         .next()
-        .ok_or_else(|| format!("failed to resolve relay endpoint '{endpoint}'"))?;
+        .ok_or_else(|| {
+            CodexLagError::new("Failed to resolve relay endpoint.")
+                .with_internal_context(format!(
+                    "command=probe_relay_endpoint;endpoint={endpoint};cause=no_address"
+                ))
+        })?;
 
     let started = Instant::now();
     TcpStream::connect_timeout(&address, Duration::from_secs(3))
-        .map_err(|error| format!("failed to connect to relay endpoint '{endpoint}': {error}"))?;
+        .map_err(|error| {
+            CodexLagError::new("Failed to connect to relay endpoint.").with_internal_context(
+                format!("command=probe_relay_endpoint;endpoint={endpoint};cause={error}"),
+            )
+        })?;
     Ok(started.elapsed().as_millis() as u64)
 }
 
-fn parse_host_port(endpoint: &str) -> Result<(String, u16), String> {
+fn parse_host_port(endpoint: &str) -> Result<(String, u16)> {
     let (rest, default_port) = if let Some(value) = endpoint.strip_prefix("http://") {
         (value, 80_u16)
     } else if let Some(value) = endpoint.strip_prefix("https://") {
         (value, 443_u16)
     } else {
-        return Err("relay endpoint must start with 'http://' or 'https://'".to_string());
+        return Err(invalid_payload_error(
+            "Relay endpoint must start with 'http://' or 'https://'.",
+            format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+        ));
     };
 
     let authority = rest
         .split('/')
         .next()
-        .ok_or_else(|| "relay endpoint must include a host".to_string())?;
+        .ok_or_else(|| {
+            invalid_payload_error(
+                "Relay endpoint must include a host.",
+                format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+            )
+        })?;
     if authority.is_empty() {
-        return Err("relay endpoint must include a host".to_string());
+        return Err(invalid_payload_error(
+            "Relay endpoint must include a host.",
+            format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+        ));
     }
     let authority = authority.rsplit('@').next().unwrap_or(authority);
 
     if authority.starts_with('[') {
         let close = authority
             .find(']')
-            .ok_or_else(|| "relay endpoint contains invalid IPv6 host format".to_string())?;
+            .ok_or_else(|| {
+                invalid_payload_error(
+                    "Relay endpoint contains invalid IPv6 host format.",
+                    format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+                )
+            })?;
         let host = authority[1..close].to_string();
         if host.is_empty() {
-            return Err("relay endpoint must include a host".to_string());
+            return Err(invalid_payload_error(
+                "Relay endpoint must include a host.",
+                format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+            ));
         }
         let remainder = &authority[(close + 1)..];
         if remainder.is_empty() {
@@ -396,29 +479,50 @@ fn parse_host_port(endpoint: &str) -> Result<(String, u16), String> {
         }
         let port = remainder
             .strip_prefix(':')
-            .ok_or_else(|| "relay endpoint contains invalid host:port format".to_string())?
+            .ok_or_else(|| {
+                invalid_payload_error(
+                    "Relay endpoint contains invalid host:port format.",
+                    format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+                )
+            })?
             .parse::<u16>()
-            .map_err(|_| "relay endpoint contains invalid port".to_string())?;
+            .map_err(|_| {
+                invalid_payload_error(
+                    "Relay endpoint contains invalid port.",
+                    format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+                )
+            })?;
         return Ok((host, port));
     }
 
     if authority.matches(':').count() > 1 {
-        return Err("relay endpoint contains invalid host:port format".to_string());
+        return Err(invalid_payload_error(
+            "Relay endpoint contains invalid host:port format.",
+            format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+        ));
     }
     if let Some((host, port_raw)) = authority.split_once(':') {
         if host.is_empty() {
-            return Err("relay endpoint must include a host".to_string());
+            return Err(invalid_payload_error(
+                "Relay endpoint must include a host.",
+                format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+            ));
         }
         let port = port_raw
             .parse::<u16>()
-            .map_err(|_| "relay endpoint contains invalid port".to_string())?;
+            .map_err(|_| {
+                invalid_payload_error(
+                    "Relay endpoint contains invalid port.",
+                    format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+                )
+            })?;
         return Ok((host.to_string(), port));
     }
 
     Ok((authority.to_string(), default_port))
 }
 
-fn validate_identifier(raw: String, field_name: &str) -> Result<String, String> {
+fn validate_identifier(raw: String, field_name: &str) -> Result<String> {
     let value = validate_non_empty(raw, field_name)?;
     if value
         .chars()
@@ -426,16 +530,20 @@ fn validate_identifier(raw: String, field_name: &str) -> Result<String, String> 
     {
         Ok(value)
     } else {
-        Err(format!(
-            "{field_name} must use only ascii letters, numbers, '-' or '_'"
+        Err(invalid_payload_error(
+            format!("{field_name} must use only ascii letters, numbers, '-' or '_'"),
+            format!("command=relay_validation;field={field_name};value={value}"),
         ))
     }
 }
 
-fn validate_non_empty(raw: String, field_name: &str) -> Result<String, String> {
+fn validate_non_empty(raw: String, field_name: &str) -> Result<String> {
     let value = raw.trim().to_string();
     if value.is_empty() {
-        Err(format!("{field_name} must not be empty"))
+        Err(invalid_payload_error(
+            format!("{field_name} must not be empty"),
+            format!("command=relay_validation;field={field_name};value=empty"),
+        ))
     } else {
         Ok(value)
     }
@@ -445,7 +553,7 @@ fn is_http_endpoint(endpoint: &str) -> bool {
     endpoint.starts_with("http://") || endpoint.starts_with("https://")
 }
 
-fn parse_adapter(raw: Option<&str>) -> Result<RelayBalanceAdapter, String> {
+fn parse_adapter(raw: Option<&str>) -> Result<RelayBalanceAdapter> {
     let Some(value) = raw.map(str::trim) else {
         return Ok(RelayBalanceAdapter::NewApi);
     };
@@ -455,6 +563,22 @@ fn parse_adapter(raw: Option<&str>) -> Result<RelayBalanceAdapter, String> {
     match value {
         "newapi" => Ok(RelayBalanceAdapter::NewApi),
         "none" | "nobalance" => Ok(RelayBalanceAdapter::NoBalance),
-        _ => Err("adapter must be one of: newapi, none".to_string()),
+        _ => Err(invalid_payload_error(
+            "Adapter must be one of: newapi, none.",
+            format!("command=relay_validation;field=adapter;value={value}"),
+        )),
     }
+}
+
+fn invalid_payload_error(message: impl Into<String>, context: impl Into<String>) -> CodexLagError {
+    CodexLagError::config(ConfigErrorKind::InvalidPayload, message)
+        .with_internal_context(context)
+}
+
+fn with_command_context(error: CodexLagError, context: String) -> CodexLagError {
+    let merged_context = match error.internal_context() {
+        Some(existing) => format!("{context};{existing}"),
+        None => context,
+    };
+    error.with_internal_context(merged_context)
 }
