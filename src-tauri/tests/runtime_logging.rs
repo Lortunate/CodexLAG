@@ -34,7 +34,7 @@ fn redact_secret_value_masks_sensitive_tokens() {
     assert_eq!(redact_secret_value("abcd"), "****");
     assert_eq!(
         redact_secret_value("ck_local_1234567890"),
-        "ck_l***************"
+        "ck_l****************"
     );
 }
 

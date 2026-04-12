@@ -9,7 +9,7 @@ pub fn redact_secret_value(value: &str) -> String {
     }
 
     let prefix: String = value.chars().take(4).collect();
-    let masked = "*".repeat(char_count - 4);
+    let masked = "*".repeat(char_count - 3);
     format!("{prefix}{masked}")
 }
 
