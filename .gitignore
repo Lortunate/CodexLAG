@@ -1,4 +1,5 @@
 .serena/
+.worktrees/
 src-tauri/gen/
 src-tauri/target/
 
