@@ -4,6 +4,7 @@ use axum::Router;
 
 use crate::{
     gateway::{auth::GatewayState, routes::build_routes},
+    routing::engine::{CandidateEndpoint, choose_endpoint},
     state::AppState,
 };
 
@@ -30,7 +31,7 @@ impl LoopbackGateway {
     }
 
     pub fn is_ready(&self) -> bool {
-        true
+        choose_endpoint("hybrid", &default_candidates()).is_ok()
     }
 }
 
@@ -40,4 +41,11 @@ pub fn build_router(app_state: AppState) -> Router {
 
 pub fn build_router_for_test(app_state: AppState) -> Router {
     build_router(app_state)
+}
+
+pub fn default_candidates() -> Vec<CandidateEndpoint> {
+    vec![
+        CandidateEndpoint::official("official-default", 10, true),
+        CandidateEndpoint::relay("relay-default", 20, false),
+    ]
 }
