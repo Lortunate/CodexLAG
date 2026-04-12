@@ -1,5 +1,19 @@
 export type DefaultKeyMode = "account_only" | "relay_only" | "hybrid";
 
+export type ErrorCategory =
+  | "CredentialError"
+  | "QuotaError"
+  | "RoutingError"
+  | "UpstreamError"
+  | "ConfigError";
+
+export interface AppErrorPayload {
+  code: string;
+  category: ErrorCategory;
+  message: string;
+  internal_context?: string | null;
+}
+
 export interface RawDefaultKeySummary {
   name: string;
   allowed_mode: string;

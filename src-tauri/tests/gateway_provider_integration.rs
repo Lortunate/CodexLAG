@@ -167,12 +167,13 @@ async fn auth_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
         )
         .await
         .expect("response");
-    assert_eq!(first_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(first_response.status(), StatusCode::UNAUTHORIZED);
     let first_body = to_bytes(first_response.into_body(), usize::MAX)
         .await
         .expect("route body");
     let first_payload: Value = serde_json::from_slice(first_body.as_ref()).expect("route json");
-    assert_eq!(first_payload["error"], "no_available_endpoint");
+    assert_eq!(first_payload["category"], "CredentialError");
+    assert_eq!(first_payload["error"], "credential.provider_auth_failed");
     assert_eq!(first_payload["attempt_count"], 1);
 
     let attempts = gateway_state.invocation_attempts_for_test();
@@ -207,12 +208,13 @@ async fn config_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
         )
         .await
         .expect("response");
-    assert_eq!(first_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(first_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let first_body = to_bytes(first_response.into_body(), usize::MAX)
         .await
         .expect("route body");
     let first_payload: Value = serde_json::from_slice(first_body.as_ref()).expect("route json");
-    assert_eq!(first_payload["error"], "no_available_endpoint");
+    assert_eq!(first_payload["category"], "ConfigError");
+    assert_eq!(first_payload["error"], "config.provider_rejected_request");
     assert_eq!(first_payload["attempt_count"], 1);
 
     let attempts = gateway_state.invocation_attempts_for_test();

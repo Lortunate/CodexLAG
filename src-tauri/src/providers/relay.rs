@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::error::{CodexLagError, ConfigErrorKind, QuotaErrorKind, UpstreamErrorKind};
+use crate::providers::invocation::{InvocationFailure, InvocationFailureClass};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NormalizedBalance {
     pub total: String,
@@ -38,6 +41,16 @@ impl RelayBalanceError {
     pub fn is_payload_error(&self) -> bool {
         matches!(self, Self::Payload(_))
     }
+
+    pub fn into_codex_lag_error(self) -> CodexLagError {
+        match self {
+            Self::Payload(error) => CodexLagError::upstream(
+                UpstreamErrorKind::RelayPayloadInvalid,
+                "Relay returned an unsupported balance payload format.",
+            )
+            .with_internal_context(format!("provider=relay;payload_parse={error}")),
+        }
+    }
 }
 
 impl From<serde_json::Error> for RelayBalanceError {
@@ -75,4 +88,34 @@ fn normalize_newapi_balance_response(body: &str) -> Result<NormalizedBalance, se
         total: payload.data.total_balance,
         used: payload.data.used_balance,
     })
+}
+
+pub(crate) fn map_relay_invocation_failure(failure: &InvocationFailure) -> CodexLagError {
+    let error = match failure.class {
+        InvocationFailureClass::Http429 => CodexLagError::quota(
+            QuotaErrorKind::ProviderRateLimited,
+            "Relay provider rate limit exceeded. Try again shortly.",
+        ),
+        InvocationFailureClass::Http5xx => CodexLagError::upstream(
+            UpstreamErrorKind::ProviderHttpFailure,
+            "Relay provider is temporarily unavailable.",
+        ),
+        InvocationFailureClass::Timeout => CodexLagError::upstream(
+            UpstreamErrorKind::ProviderTimeout,
+            "Relay provider timed out while handling the request.",
+        ),
+        InvocationFailureClass::Auth => CodexLagError::config(
+            ConfigErrorKind::ProviderRejectedRequest,
+            "Relay rejected credentials for the selected endpoint.",
+        ),
+        InvocationFailureClass::Config => CodexLagError::config(
+            ConfigErrorKind::ProviderRejectedRequest,
+            "Relay configuration is invalid for this request.",
+        ),
+    };
+
+    error.with_internal_context(format!(
+        "provider=relay;endpoint_id={};upstream_status={:?}",
+        failure.endpoint_id, failure.upstream_status
+    ))
 }

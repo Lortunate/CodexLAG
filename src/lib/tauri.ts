@@ -3,9 +3,11 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AccountBalanceSnapshot,
   AccountCapabilityDetail,
+  AppErrorPayload,
   AccountSummary,
   DefaultKeyMode,
   DefaultKeySummary,
+  ErrorCategory,
   LogSummary,
   PolicySummary,
   RawDefaultKeySummary,
@@ -28,6 +30,170 @@ type RawRelayBalanceCapability =
         adapter?: string;
       };
     };
+
+const ERROR_CATEGORIES = new Set<ErrorCategory>([
+  "CredentialError",
+  "QuotaError",
+  "RoutingError",
+  "UpstreamError",
+  "ConfigError",
+]);
+
+export class CodexLagInvokeError extends Error {
+  readonly payload: AppErrorPayload;
+  readonly raw: unknown;
+
+  constructor(payload: AppErrorPayload, raw: unknown) {
+    super(payload.message);
+    this.name = "CodexLagInvokeError";
+    this.payload = payload;
+    this.raw = raw;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isErrorCategory(value: unknown): value is ErrorCategory {
+  return typeof value === "string" && ERROR_CATEGORIES.has(value as ErrorCategory);
+}
+
+function categoryFromCode(code: string): ErrorCategory {
+  if (code.startsWith("credential.")) {
+    return "CredentialError";
+  }
+  if (code.startsWith("quota.")) {
+    return "QuotaError";
+  }
+  if (code.startsWith("routing.")) {
+    return "RoutingError";
+  }
+  if (code.startsWith("upstream.")) {
+    return "UpstreamError";
+  }
+  return "ConfigError";
+}
+
+function parseStructuredErrorPayload(value: unknown): AppErrorPayload | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const code = typeof value.code === "string" ? value.code : typeof value.error === "string" ? value.error : null;
+  if (!code) {
+    return null;
+  }
+
+  const category = isErrorCategory(value.category) ? value.category : categoryFromCode(code);
+  const message =
+    typeof value.message === "string" ? value.message : `Request failed with error code '${code}'.`;
+  const internalContext = typeof value.internal_context === "string" ? value.internal_context : null;
+
+  return {
+    code,
+    category,
+    message,
+    internal_context: internalContext,
+  };
+}
+
+function parseLegacyErrorMessage(message: string): AppErrorPayload {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("provider_auth_failed") || normalized.includes("credential")) {
+    return {
+      code: "credential.provider_auth_failed",
+      category: "CredentialError",
+      message,
+      internal_context: null,
+    };
+  }
+  if (normalized.includes("rate limit") || normalized.includes("429")) {
+    return {
+      code: "quota.provider_rate_limited",
+      category: "QuotaError",
+      message,
+      internal_context: null,
+    };
+  }
+  if (normalized.includes("no available endpoint") || normalized.includes("invalid mode")) {
+    return {
+      code: normalized.includes("invalid mode") ? "routing.invalid_mode" : "routing.no_available_endpoint",
+      category: "RoutingError",
+      message,
+      internal_context: null,
+    };
+  }
+  if (
+    normalized.includes("timeout") ||
+    normalized.includes("upstream") ||
+    normalized.includes("payload parse error")
+  ) {
+    return {
+      code: normalized.includes("payload parse error")
+        ? "upstream.relay_payload_invalid"
+        : "upstream.provider_http_failure",
+      category: "UpstreamError",
+      message,
+      internal_context: null,
+    };
+  }
+  return {
+    code: "config.unknown",
+    category: "ConfigError",
+    message,
+    internal_context: null,
+  };
+}
+
+function parseStringError(value: string): AppErrorPayload {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    const structured = parseStructuredErrorPayload(parsed);
+    if (structured) {
+      return structured;
+    }
+  } catch {
+    // fall through to legacy parser
+  }
+  return parseLegacyErrorMessage(value);
+}
+
+function normalizeInvokeError(error: unknown): CodexLagInvokeError {
+  const structured = parseStructuredErrorPayload(error);
+  if (structured) {
+    return new CodexLagInvokeError(structured, error);
+  }
+
+  if (typeof error === "string") {
+    return new CodexLagInvokeError(parseStringError(error), error);
+  }
+
+  if (isRecord(error) && typeof error.message === "string") {
+    return new CodexLagInvokeError(parseStringError(error.message), error);
+  }
+
+  return new CodexLagInvokeError(
+    {
+      code: "config.unknown",
+      category: "ConfigError",
+      message: "Unexpected runtime error.",
+      internal_context: null,
+    },
+    error,
+  );
+}
+
+async function invokeWithContract<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    if (args === undefined) {
+      return await invoke<T>(command);
+    }
+    return await invoke<T>(command, args);
+  } catch (error) {
+    throw normalizeInvokeError(error);
+  }
+}
 
 function parseDefaultKeyMode(value: string): DefaultKeyMode | null {
   switch (value) {
@@ -71,27 +237,29 @@ function parseRelayCapability(rawCapability: RawRelayBalanceCapability): RelayBa
 }
 
 export function listAccounts() {
-  return invoke<AccountSummary[]>("list_accounts");
+  return invokeWithContract<AccountSummary[]>("list_accounts");
 }
 
 export function refreshAccountBalance(accountId: string) {
-  return invoke<AccountBalanceSnapshot>("refresh_account_balance", { account_id: accountId });
+  return invokeWithContract<AccountBalanceSnapshot>("refresh_account_balance", { account_id: accountId });
 }
 
 export function getAccountCapabilityDetail(accountId: string) {
-  return invoke<AccountCapabilityDetail>("get_account_capability_detail", { account_id: accountId });
+  return invokeWithContract<AccountCapabilityDetail>("get_account_capability_detail", { account_id: accountId });
 }
 
 export function listRelays() {
-  return invoke<RelaySummary[]>("list_relays");
+  return invokeWithContract<RelaySummary[]>("list_relays");
 }
 
 export function refreshRelayBalance(relayId: string) {
-  return invoke<RelayBalanceSnapshot>("refresh_relay_balance", { relay_id: relayId });
+  return invokeWithContract<RelayBalanceSnapshot>("refresh_relay_balance", { relay_id: relayId });
 }
 
 export function getRelayCapabilityDetail(relayId: string) {
-  return invoke<Omit<RelayCapabilityDetail, "balance_capability"> & { balance_capability: RawRelayBalanceCapability }>(
+  return invokeWithContract<
+    Omit<RelayCapabilityDetail, "balance_capability"> & { balance_capability: RawRelayBalanceCapability }
+  >(
     "get_relay_capability_detail",
     { relay_id: relayId },
   ).then((detail) => ({
@@ -101,11 +269,11 @@ export function getRelayCapabilityDetail(relayId: string) {
 }
 
 export function getDefaultKeySummary() {
-  return invoke<RawDefaultKeySummary>("get_default_key_summary").then(parseDefaultKeySummary);
+  return invokeWithContract<RawDefaultKeySummary>("get_default_key_summary").then(parseDefaultKeySummary);
 }
 
 export function setDefaultKeyMode(mode: DefaultKeyMode) {
-  return invoke<RawDefaultKeySummary>("set_default_key_mode", { mode }).then(parseDefaultKeySummary);
+  return invokeWithContract<RawDefaultKeySummary>("set_default_key_mode", { mode }).then(parseDefaultKeySummary);
 }
 
 export function listenForDefaultKeySummaryChanged(handler: (summary: DefaultKeySummary) => void) {
@@ -115,29 +283,29 @@ export function listenForDefaultKeySummaryChanged(handler: (summary: DefaultKeyS
 }
 
 export function listPolicies() {
-  return invoke<PolicySummary[]>("list_policies");
+  return invokeWithContract<PolicySummary[]>("list_policies");
 }
 
 export function getLogSummary() {
-  return invoke<LogSummary>("get_log_summary");
+  return invokeWithContract<LogSummary>("get_log_summary");
 }
 
 export function getRuntimeLogMetadata() {
-  return invoke<RuntimeLogMetadata>("get_runtime_log_metadata");
+  return invokeWithContract<RuntimeLogMetadata>("get_runtime_log_metadata");
 }
 
 export function exportRuntimeDiagnostics() {
-  return invoke<string>("export_runtime_diagnostics");
+  return invokeWithContract<string>("export_runtime_diagnostics");
 }
 
 export function getUsageRequestDetail(requestId: string) {
-  return invoke<UsageRequestDetail | null>("get_usage_request_detail", { request_id: requestId });
+  return invokeWithContract<UsageRequestDetail | null>("get_usage_request_detail", { request_id: requestId });
 }
 
 export function listUsageRequestHistory(limit?: number) {
-  return invoke<UsageRequestDetail[]>("list_usage_request_history", { limit });
+  return invokeWithContract<UsageRequestDetail[]>("list_usage_request_history", { limit });
 }
 
 export function queryUsageLedger(query?: UsageLedgerQuery) {
-  return invoke<UsageLedger>("query_usage_ledger", { query });
+  return invokeWithContract<UsageLedger>("query_usage_ledger", { query });
 }

@@ -29,6 +29,7 @@ pub struct InvocationFailure {
     pub request_id: String,
     pub attempt_id: String,
     pub endpoint_id: String,
+    pub pool: PoolKind,
     pub class: InvocationFailureClass,
     pub upstream_status: Option<u16>,
 }
@@ -94,6 +95,7 @@ impl ProviderInvocationPipeline {
                 request_id: context.request_id.clone(),
                 attempt_id: context.attempt_id.clone(),
                 endpoint_id: endpoint.id.clone(),
+                pool: endpoint.pool.clone(),
                 class: planned_failure.class,
                 upstream_status: planned_failure.upstream_status,
             });

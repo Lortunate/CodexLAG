@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     logging::runtime::build_attempt_id,
-    providers::invocation::InvocationOutcome,
+    providers::invocation::{InvocationFailure, InvocationOutcome},
     routing::engine::{
         choose_endpoint_at, mark_success_for_endpoint, record_failure_for_endpoint,
         wall_clock_now_ms, CandidateEndpoint, FailureRules, RoutingError,
@@ -28,6 +28,7 @@ pub struct RouteDebugSnapshot {
 pub struct RouteSelectionError {
     pub error: RoutingError,
     pub attempt_count: usize,
+    pub last_invocation_failure: Option<InvocationFailure>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +98,7 @@ impl RuntimeRoutingState {
         let mut attempt_count = 0usize;
         let mut attempted_endpoint_ids = HashSet::<String>::new();
         let mut last_selected_endpoint: Option<String> = None;
+        let mut last_invocation_failure: Option<InvocationFailure> = None;
 
         while attempt_count < max_attempts {
             let now_ms = wall_clock_now_ms();
@@ -106,6 +108,7 @@ impl RuntimeRoutingState {
                     return Err(RouteSelectionError {
                         error,
                         attempt_count,
+                        last_invocation_failure,
                     });
                 }
             };
@@ -119,6 +122,7 @@ impl RuntimeRoutingState {
                 return Err(RouteSelectionError {
                     error: RoutingError::NoAvailableEndpoint,
                     attempt_count,
+                    last_invocation_failure,
                 });
             }
 
@@ -147,6 +151,7 @@ impl RuntimeRoutingState {
                     });
                 }
                 Err(failure) => {
+                    last_invocation_failure = Some(failure.clone());
                     let _ = record_failure_for_endpoint(
                         &mut self.candidates,
                         selected.id.as_str(),
@@ -169,6 +174,7 @@ impl RuntimeRoutingState {
         Err(RouteSelectionError {
             error: RoutingError::NoAvailableEndpoint,
             attempt_count,
+            last_invocation_failure,
         })
     }
 }

@@ -8,11 +8,16 @@ use serde::Serialize;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
+use crate::error::{CodexLagError, ConfigErrorKind, ErrorCategory, RoutingErrorKind};
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::logging::runtime::{build_attempt_id, format_event_fields};
 use crate::logging::usage::UsageRecordInput;
 use crate::logging::{log_route_downgrade, log_route_rejection};
-use crate::providers::invocation::models_for_endpoint;
+use crate::providers::invocation::{
+    models_for_endpoint, InvocationFailure, InvocationFailureClass,
+};
+use crate::providers::official::map_official_invocation_failure;
+use crate::providers::relay::map_relay_invocation_failure;
 use crate::routing::engine::{
     endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms, PoolKind, RoutingError,
 };
@@ -28,7 +33,11 @@ struct CodexRequestSummary {
 
 #[derive(Debug, Serialize)]
 struct RoutingErrorResponse {
-    error: &'static str,
+    error: String,
+    category: ErrorCategory,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    internal_context: Option<String>,
     mode: String,
     request_id: String,
     attempt_count: usize,
@@ -83,14 +92,15 @@ async fn codex_request(
                 ("reasons", "policy_missing"),
             ]);
             log::warn!("{line}");
-            return Err((
+            return Err(map_gateway_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(RoutingErrorResponse {
-                    error: "policy_missing",
-                    mode: platform_key.allowed_mode.clone(),
-                    request_id: public_request_id(request_id.as_str()),
-                    attempt_count: 0,
-                }),
+                request_id.as_str(),
+                0,
+                mode,
+                CodexLagError::config(
+                    ConfigErrorKind::PolicyMissing,
+                    "Selected platform key policy is missing.",
+                ),
             ));
         }
     };
@@ -108,11 +118,17 @@ async fn codex_request(
                 &candidates,
                 now_ms,
             );
+            let crate::gateway::runtime_routing::RouteSelectionError {
+                error,
+                attempt_count,
+                last_invocation_failure,
+            } = route_error;
             map_routing_error(
                 request_id.as_str(),
-                route_error.attempt_count,
+                attempt_count,
                 mode,
-                route_error.error,
+                error,
+                last_invocation_failure.as_ref(),
             )
         })?;
     let selected = selection.endpoint;
@@ -170,20 +186,21 @@ async fn models(
     let policy = match gateway_state.policy_for_platform_key(platform_key) {
         Some(policy) => policy,
         None => {
-            return Err((
+            return Err(map_gateway_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(RoutingErrorResponse {
-                    error: "policy_missing",
-                    mode: platform_key.allowed_mode.clone(),
-                    request_id: public_request_id(request_id.as_str()),
-                    attempt_count: 0,
-                }),
+                request_id.as_str(),
+                0,
+                mode,
+                CodexLagError::config(
+                    ConfigErrorKind::PolicyMissing,
+                    "Selected platform key policy is missing.",
+                ),
             ));
         }
     };
     let candidates = gateway_state.current_candidates();
     let models = allowed_models_for_mode(&candidates, mode, now_ms)
-        .map_err(|error| map_routing_error(request_id.as_str(), 0, mode, error))?;
+        .map_err(|error| map_routing_error(request_id.as_str(), 0, mode, error, None))?;
 
     Ok(Json(ModelsResponse {
         platform_key: platform_key.name.clone(),
@@ -216,20 +233,76 @@ fn map_routing_error(
     attempt_count: usize,
     mode: &str,
     error: RoutingError,
+    last_invocation_failure: Option<&InvocationFailure>,
 ) -> (StatusCode, Json<RoutingErrorResponse>) {
-    let (status, code) = match error {
-        RoutingError::InvalidMode => (StatusCode::BAD_REQUEST, "invalid_mode"),
-        RoutingError::NoAvailableEndpoint => {
-            (StatusCode::SERVICE_UNAVAILABLE, "no_available_endpoint")
+    if let Some(failure) = last_invocation_failure {
+        let status = map_provider_failure_status(&failure.class);
+        let mapped = map_provider_failure(failure);
+        return map_gateway_error(status, request_id, attempt_count, mode, mapped);
+    }
+
+    let (status, mapped) = match error {
+        RoutingError::InvalidMode => (
+            StatusCode::BAD_REQUEST,
+            CodexLagError::routing(
+                RoutingErrorKind::InvalidMode,
+                "The platform key mode is not supported by routing policy.",
+            ),
+        ),
+        RoutingError::NoAvailableEndpoint => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            CodexLagError::routing(
+                RoutingErrorKind::NoAvailableEndpoint,
+                "No available endpoint matched the current routing constraints.",
+            ),
+        ),
+    };
+
+    map_gateway_error(status, request_id, attempt_count, mode, mapped)
+}
+
+fn map_provider_failure(failure: &InvocationFailure) -> CodexLagError {
+    match failure.pool {
+        PoolKind::Official => map_official_invocation_failure(failure),
+        PoolKind::Relay => map_relay_invocation_failure(failure),
+    }
+}
+
+fn map_provider_failure_status(class: &InvocationFailureClass) -> StatusCode {
+    match class {
+        InvocationFailureClass::Auth => StatusCode::UNAUTHORIZED,
+        InvocationFailureClass::Http429 => StatusCode::TOO_MANY_REQUESTS,
+        InvocationFailureClass::Http5xx | InvocationFailureClass::Timeout => {
+            StatusCode::BAD_GATEWAY
         }
+        InvocationFailureClass::Config => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+fn map_gateway_error(
+    status: StatusCode,
+    request_id: &str,
+    attempt_count: usize,
+    mode: &str,
+    error: CodexLagError,
+) -> (StatusCode, Json<RoutingErrorResponse>) {
+    let public_request_id = public_request_id(request_id);
+    let route_context =
+        format!("mode={mode};request_id={public_request_id};attempt_count={attempt_count}");
+    let internal_context = match error.internal_context() {
+        Some(provider_context) => Some(format!("{route_context};{provider_context}")),
+        None => Some(route_context),
     };
 
     (
         status,
         Json(RoutingErrorResponse {
-            error: code,
+            error: error.code().to_string(),
+            category: error.category(),
+            message: error.message().to_string(),
+            internal_context,
             mode: mode.to_string(),
-            request_id: public_request_id(request_id),
+            request_id: public_request_id,
             attempt_count,
         }),
     )
