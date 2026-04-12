@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::Serialize;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::logging::runtime::{build_attempt_id, format_event_fields};
@@ -66,15 +67,29 @@ async fn codex_request(
     ]);
     log::info!("{accepted_line}");
 
-    let policy = gateway_state.policy_for_platform_key(platform_key).ok_or((
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(RoutingErrorResponse {
-            error: "policy_missing",
-            mode: platform_key.allowed_mode.clone(),
-            request_id: request_id.clone(),
-            attempt_count: 0,
-        }),
-    ))?;
+    let policy = match gateway_state.policy_for_platform_key(platform_key) {
+        Some(policy) => policy,
+        None => {
+            let line = format_event_fields(&[
+                ("event", "routing.endpoint.rejected"),
+                ("request_id", request_id.as_str()),
+                ("attempt_count", "0"),
+                ("mode", mode),
+                ("error", "policy_missing"),
+                ("reasons", "policy_missing"),
+            ]);
+            log::warn!("{line}");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(RoutingErrorResponse {
+                    error: "policy_missing",
+                    mode: platform_key.allowed_mode.clone(),
+                    request_id: public_request_id(request_id.as_str()),
+                    attempt_count: 0,
+                }),
+            ));
+        }
+    };
     let selection = gateway_state
         .choose_endpoint_with_runtime_failover(request_id.as_str(), mode, |endpoint, _context| {
             invoke_endpoint_with_plan(endpoint.id.as_str(), &endpoint_status_plan)
@@ -201,8 +216,14 @@ fn map_routing_error(
         Json(RoutingErrorResponse {
             error: code,
             mode: mode.to_string(),
-            request_id: request_id.to_string(),
+            request_id: public_request_id(request_id),
             attempt_count,
         }),
     )
+}
+
+fn public_request_id(request_id: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    request_id.hash(&mut hasher);
+    format!("req_{:016x}", hasher.finish())
 }

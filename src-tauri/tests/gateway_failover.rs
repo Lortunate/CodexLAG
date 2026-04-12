@@ -101,10 +101,9 @@ async fn no_available_endpoint_returns_structured_error_with_attempt_context() {
     assert_eq!(payload["error"], "no_available_endpoint");
     assert_eq!(payload["mode"], "hybrid");
     assert_eq!(payload["attempt_count"], 2);
-    assert!(payload["request_id"]
-        .as_str()
-        .expect("request id")
-        .contains(":unrouted:"));
+    let public_request_id = payload["request_id"].as_str().expect("request id");
+    assert!(public_request_id.starts_with("req_"));
+    assert!(!public_request_id.contains(":unrouted:"));
 
     let debug = runtime
         .loopback_gateway()
