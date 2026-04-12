@@ -151,8 +151,12 @@ async fn usage_commands_reflect_runtime_gateway_requests_only() {
         "exactly one data-plane request should be recorded after one request"
     );
     assert!(
-        history[0].request_id.contains(":relay-default:"),
-        "successful request ids should preserve endpoint segment compatibility"
+        history[0].request_id.starts_with("default:"),
+        "successful request ids should preserve key-prefixed correlation semantics"
+    );
+    assert!(
+        history[0].request_id.contains(":unrouted:"),
+        "request ids should remain stable from acceptance through routing without rewrites"
     );
 
     let relay_entries = usage_ledger_from_runtime(

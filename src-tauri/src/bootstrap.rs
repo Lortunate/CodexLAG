@@ -65,17 +65,26 @@ pub fn bootstrap_state_at(database_path: impl AsRef<Path>) -> Result<AppState> {
     build_default_app_state(database_path, SecretStore::production()?)
 }
 
-pub fn bootstrap_runtime_at(database_path: impl AsRef<Path>) -> Result<RuntimeState> {
+pub fn bootstrap_runtime_at_with_log_dir(
+    database_path: impl AsRef<Path>,
+    runtime_log_dir: impl AsRef<Path>,
+) -> Result<RuntimeState> {
     let database_path = database_path.as_ref();
     let app_state = bootstrap_state_at(database_path)?;
-    let app_local_data_dir = database_path
-        .parent()
-        .ok_or_else(|| CodexLagError::new("runtime database path has no parent directory"))?;
     let runtime_log = RuntimeLogConfig {
-        log_dir: runtime_log_dir(app_local_data_dir),
+        log_dir: runtime_log_dir.as_ref().to_path_buf(),
     };
 
     Ok(RuntimeState::new(app_state, runtime_log))
+}
+
+pub fn bootstrap_runtime_at(database_path: impl AsRef<Path>) -> Result<RuntimeState> {
+    let database_path = database_path.as_ref();
+    let app_local_data_dir = database_path
+        .parent()
+        .ok_or_else(|| CodexLagError::new("runtime database path has no parent directory"))?;
+    let runtime_log_dir = runtime_log_dir(app_local_data_dir);
+    bootstrap_runtime_at_with_log_dir(database_path, runtime_log_dir)
 }
 
 pub fn runtime_database_path(app_local_data_dir: impl AsRef<Path>) -> PathBuf {
@@ -111,7 +120,8 @@ pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
 fn test_database_path() -> PathBuf {
     std::env::temp_dir()
         .join("codexlag-tests")
-        .join(format!("codexlag-{}.sqlite3", random_suffix()))
+        .join(random_suffix())
+        .join("codexlag.sqlite3")
 }
 
 fn generate_default_platform_key_secret() -> String {

@@ -28,7 +28,7 @@ pub fn run() {
                     }),
                 ])
                 .max_file_size(10_000_000)
-                .rotation_strategy(RotationStrategy::KeepAll)
+                .rotation_strategy(RotationStrategy::KeepSome(10))
                 .timezone_strategy(TimezoneStrategy::UseLocal)
                 .build(),
         )
@@ -37,9 +37,13 @@ pub fn run() {
                 .path()
                 .app_local_data_dir()
                 .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
+            let app_log_dir = app
+                .path()
+                .app_log_dir()
+                .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
             let database_path = bootstrap::runtime_database_path(app_local_data_dir);
 
-            let runtime = bootstrap::bootstrap_runtime_at(database_path)
+            let runtime = bootstrap::bootstrap_runtime_at_with_log_dir(database_path, app_log_dir)
                 .map_err(|error| -> Box<dyn Error> { Box::new(error) })?;
 
             tray::install_runtime_tray(app, &runtime.tray_model())

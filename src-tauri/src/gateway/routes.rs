@@ -48,11 +48,11 @@ async fn codex_request(
     let now_ms = wall_clock_now_ms();
     let mode_value = platform_key.allowed_mode.clone();
     let mode = mode_value.as_str();
-    let provisional_request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "unrouted");
+    let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "unrouted");
 
     let accepted_line = format_event_fields(&[
         ("event", "gateway.request.accepted"),
-        ("request_id", provisional_request_id.as_str()),
+        ("request_id", request_id.as_str()),
         ("platform_key", platform_key.name.as_str()),
         ("mode", mode),
     ]);
@@ -68,7 +68,7 @@ async fn codex_request(
     let candidates = default_candidates();
     let selected = choose_endpoint_at(mode, &candidates, now_ms).map_err(|error| {
         log_route_rejection(
-            provisional_request_id.as_str(),
+            request_id.as_str(),
             mode,
             &error,
             &candidates,
@@ -77,8 +77,6 @@ async fn codex_request(
         map_routing_error(mode, error)
     })?;
 
-    let request_id =
-        request_id_for_selected_endpoint(provisional_request_id.as_str(), selected.id.as_str());
     let attempt_id = build_attempt_id(request_id.as_str(), 0);
     let selected_line = format_event_fields(&[
         ("event", "routing.endpoint.selected"),
@@ -151,16 +149,4 @@ fn map_routing_error(mode: &str, error: RoutingError) -> (StatusCode, Json<Routi
             mode: mode.to_string(),
         }),
     )
-}
-
-fn request_id_for_selected_endpoint(request_id: &str, endpoint_id: &str) -> String {
-    let mut parts = request_id.rsplitn(3, ':');
-    let sequence = parts.next();
-    let _existing_endpoint = parts.next();
-    let prefix = parts.next();
-
-    match (prefix, sequence) {
-        (Some(prefix), Some(sequence)) => format!("{prefix}:{endpoint_id}:{sequence}"),
-        _ => request_id.to_string(),
-    }
 }
