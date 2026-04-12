@@ -1,7 +1,9 @@
 use codexlag_lib::providers::capabilities::{
     merge_cli_proxyapi_capabilities, FeatureCapability, FeatureCapabilityPatch,
 };
-use codexlag_lib::providers::official::{OfficialAuthMode, OfficialSession};
+use codexlag_lib::providers::official::{
+    OfficialAuthMode, OfficialBalanceCapability, OfficialSession,
+};
 use serde_json::{from_str, to_string};
 
 #[test]
@@ -88,8 +90,7 @@ fn official_auth_mode_serializes_known_values_to_stable_strings() {
 #[test]
 fn official_auth_mode_deserializes_known_stable_strings() {
     assert_eq!(
-        from_str::<OfficialAuthMode>("\"device_code\"")
-            .expect("deserialize device code auth mode"),
+        from_str::<OfficialAuthMode>("\"device_code\"").expect("deserialize device code auth mode"),
         OfficialAuthMode::DeviceCode
     );
     assert_eq!(
@@ -115,5 +116,20 @@ fn official_auth_mode_round_trips_unknown_plain_strings() {
     assert_eq!(
         from_str::<OfficialAuthMode>(&serialized).expect("deserialize serialized unknown mode"),
         OfficialAuthMode::Unknown("sso".to_string())
+    );
+}
+
+#[test]
+fn official_sessions_report_balance_capability_as_non_queryable() {
+    let session = OfficialSession {
+        session_id: "session-balance".to_string(),
+        account_identity: Some("user@example.com".to_string()),
+        auth_mode: Some(OfficialAuthMode::ApiKey),
+        refresh_capability: Some(true),
+    };
+
+    assert_eq!(
+        session.balance_capability(),
+        OfficialBalanceCapability::NonQueryable
     );
 }

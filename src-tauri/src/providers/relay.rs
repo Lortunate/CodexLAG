@@ -1,22 +1,37 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NormalizedBalance {
     pub total: String,
     pub used: String,
 }
 
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum RelayBalanceAdapter {
     NewApi,
     NoBalance,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayBalanceCapability {
+    Queryable { adapter: RelayBalanceAdapter },
+    Unsupported,
 }
 
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum RelayBalanceError {
     Payload(serde_json::Error),
+}
+
+pub fn relay_balance_capability(adapter: RelayBalanceAdapter) -> RelayBalanceCapability {
+    match adapter {
+        RelayBalanceAdapter::NewApi => RelayBalanceCapability::Queryable { adapter },
+        RelayBalanceAdapter::NoBalance => RelayBalanceCapability::Unsupported,
+    }
 }
 
 impl RelayBalanceError {
@@ -54,9 +69,7 @@ pub fn normalize_relay_balance_response(
     }
 }
 
-fn normalize_newapi_balance_response(
-    body: &str,
-) -> Result<NormalizedBalance, serde_json::Error> {
+fn normalize_newapi_balance_response(body: &str) -> Result<NormalizedBalance, serde_json::Error> {
     let payload: NewApiPayload = serde_json::from_str(body)?;
     Ok(NormalizedBalance {
         total: payload.data.total_balance,

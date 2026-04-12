@@ -1,8 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+pub use crate::logging::usage::{
+    UsageCost, UsageLedger, UsageLedgerQuery, UsageProvenance, UsageRecord, UsageRecordInput,
+    UsageRequestDetail,
+};
 pub use crate::providers::capabilities::{FeatureCapability, FeatureCapabilityPatch};
-pub use crate::providers::official::{OfficialAuthMode, OfficialSession};
-pub use crate::logging::usage::{UsageRecord, UsageRecordInput};
+pub use crate::providers::official::{
+    OfficialAuthMode, OfficialBalanceCapability, OfficialSession,
+};
+pub use crate::providers::relay::{NormalizedBalance, RelayBalanceAdapter, RelayBalanceCapability};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformKey {
