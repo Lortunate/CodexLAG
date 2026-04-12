@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use crate::db::repositories::Repositories;
 use crate::gateway::server::LoopbackGateway;
+use crate::logging::usage::{record_request, UsageRecord, UsageRecordInput};
 use crate::models::{PlatformKey, RoutingPolicy};
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
@@ -81,26 +82,47 @@ impl AppState {
 #[derive(Clone)]
 pub struct RuntimeState {
     app_state: Arc<RwLock<AppState>>,
+    usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     loopback_gateway: LoopbackGateway,
 }
 
 impl RuntimeState {
     pub fn new(app_state: AppState) -> Self {
         let app_state = Arc::new(RwLock::new(app_state));
-        let loopback_gateway = LoopbackGateway::new(Arc::clone(&app_state));
+        let usage_records = Arc::new(RwLock::new(Vec::new()));
+        let loopback_gateway =
+            LoopbackGateway::new(Arc::clone(&app_state), Arc::clone(&usage_records));
 
         Self {
             app_state,
+            usage_records,
             loopback_gateway,
         }
     }
 
     pub fn app_state(&self) -> RwLockReadGuard<'_, AppState> {
-        self.app_state.read().expect("runtime app state lock poisoned")
+        self.app_state
+            .read()
+            .expect("runtime app state lock poisoned")
     }
 
     pub fn loopback_gateway(&self) -> &LoopbackGateway {
         &self.loopback_gateway
+    }
+
+    pub fn usage_records(&self) -> Vec<UsageRecord> {
+        self.usage_records
+            .read()
+            .expect("runtime usage records lock poisoned")
+            .clone()
+    }
+
+    pub fn record_usage_request(&self, input: UsageRecordInput) {
+        let mut records = self
+            .usage_records
+            .write()
+            .expect("runtime usage records lock poisoned");
+        records.push(record_request(input));
     }
 
     pub fn tray_model(&self) -> TrayModel {
@@ -108,7 +130,9 @@ impl RuntimeState {
     }
 
     pub fn current_mode(&self) -> RoutingMode {
-        self.app_state().current_mode().unwrap_or(RoutingMode::Hybrid)
+        self.app_state()
+            .current_mode()
+            .unwrap_or(RoutingMode::Hybrid)
     }
 
     pub fn set_current_mode(&self, mode: RoutingMode) -> crate::error::Result<()> {

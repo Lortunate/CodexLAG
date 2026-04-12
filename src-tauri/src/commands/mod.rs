@@ -9,7 +9,9 @@ pub use accounts::{
     AccountBalanceSnapshot, AccountCapabilityDetail, AccountSummary,
 };
 pub use logs::{
-    get_usage_request_detail, list_usage_request_history, query_usage_ledger, LogSummary,
+    get_usage_request_detail, list_usage_request_history, query_usage_ledger,
+    usage_ledger_from_runtime, usage_request_detail_from_runtime, usage_request_history_from_runtime,
+    LogSummary,
 };
 pub use relays::{
     get_relay_capability_detail, refresh_relay_balance, RelayBalanceSnapshot,

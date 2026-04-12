@@ -6,6 +6,7 @@ use codexlag_lib::{
         policies::policy_summaries_from_state,
     },
     routing::policy::{RoutingMode, HYBRID, RELAY_ONLY},
+    secret_store::SecretKey,
 };
 
 #[tokio::test]
@@ -23,11 +24,19 @@ async fn bootstrapped_runtime_feeds_commands_and_tray_from_shared_state() {
     assert_eq!(policy_summaries.len(), 1);
     assert_eq!(policy_summaries[0].name, "default");
     assert_eq!(policy_summaries[0].status, "active");
-    assert_eq!(runtime.tray_model().current_mode(), Some(RoutingMode::Hybrid));
+    assert_eq!(
+        runtime.tray_model().current_mode(),
+        Some(RoutingMode::Hybrid)
+    );
     assert!(runtime.loopback_gateway().is_ready());
     assert_eq!(log_summary.level, "info");
     assert!(log_summary.last_event.contains("default"));
     assert!(log_summary.last_event.contains(HYBRID));
+    let default_secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("default platform key secret");
+    assert!(default_secret.starts_with("ck_local_"));
 }
 
 #[tokio::test]
@@ -44,7 +53,10 @@ async fn runtime_mode_switch_updates_default_key_summary_and_tray_model() {
 
     assert_eq!(key_summary.allowed_mode, RELAY_ONLY);
     assert_eq!(runtime.current_mode(), RoutingMode::RelayOnly);
-    assert_eq!(runtime.tray_model().current_mode(), Some(RoutingMode::RelayOnly));
+    assert_eq!(
+        runtime.tray_model().current_mode(),
+        Some(RoutingMode::RelayOnly)
+    );
 }
 
 #[tokio::test]

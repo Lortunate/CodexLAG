@@ -4,7 +4,8 @@ use axum::Router;
 
 use crate::{
     gateway::{auth::GatewayState, routes::build_routes},
-    routing::engine::{CandidateEndpoint, choose_endpoint},
+    logging::usage::UsageRecord,
+    routing::engine::{choose_endpoint, CandidateEndpoint},
     state::AppState,
 };
 
@@ -15,8 +16,11 @@ pub struct LoopbackGateway {
 }
 
 impl LoopbackGateway {
-    pub fn new(app_state: Arc<RwLock<AppState>>) -> Self {
-        let state = GatewayState::new(app_state);
+    pub fn new(
+        app_state: Arc<RwLock<AppState>>,
+        usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+    ) -> Self {
+        let state = GatewayState::new(app_state, usage_records);
         let router = build_routes().with_state(state.clone());
 
         Self { state, router }
@@ -36,7 +40,11 @@ impl LoopbackGateway {
 }
 
 pub fn build_router(app_state: AppState) -> Router {
-    LoopbackGateway::new(Arc::new(RwLock::new(app_state))).router()
+    LoopbackGateway::new(
+        Arc::new(RwLock::new(app_state)),
+        Arc::new(RwLock::new(Vec::new())),
+    )
+    .router()
 }
 
 pub fn build_router_for_test(app_state: AppState) -> Router {

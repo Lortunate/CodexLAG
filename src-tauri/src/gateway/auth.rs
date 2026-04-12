@@ -6,6 +6,7 @@ use axum::{
 };
 
 use crate::{
+    logging::usage::{record_request, UsageRecord, UsageRecordInput},
     models::{PlatformKey, RoutingPolicy},
     state::AppState,
 };
@@ -13,17 +14,24 @@ use crate::{
 #[derive(Clone)]
 pub struct GatewayState {
     app_state: Arc<RwLock<AppState>>,
+    usage_records: Arc<RwLock<Vec<UsageRecord>>>,
 }
 
 impl GatewayState {
-    pub fn new(app_state: Arc<RwLock<AppState>>) -> Self {
+    pub fn new(
+        app_state: Arc<RwLock<AppState>>,
+        usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+    ) -> Self {
         Self {
             app_state,
+            usage_records,
         }
     }
 
     pub fn app_state(&self) -> RwLockReadGuard<'_, AppState> {
-        self.app_state.read().expect("gateway app state lock poisoned")
+        self.app_state
+            .read()
+            .expect("gateway app state lock poisoned")
     }
 
     pub fn policy_for_platform_key(&self, platform_key: &PlatformKey) -> Option<RoutingPolicy> {
@@ -34,6 +42,21 @@ impl GatewayState {
 
     fn authenticate_platform_key(&self, provided_secret: &str) -> Option<PlatformKey> {
         self.app_state().authenticate_platform_key(provided_secret)
+    }
+
+    pub fn usage_records(&self) -> Vec<UsageRecord> {
+        self.usage_records
+            .read()
+            .expect("gateway usage records lock poisoned")
+            .clone()
+    }
+
+    pub fn record_usage_request(&self, input: UsageRecordInput) {
+        let mut records = self
+            .usage_records
+            .write()
+            .expect("gateway usage records lock poisoned");
+        records.push(record_request(input));
     }
 }
 

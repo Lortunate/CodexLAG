@@ -1,11 +1,19 @@
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use codexlag_lib::commands::accounts::get_account_capability_detail;
 use codexlag_lib::commands::logs::{
-    get_usage_request_detail, list_usage_request_history, query_usage_ledger,
+    usage_ledger_from_runtime, usage_request_detail_from_runtime, usage_request_history_from_runtime,
 };
 use codexlag_lib::commands::relays::{get_relay_capability_detail, RelayCapabilityDetail};
-use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance};
+use codexlag_lib::{
+    bootstrap::bootstrap_runtime_for_test, routing::policy::RoutingMode, secret_store::SecretKey,
+};
+use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance, UsageRecordInput};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
+use tower::ServiceExt;
 
 #[test]
 fn account_and_relay_capability_details_expose_balance_metadata() {
@@ -51,27 +59,118 @@ fn capability_detail_commands_return_explicit_errors_for_unknown_ids() {
     assert_eq!(relay_error, "unknown relay id: relay-missing");
 }
 
-#[test]
-fn usage_commands_expose_request_detail_history_and_ledger_provenance() {
-    let detail = get_usage_request_detail("req-1".to_string()).expect("existing request");
+#[tokio::test]
+async fn usage_commands_expose_request_detail_history_and_ledger_provenance() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime.record_usage_request(UsageRecordInput {
+        request_id: "req-1".to_string(),
+        endpoint_id: "official-default".to_string(),
+        input_tokens: 120,
+        output_tokens: 30,
+        cache_read_tokens: 10,
+        cache_write_tokens: 0,
+        estimated_cost: "0.0123".to_string(),
+    });
+    runtime.record_usage_request(UsageRecordInput {
+        request_id: "req-2".to_string(),
+        endpoint_id: "relay-default".to_string(),
+        input_tokens: 40,
+        output_tokens: 15,
+        cache_read_tokens: 5,
+        cache_write_tokens: 2,
+        estimated_cost: String::new(),
+    });
+
+    let detail = usage_request_detail_from_runtime(&runtime, "req-1").expect("existing request");
     assert_eq!(detail.request_id, "req-1");
     assert_eq!(detail.cost.provenance, UsageProvenance::Estimated);
     assert_eq!(detail.cost.amount.as_deref(), Some("0.0123"));
 
     assert!(
-        get_usage_request_detail("req-missing".to_string()).is_none(),
+        usage_request_detail_from_runtime(&runtime, "req-missing").is_none(),
         "unknown request should return None"
     );
 
-    let history = list_usage_request_history(Some(1));
+    let history = usage_request_history_from_runtime(&runtime, Some(1));
     assert_eq!(history.len(), 1);
 
-    let ledger = query_usage_ledger(Some(UsageLedgerQuery {
-        endpoint_id: Some("relay-1".to_string()),
+    let ledger = usage_ledger_from_runtime(&runtime, Some(UsageLedgerQuery {
+        endpoint_id: Some("relay-default".to_string()),
         request_id_prefix: None,
         limit: None,
     }));
     assert_eq!(ledger.entries.len(), 1);
     assert_eq!(ledger.total_cost.provenance, UsageProvenance::Unknown);
     assert_eq!(ledger.total_cost.amount, None);
+}
+
+#[tokio::test]
+async fn usage_commands_reflect_runtime_gateway_requests_only() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    assert!(
+        usage_request_history_from_runtime(&runtime, None).is_empty(),
+        "usage history should be empty before any gateway traffic"
+    );
+
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
+        .expect("switch mode");
+
+    let platform_secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("platform key secret");
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {}", platform_secret))
+                .body(Body::empty())
+                .expect("gateway request"),
+        )
+        .await
+        .expect("gateway response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let history = usage_request_history_from_runtime(&runtime, None);
+    assert_eq!(
+        history.len(),
+        1,
+        "exactly one data-plane request should be recorded after one request"
+    );
+
+    let relay_entries = usage_ledger_from_runtime(&runtime, Some(UsageLedgerQuery {
+        endpoint_id: Some("relay-default".to_string()),
+        request_id_prefix: None,
+        limit: None,
+    }));
+    assert_eq!(relay_entries.entries.len(), 1);
+    let key_entries = usage_ledger_from_runtime(&runtime, Some(UsageLedgerQuery {
+        endpoint_id: None,
+        request_id_prefix: Some("default:".to_string()),
+        limit: None,
+    }));
+    assert_eq!(key_entries.entries.len(), 1);
+    assert!(
+        usage_request_detail_from_runtime(&runtime, relay_entries.entries[0].request_id.as_str())
+            .is_some()
+    );
+
+    runtime
+        .set_current_mode(RoutingMode::Hybrid)
+        .expect("switch mode again");
+    let history_after_control_plane = usage_request_history_from_runtime(&runtime, None);
+    assert_eq!(
+        history_after_control_plane.len(),
+        1,
+        "control-plane mode changes must not add usage request entries"
+    );
 }
