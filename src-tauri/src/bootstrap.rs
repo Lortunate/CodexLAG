@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, RngCore};
 
@@ -81,14 +80,9 @@ pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
 }
 
 fn test_database_path() -> PathBuf {
-    let unique_suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time before unix epoch")
-        .as_nanos();
-
     std::env::temp_dir()
         .join("codexlag-tests")
-        .join(format!("codexlag-{unique_suffix}.sqlite3"))
+        .join(format!("codexlag-{}.sqlite3", random_suffix()))
 }
 
 fn generate_default_platform_key_secret() -> String {
@@ -101,4 +95,15 @@ fn generate_default_platform_key_secret() -> String {
     }
 
     format!("{DEFAULT_PLATFORM_KEY_SECRET_PREFIX}{encoded}")
+}
+
+fn random_suffix() -> String {
+    let mut bytes = [0_u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push_str(&format!("{byte:02x}"));
+    }
+    encoded
 }

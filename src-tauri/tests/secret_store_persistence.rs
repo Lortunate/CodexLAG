@@ -1,18 +1,17 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use codexlag_lib::{
     bootstrap::bootstrap_state_for_test_at,
     secret_store::{SecretKey, SecretStore},
 };
+use rand::{rngs::OsRng, RngCore};
 
 fn unique_database_path(prefix: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "{prefix}-{}.sqlite3",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before unix epoch")
-            .as_nanos()
-    ))
+    std::env::temp_dir().join(format!("{prefix}-{}.sqlite3", random_suffix()))
+}
+
+fn random_suffix() -> String {
+    let mut bytes = [0_u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[tokio::test]
@@ -47,7 +46,7 @@ async fn secret_store_persistence_restores_platform_key_secret_across_bootstrap(
 
 #[test]
 fn secret_store_persistence_rejects_missing_and_empty_secrets() {
-    let secret_store = SecretStore::default();
+    let secret_store = SecretStore::in_memory(format!("test/secret-store/{}", random_suffix()));
     let missing_key = SecretKey::new("missing-secret");
 
     let missing = secret_store

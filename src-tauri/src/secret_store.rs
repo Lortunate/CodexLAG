@@ -83,12 +83,6 @@ impl SecretStore {
     }
 }
 
-impl Default for SecretStore {
-    fn default() -> Self {
-        Self::in_memory("test-default")
-    }
-}
-
 trait SecretStoreAdapter: Send + Sync {
     fn set(&self, key: &SecretKey, value: &str) -> Result<()>;
     fn get(&self, key: &SecretKey) -> Result<Option<String>>;

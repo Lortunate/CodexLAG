@@ -1,11 +1,10 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use codexlag_lib::{
     bootstrap::{bootstrap_state_for_test, bootstrap_state_for_test_at},
     routing::policy::RoutingMode,
     secret_store::SecretKey,
 };
 use codexlag_lib::routing::policy::HYBRID;
+use rand::{rngs::OsRng, RngCore};
 use rusqlite::Connection;
 
 const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
@@ -45,10 +44,7 @@ async fn bootstrap_persists_default_key_secret_in_secret_store() {
 async fn bootstrap_persists_default_state_across_restarts() {
     let database_path = std::env::temp_dir().join(format!(
         "codexlag-bootstrap-persistence-{}.sqlite3",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before unix epoch")
-            .as_nanos()
+        random_suffix()
     ));
 
     let mut first_state = bootstrap_state_for_test_at(&database_path)
@@ -102,6 +98,12 @@ async fn bootstrap_persists_default_state_across_restarts() {
 
     drop(second_state);
     let _ = std::fs::remove_file(&database_path);
+}
+
+fn random_suffix() -> String {
+    let mut bytes = [0_u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[tokio::test]
