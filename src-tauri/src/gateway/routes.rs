@@ -9,7 +9,10 @@ use serde::Serialize;
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::gateway::server::default_candidates;
 use crate::logging::{log_route_downgrade, log_route_rejection};
-use crate::routing::engine::{RoutingError, choose_endpoint_at, wall_clock_now_ms};
+use crate::routing::engine::{
+    PoolKind, RoutingError, choose_endpoint_at, endpoint_downgrade_reason,
+    endpoint_rejection_reason, wall_clock_now_ms,
+};
 
 #[derive(Debug, Serialize)]
 struct CodexRequestSummary {
@@ -57,7 +60,7 @@ async fn codex_request(
         map_routing_error(mode, error)
     })?;
 
-    if selected.pool == crate::routing::engine::PoolKind::Relay {
+    if should_log_downgrade(mode, &selected, &candidates, now_ms) {
         log_route_downgrade(mode, &selected, &candidates, now_ms);
     }
 
@@ -67,6 +70,24 @@ async fn codex_request(
         allowed_mode: platform_key.allowed_mode.clone(),
         endpoint_id: selected.id,
     }))
+}
+
+fn should_log_downgrade(
+    mode: &str,
+    selected: &crate::routing::engine::CandidateEndpoint,
+    candidates: &[crate::routing::engine::CandidateEndpoint],
+    now_ms: u64,
+) -> bool {
+    if mode != "hybrid" || selected.pool != PoolKind::Relay {
+        return false;
+    }
+
+    candidates.iter().any(|candidate| {
+        candidate.pool == PoolKind::Official
+            && candidate.id != selected.id
+            && (endpoint_rejection_reason(candidate, now_ms).is_some()
+                || endpoint_downgrade_reason(candidate, now_ms).is_some())
+    })
 }
 
 fn map_routing_error(

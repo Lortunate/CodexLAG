@@ -47,7 +47,7 @@ fn timeout_and_5xx_classification_follow_configured_thresholds() {
 }
 
 #[tokio::test]
-async fn codex_request_returns_user_facing_error_when_no_candidate_matches() {
+async fn codex_request_account_only_succeeds_with_placeholder_candidates() {
     let mut state = bootstrap_state_for_test().await.expect("bootstrap");
     state
         .set_default_key_allowed_mode(RoutingMode::AccountOnly)
@@ -69,15 +69,15 @@ async fn codex_request_returns_user_facing_error_when_no_candidate_matches() {
         .await
         .expect("codex response");
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("route body");
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
 
-    assert_eq!(payload["error"], "no_available_endpoint");
-    assert_eq!(payload["mode"], "account_only");
+    assert_eq!(payload["allowed_mode"], "account_only");
+    assert_eq!(payload["endpoint_id"], "official-default");
 }
 
 #[test]

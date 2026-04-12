@@ -59,8 +59,7 @@ pub fn choose_endpoint_at(
     match RoutingMode::parse(mode).ok_or(RoutingError::InvalidMode)? {
         RoutingMode::AccountOnly => choose_from_pool(endpoints, PoolKind::Official, now_ms),
         RoutingMode::RelayOnly => choose_from_pool(endpoints, PoolKind::Relay, now_ms),
-        RoutingMode::Hybrid => choose_from_pool(endpoints, PoolKind::Official, now_ms)
-            .or_else(|| choose_from_pool(endpoints, PoolKind::Relay, now_ms)),
+        RoutingMode::Hybrid => choose_hybrid(endpoints, now_ms),
     }
     .ok_or(RoutingError::NoAvailableEndpoint)
 }
@@ -103,9 +102,7 @@ pub fn record_failure(
             }
         }
         FailureClass::Ignored => {
-            // Ignored errors do not participate in failure streaks.
-            endpoint.health.consecutive_timeouts = 0;
-            endpoint.health.consecutive_server_errors = 0;
+            // Ignored failures preserve existing streak counters.
             endpoint.health.last_failure = Some(FailureClass::Ignored);
         }
     }
@@ -116,8 +113,7 @@ pub fn mark_success(endpoint: &mut CandidateEndpoint) {
     endpoint.health = EndpointHealth::default();
 }
 
-pub fn endpoint_health_state(endpoint: &CandidateEndpoint, now_ms: u64) -> EndpointHealthState {
-    let _ = now_ms;
+pub fn endpoint_health_state(endpoint: &CandidateEndpoint) -> EndpointHealthState {
     endpoint.health.state
 }
 
@@ -163,6 +159,26 @@ fn choose_from_pool(
             .then_with(|| left.id.cmp(&right.id))
     });
     candidates.into_iter().next()
+}
+
+fn choose_hybrid(endpoints: &[CandidateEndpoint], now_ms: u64) -> Option<CandidateEndpoint> {
+    let official = choose_from_pool(endpoints, PoolKind::Official, now_ms);
+    let relay = choose_from_pool(endpoints, PoolKind::Relay, now_ms);
+
+    match (official, relay) {
+        (Some(official), Some(relay)) => {
+            let official_rank = health_rank(official.health.state);
+            let relay_rank = health_rank(relay.health.state);
+            if official_rank <= relay_rank {
+                Some(official)
+            } else {
+                Some(relay)
+            }
+        }
+        (Some(official), None) => Some(official),
+        (None, Some(relay)) => Some(relay),
+        (None, None) => None,
+    }
 }
 
 fn health_rank(state: EndpointHealthState) -> i32 {

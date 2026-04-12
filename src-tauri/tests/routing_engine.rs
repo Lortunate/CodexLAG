@@ -189,3 +189,41 @@ fn cooldown_recovery_updates_health_state_before_selection() {
     let selected = choose_endpoint_at("relay_only", &[endpoint], now_ms + 60).expect("recovered");
     assert_eq!(selected.health.state, EndpointHealthState::Degraded);
 }
+
+#[test]
+fn ignored_failures_do_not_reset_consecutive_failure_streaks() {
+    let rules = FailureRules {
+        timeout_open_after: 2,
+        ..FailureRules::default()
+    };
+    let mut endpoint = CandidateEndpoint::relay("relay-1", 10, true);
+    let now_ms = 13_000;
+
+    assert_eq!(
+        record_failure(&mut endpoint, EndpointFailure::Timeout, now_ms, &rules),
+        EndpointHealthState::Degraded
+    );
+    assert_eq!(
+        record_failure(&mut endpoint, EndpointFailure::HttpStatus(400), now_ms + 1, &rules),
+        EndpointHealthState::Degraded
+    );
+    assert_eq!(
+        record_failure(&mut endpoint, EndpointFailure::Timeout, now_ms + 2, &rules),
+        EndpointHealthState::Open
+    );
+}
+
+#[test]
+fn hybrid_prefers_healthy_relay_over_degraded_official_even_with_worse_priority() {
+    let rules = FailureRules::default();
+    let now_ms = 14_000;
+    let mut official = CandidateEndpoint::official("official-1", 5, true);
+    let relay = CandidateEndpoint::relay("relay-1", 50, true);
+
+    assert_eq!(
+        record_failure(&mut official, EndpointFailure::Timeout, now_ms, &rules),
+        EndpointHealthState::Degraded
+    );
+    let selected = choose_endpoint_at("hybrid", &[official, relay], now_ms + 1).expect("selected");
+    assert_eq!(selected.id, "relay-1");
+}
