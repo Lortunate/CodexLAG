@@ -32,9 +32,9 @@ use codexlag_lib::{
     state::{RuntimeLogConfig, RuntimeState},
 };
 use rusqlite::{params, Connection};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tower::ServiceExt;
 
 fn unique_suffix() -> String {
@@ -397,6 +397,99 @@ async fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
     assert_eq!(
         invalid_error,
         "relay endpoint must start with 'http://' or 'https://'"
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn relay_probe_does_not_block_writes_while_connection_probe_times_out() {
+    let isolated_root = isolated_test_root("command-relay-probe-lock-scope");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let suffix = unique_suffix();
+    let relay_id = format!("relay-slow-probe-{suffix}");
+
+    let slow_listener = TcpListener::bind("127.0.0.1:0").expect("bind slow probe listener");
+    let slow_addr = slow_listener
+        .local_addr()
+        .expect("resolve slow probe listener address");
+    let slow_endpoint = format!("http://{slow_addr}");
+
+    let mut backlog_connections = Vec::new();
+    for _ in 0..1024 {
+        match TcpStream::connect_timeout(&slow_addr, Duration::from_millis(10)) {
+            Ok(stream) => backlog_connections.push(stream),
+            Err(_) => break,
+        }
+    }
+    assert!(
+        !backlog_connections.is_empty(),
+        "expected at least one queued connection for slow probe endpoint"
+    );
+
+    add_relay_from_runtime(
+        &runtime,
+        RelayUpsertInput {
+            relay_id: relay_id.clone(),
+            name: "Slow Probe Relay".to_string(),
+            endpoint: slow_endpoint,
+            adapter: Some("newapi".to_string()),
+        },
+    )
+    .expect("relay add should succeed");
+
+    let (probe_elapsed, write_elapsed) = std::thread::scope(|scope| {
+        let (probe_started_tx, probe_started_rx) = std::sync::mpsc::channel();
+        let probe_relay_id = relay_id.clone();
+        let runtime_ref = &runtime;
+        let probe_handle = scope.spawn(move || {
+            probe_started_tx
+                .send(())
+                .expect("signal probe thread start");
+            let probe_started = Instant::now();
+            let probe_result = test_relay_connection_from_runtime(runtime_ref, probe_relay_id)
+                .expect("probe command should return a result");
+            (probe_started.elapsed(), probe_result)
+        });
+
+        probe_started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("probe thread should start");
+        std::thread::sleep(Duration::from_millis(100));
+
+        let write_started = Instant::now();
+        let updated = update_relay_from_runtime(
+            &runtime,
+            RelayUpsertInput {
+                relay_id: relay_id.clone(),
+                name: "Updated During Probe".to_string(),
+                endpoint: "http://127.0.0.1:1".to_string(),
+                adapter: Some("newapi".to_string()),
+            },
+        )
+        .expect("relay update should succeed while probe is in-flight");
+        assert_eq!(updated.name, "Updated During Probe");
+        let write_elapsed = write_started.elapsed();
+
+        let (probe_elapsed, probe_result) = probe_handle
+            .join()
+            .expect("probe thread should complete without panic");
+        assert_eq!(
+            probe_result.status, "failed",
+            "saturated listener should eventually fail the probe after timeout"
+        );
+        (probe_elapsed, write_elapsed)
+    });
+
+    assert!(
+        probe_elapsed >= Duration::from_secs(2),
+        "probe should stay in-flight long enough to validate lock scope; elapsed: {probe_elapsed:?}"
+    );
+    assert!(
+        write_elapsed < Duration::from_millis(500),
+        "write operation should not block on probe lock scope; elapsed: {write_elapsed:?}"
     );
 
     let _ = std::fs::remove_dir_all(&isolated_root);
