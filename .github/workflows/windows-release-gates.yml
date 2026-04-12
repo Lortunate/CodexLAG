@@ -1,0 +1,17 @@
+name: windows-release-gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  windows-gates:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - run: bun install --frozen-lockfile
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --test gateway_failover --test security_regression --test runtime_logging --test runtime_composition
+      - run: bun run test -- src/test/app-shell.test.tsx
