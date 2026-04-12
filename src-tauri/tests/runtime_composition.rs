@@ -11,7 +11,10 @@ use codexlag_lib::{
         },
         policies::policy_summaries_from_state,
     },
-    routing::policy::{RoutingMode, HYBRID, RELAY_ONLY},
+    routing::{
+        engine::PoolKind,
+        policy::{RoutingMode, HYBRID, RELAY_ONLY},
+    },
     secret_store::SecretKey,
     state::{RuntimeLogConfig, RuntimeState},
 };
@@ -64,6 +67,32 @@ async fn runtime_mode_switch_updates_default_key_summary_and_tray_model() {
         runtime.tray_model().current_mode(),
         Some(RoutingMode::RelayOnly)
     );
+}
+
+#[tokio::test]
+async fn runtime_log_summary_warns_when_current_mode_has_no_available_endpoint() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
+        .expect("switch to relay-only");
+
+    for candidate in runtime.loopback_gateway().state().current_candidates() {
+        if candidate.pool == PoolKind::Relay {
+            let updated = runtime
+                .loopback_gateway()
+                .state()
+                .set_endpoint_availability(candidate.id.as_str(), false);
+            assert!(updated, "relay candidate availability should be mutable");
+        }
+    }
+
+    let log_summary = log_summary_from_runtime(&runtime);
+
+    assert_eq!(log_summary.level, "warn");
+    assert!(log_summary.last_event.contains(RELAY_ONLY));
 }
 
 #[tokio::test]

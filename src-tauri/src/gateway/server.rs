@@ -5,7 +5,7 @@ use axum::Router;
 use crate::{
     gateway::{auth::GatewayState, routes::build_routes},
     logging::usage::UsageRecord,
-    routing::engine::{choose_endpoint, CandidateEndpoint},
+    routing::engine::CandidateEndpoint,
     state::AppState,
 };
 
@@ -43,7 +43,11 @@ impl LoopbackGateway {
     }
 
     pub fn is_ready(&self) -> bool {
-        choose_endpoint("hybrid", &default_candidates()).is_ok()
+        self.is_ready_for_mode("hybrid")
+    }
+
+    pub fn is_ready_for_mode(&self, mode: &str) -> bool {
+        self.state.has_available_endpoint_for_mode(mode)
     }
 }
 
