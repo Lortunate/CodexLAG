@@ -14,6 +14,10 @@ async fn gateway_falls_back_to_relay_after_official_server_error_and_keeps_corre
     let runtime = bootstrap_runtime_for_test()
         .await
         .expect("bootstrap runtime");
+    runtime
+        .loopback_gateway()
+        .state()
+        .enable_test_route_headers_for_test();
 
     let secret = runtime
         .app_state()
@@ -61,6 +65,10 @@ async fn gateway_returns_no_available_endpoint_when_all_candidates_fail() {
     let runtime = bootstrap_runtime_for_test()
         .await
         .expect("bootstrap runtime");
+    runtime
+        .loopback_gateway()
+        .state()
+        .enable_test_route_headers_for_test();
 
     let secret = runtime
         .app_state()

@@ -50,7 +50,11 @@ async fn codex_request(
     let mode_value = platform_key.allowed_mode.clone();
     let mode = mode_value.as_str();
     let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "unrouted");
-    let endpoint_status_plan = parse_endpoint_status_plan(&headers);
+    let endpoint_status_plan = if gateway_state.test_route_headers_enabled() {
+        parse_endpoint_status_plan(&headers)
+    } else {
+        HashMap::new()
+    };
 
     let accepted_line = format_event_fields(&[
         ("event", "gateway.request.accepted"),
@@ -67,7 +71,7 @@ async fn codex_request(
             mode: platform_key.allowed_mode.clone(),
         }),
     ))?;
-    let selected = gateway_state
+    let selection = gateway_state
         .choose_endpoint_with_runtime_failover(request_id.as_str(), mode, |endpoint, _context| {
             invoke_endpoint_with_plan(endpoint.id.as_str(), &endpoint_status_plan)
         })
@@ -76,11 +80,9 @@ async fn codex_request(
             log_route_rejection(request_id.as_str(), mode, &error, &candidates, now_ms);
             map_routing_error(mode, error)
         })?;
+    let selected = selection.endpoint;
     let candidates = gateway_state.current_candidates();
-    let attempt_index = gateway_state
-        .last_route_debug()
-        .map(|debug| debug.attempt_count.saturating_sub(1))
-        .unwrap_or(0);
+    let attempt_index = selection.attempt_count.saturating_sub(1);
     let attempt_id = build_attempt_id(request_id.as_str(), attempt_index);
 
     let selected_line = format_event_fields(&[

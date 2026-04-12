@@ -2,6 +2,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, RwLock, RwLockReadGuard,
 };
+use std::sync::atomic::AtomicBool;
 
 use axum::{
     extract::FromRequestParts,
@@ -10,7 +11,9 @@ use axum::{
 
 use crate::{
     gateway::{
-        runtime_routing::{RouteDebugSnapshot, RoutingAttemptContext, RuntimeRoutingState},
+        runtime_routing::{
+            RouteDebugSnapshot, RouteSelection, RoutingAttemptContext, RuntimeRoutingState,
+        },
         server::default_candidates,
     },
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
@@ -24,6 +27,7 @@ pub struct GatewayState {
     app_state: Arc<RwLock<AppState>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     routing: Arc<RwLock<RuntimeRoutingState>>,
+    allow_test_route_headers: Arc<AtomicBool>,
     request_sequence: Arc<AtomicU64>,
 }
 
@@ -51,6 +55,7 @@ impl GatewayState {
                 candidates,
                 FailureRules::default(),
             ))),
+            allow_test_route_headers: Arc::new(AtomicBool::new(false)),
             request_sequence: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -101,7 +106,7 @@ impl GatewayState {
         request_id: &str,
         mode: &str,
         invoke: F,
-    ) -> Result<CandidateEndpoint, RoutingError>
+    ) -> Result<RouteSelection, RoutingError>
     where
         F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure>,
     {
@@ -124,6 +129,14 @@ impl GatewayState {
             .expect("gateway routing lock poisoned")
             .last_debug()
             .cloned()
+    }
+
+    pub fn enable_test_route_headers_for_test(&self) {
+        self.allow_test_route_headers.store(true, Ordering::Relaxed);
+    }
+
+    pub fn test_route_headers_enabled(&self) -> bool {
+        self.allow_test_route_headers.load(Ordering::Relaxed)
     }
 }
 

@@ -24,6 +24,12 @@ pub struct RouteDebugSnapshot {
     pub attempt_count: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct RouteSelection {
+    pub endpoint: CandidateEndpoint,
+    pub attempt_count: usize,
+}
+
 pub struct RuntimeRoutingState {
     candidates: Vec<CandidateEndpoint>,
     rules: FailureRules,
@@ -52,7 +58,7 @@ impl RuntimeRoutingState {
         request_id: &str,
         mode: &str,
         mut invoke: F,
-    ) -> Result<CandidateEndpoint, RoutingError>
+    ) -> Result<RouteSelection, RoutingError>
     where
         F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure>,
     {
@@ -63,14 +69,21 @@ impl RuntimeRoutingState {
 
         while attempt_count < max_attempts {
             let now_ms = wall_clock_now_ms();
-            let selected = choose_endpoint_at(mode, &self.candidates, now_ms).and_then(|candidate| {
-                if attempted_endpoint_ids.contains(candidate.id.as_str()) {
-                    Err(RoutingError::NoAvailableEndpoint)
-                } else {
-                    Ok(candidate)
-                }
-            })?;
-            attempt_count += 1;
+            let selected = match choose_endpoint_at(mode, &self.candidates, now_ms) {
+                Ok(candidate) => candidate,
+                Err(error) => return Err(error),
+            };
+
+            if attempted_endpoint_ids.contains(selected.id.as_str()) {
+                self.last_debug = last_selected_endpoint.map(|endpoint_id| RouteDebugSnapshot {
+                    request_id: request_id.to_string(),
+                    selected_endpoint_id: endpoint_id,
+                    attempt_count,
+                });
+                return Err(RoutingError::NoAvailableEndpoint);
+            }
+
+            attempt_count = attempt_count.saturating_add(1);
             attempted_endpoint_ids.insert(selected.id.clone());
             last_selected_endpoint = Some(selected.id.clone());
             let attempt_index = attempt_count.saturating_sub(1);
@@ -89,7 +102,10 @@ impl RuntimeRoutingState {
                         selected_endpoint_id: selected.id.clone(),
                         attempt_count,
                     });
-                    return Ok(selected);
+                    return Ok(RouteSelection {
+                        endpoint: selected,
+                        attempt_count,
+                    });
                 }
                 Err(failure) => {
                     let _ = record_failure_for_endpoint(
