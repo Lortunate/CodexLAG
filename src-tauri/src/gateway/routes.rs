@@ -1,10 +1,11 @@
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::logging::runtime::{build_attempt_id, format_event_fields};
@@ -41,6 +42,7 @@ async fn health() -> &'static str {
 
 async fn codex_request(
     State(gateway_state): State<GatewayState>,
+    headers: HeaderMap,
     auth: AuthenticatedPlatformKey,
 ) -> Result<Json<CodexRequestSummary>, (StatusCode, Json<RoutingErrorResponse>)> {
     let platform_key = auth.platform_key();
@@ -48,6 +50,7 @@ async fn codex_request(
     let mode_value = platform_key.allowed_mode.clone();
     let mode = mode_value.as_str();
     let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "unrouted");
+    let endpoint_status_plan = parse_endpoint_status_plan(&headers);
 
     let accepted_line = format_event_fields(&[
         ("event", "gateway.request.accepted"),
@@ -65,7 +68,9 @@ async fn codex_request(
         }),
     ))?;
     let selected = gateway_state
-        .choose_endpoint_with_runtime_failover(request_id.as_str(), mode)
+        .choose_endpoint_with_runtime_failover(request_id.as_str(), mode, |endpoint, _context| {
+            invoke_endpoint_with_plan(endpoint.id.as_str(), &endpoint_status_plan)
+        })
         .map_err(|error| {
             let candidates = gateway_state.current_candidates();
             log_route_rejection(request_id.as_str(), mode, &error, &candidates, now_ms);
@@ -114,6 +119,32 @@ async fn codex_request(
         allowed_mode: platform_key.allowed_mode.clone(),
         endpoint_id,
     }))
+}
+
+fn parse_endpoint_status_plan(headers: &HeaderMap) -> HashMap<String, u16> {
+    headers
+        .get("x-codexlag-endpoint-status")
+        .and_then(|value| value.to_str().ok())
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|segment| {
+                    let (endpoint_id, status) = segment.trim().split_once(':')?;
+                    let status = status.trim().parse::<u16>().ok()?;
+                    Some((endpoint_id.trim().to_string(), status))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn invoke_endpoint_with_plan(
+    endpoint_id: &str,
+    status_plan: &HashMap<String, u16>,
+) -> Result<(), crate::models::EndpointFailure> {
+    match status_plan.get(endpoint_id) {
+        Some(status) if *status >= 400 => Err(crate::models::EndpointFailure::HttpStatus(*status)),
+        _ => Ok(()),
+    }
 }
 
 fn should_log_downgrade(

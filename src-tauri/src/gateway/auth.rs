@@ -10,14 +10,11 @@ use axum::{
 
 use crate::{
     gateway::{
-        runtime_routing::{
-            data_plane_executor_from_outcomes, default_data_plane_executor, DataPlaneExecutor,
-            RouteDebugSnapshot, RuntimeRoutingState,
-        },
+        runtime_routing::{RouteDebugSnapshot, RoutingAttemptContext, RuntimeRoutingState},
         server::default_candidates,
     },
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
-    models::{PlatformKey, RoutingPolicy},
+    models::{EndpointFailure, PlatformKey, RoutingPolicy},
     routing::engine::{CandidateEndpoint, FailureRules, RoutingError},
     state::AppState,
 };
@@ -39,7 +36,6 @@ impl GatewayState {
             app_state,
             usage_records,
             default_candidates(),
-            default_data_plane_executor(),
         )
     }
 
@@ -47,7 +43,6 @@ impl GatewayState {
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
         candidates: Vec<CandidateEndpoint>,
-        executor: DataPlaneExecutor,
     ) -> Self {
         Self {
             app_state,
@@ -55,7 +50,6 @@ impl GatewayState {
             routing: Arc::new(RwLock::new(RuntimeRoutingState::new(
                 candidates,
                 FailureRules::default(),
-                executor,
             ))),
             request_sequence: Arc::new(AtomicU64::new(0)),
         }
@@ -102,15 +96,19 @@ impl GatewayState {
         format!("{platform_key_name}:{now_ms}:{endpoint_id}:{sequence}")
     }
 
-    pub fn choose_endpoint_with_runtime_failover(
+    pub fn choose_endpoint_with_runtime_failover<F>(
         &self,
         request_id: &str,
         mode: &str,
-    ) -> Result<CandidateEndpoint, RoutingError> {
+        invoke: F,
+    ) -> Result<CandidateEndpoint, RoutingError>
+    where
+        F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure>,
+    {
         self.routing
             .write()
             .expect("gateway routing lock poisoned")
-            .choose_with_failover(request_id, mode)
+            .choose_with_failover(request_id, mode, invoke)
     }
 
     pub fn current_candidates(&self) -> Vec<CandidateEndpoint> {
@@ -118,13 +116,6 @@ impl GatewayState {
             .read()
             .expect("gateway routing lock poisoned")
             .candidates_snapshot()
-    }
-
-    pub fn set_test_outcomes(&self, outcomes: Vec<(String, Option<u16>)>) {
-        self.routing
-            .write()
-            .expect("gateway routing lock poisoned")
-            .set_data_plane_executor(data_plane_executor_from_outcomes(outcomes));
     }
 
     pub fn last_route_debug(&self) -> Option<RouteDebugSnapshot> {

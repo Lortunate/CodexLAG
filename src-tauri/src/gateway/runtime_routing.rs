@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex},
-};
+use std::collections::HashSet;
 
 use crate::{
     models::EndpointFailure,
@@ -11,10 +8,6 @@ use crate::{
         CandidateEndpoint, FailureRules, RoutingError,
     },
 };
-
-pub type DataPlaneExecutor = Arc<
-    dyn Fn(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure> + Send + Sync,
->;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoutingAttemptContext {
@@ -34,16 +27,14 @@ pub struct RouteDebugSnapshot {
 pub struct RuntimeRoutingState {
     candidates: Vec<CandidateEndpoint>,
     rules: FailureRules,
-    executor: DataPlaneExecutor,
     last_debug: Option<RouteDebugSnapshot>,
 }
 
 impl RuntimeRoutingState {
-    pub fn new(candidates: Vec<CandidateEndpoint>, rules: FailureRules, executor: DataPlaneExecutor) -> Self {
+    pub fn new(candidates: Vec<CandidateEndpoint>, rules: FailureRules) -> Self {
         Self {
             candidates,
             rules,
-            executor,
             last_debug: None,
         }
     }
@@ -56,23 +47,31 @@ impl RuntimeRoutingState {
         self.last_debug.as_ref()
     }
 
-    pub fn set_data_plane_executor(&mut self, executor: DataPlaneExecutor) {
-        self.executor = executor;
-    }
-
-    pub fn choose_with_failover(
+    pub fn choose_with_failover<F>(
         &mut self,
         request_id: &str,
         mode: &str,
-    ) -> Result<CandidateEndpoint, RoutingError> {
+        mut invoke: F,
+    ) -> Result<CandidateEndpoint, RoutingError>
+    where
+        F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure>,
+    {
         let max_attempts = self.candidates.len().max(1);
         let mut attempt_count = 0usize;
+        let mut attempted_endpoint_ids = HashSet::<String>::new();
         let mut last_selected_endpoint: Option<String> = None;
 
         while attempt_count < max_attempts {
             let now_ms = wall_clock_now_ms();
-            let selected = choose_endpoint_at(mode, &self.candidates, now_ms)?;
+            let selected = choose_endpoint_at(mode, &self.candidates, now_ms).and_then(|candidate| {
+                if attempted_endpoint_ids.contains(candidate.id.as_str()) {
+                    Err(RoutingError::NoAvailableEndpoint)
+                } else {
+                    Ok(candidate)
+                }
+            })?;
             attempt_count += 1;
+            attempted_endpoint_ids.insert(selected.id.clone());
             last_selected_endpoint = Some(selected.id.clone());
             let attempt_index = attempt_count.saturating_sub(1);
             let context = RoutingAttemptContext {
@@ -82,7 +81,7 @@ impl RuntimeRoutingState {
                 mode: mode.to_string(),
             };
 
-            match self.invoke_for_endpoint(&selected, &context) {
+            match invoke(&selected, &context) {
                 Ok(()) => {
                     let _ = mark_success_for_endpoint(&mut self.candidates, selected.id.as_str());
                     self.last_debug = Some(RouteDebugSnapshot {
@@ -114,36 +113,4 @@ impl RuntimeRoutingState {
 
         Err(RoutingError::NoAvailableEndpoint)
     }
-
-    fn invoke_for_endpoint(
-        &self,
-        endpoint: &CandidateEndpoint,
-        context: &RoutingAttemptContext,
-    ) -> Result<(), EndpointFailure> {
-        (self.executor)(endpoint, context)
-    }
-}
-
-pub fn default_data_plane_executor() -> DataPlaneExecutor {
-    Arc::new(|_, _| Ok(()))
-}
-
-pub fn data_plane_executor_from_outcomes(outcomes: Vec<(String, Option<u16>)>) -> DataPlaneExecutor {
-    let mut grouped = HashMap::<String, VecDeque<Option<u16>>>::new();
-    for (endpoint_id, outcome) in outcomes {
-        grouped.entry(endpoint_id).or_default().push_back(outcome);
-    }
-    let grouped = Arc::new(Mutex::new(grouped));
-
-    Arc::new(move |endpoint, _| {
-        let outcome = grouped
-            .lock()
-            .expect("test outcomes lock poisoned")
-            .get_mut(endpoint.id.as_str())
-            .and_then(|queue| queue.pop_front());
-        match outcome {
-            Some(Some(status)) => Err(EndpointFailure::HttpStatus(status)),
-            Some(None) | None => Ok(()),
-        }
-    })
 }

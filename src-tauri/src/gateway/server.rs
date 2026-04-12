@@ -3,11 +3,7 @@ use std::sync::{Arc, RwLock};
 use axum::Router;
 
 use crate::{
-    gateway::{
-        auth::GatewayState,
-        routes::build_routes,
-        runtime_routing::{default_data_plane_executor, DataPlaneExecutor},
-    },
+    gateway::{auth::GatewayState, routes::build_routes},
     logging::usage::UsageRecord,
     routing::engine::{choose_endpoint, CandidateEndpoint},
     state::AppState,
@@ -24,21 +20,15 @@ impl LoopbackGateway {
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     ) -> Self {
-        Self::new_with_runtime(
-            app_state,
-            usage_records,
-            default_candidates(),
-            default_data_plane_executor(),
-        )
+        Self::new_with_runtime(app_state, usage_records, default_candidates())
     }
 
     pub fn new_with_runtime(
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
         candidates: Vec<CandidateEndpoint>,
-        executor: DataPlaneExecutor,
     ) -> Self {
-        let state = GatewayState::new_with_runtime(app_state, usage_records, candidates, executor);
+        let state = GatewayState::new_with_runtime(app_state, usage_records, candidates);
         let router = build_routes().with_state(state.clone());
 
         Self { state, router }
@@ -77,7 +67,6 @@ pub fn build_router_for_test_with_runtime(
         Arc::new(RwLock::new(app_state)),
         Arc::new(RwLock::new(Vec::new())),
         candidates,
-        default_data_plane_executor(),
     )
     .router()
 }
