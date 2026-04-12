@@ -35,11 +35,18 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::accounts::list_accounts,
+            commands::accounts::refresh_account_balance,
+            commands::accounts::get_account_capability_detail,
             commands::relays::list_relays,
+            commands::relays::refresh_relay_balance,
+            commands::relays::get_relay_capability_detail,
             commands::keys::get_default_key_summary,
             commands::keys::set_default_key_mode,
             commands::policies::list_policies,
-            commands::logs::get_log_summary
+            commands::logs::get_log_summary,
+            commands::logs::get_usage_request_detail,
+            commands::logs::list_usage_request_history,
+            commands::logs::query_usage_ledger
         ])
         .run(tauri::generate_context!())
         .expect("error while running CodexLAG");
