@@ -1,5 +1,5 @@
 use codexlag_lib::{
-    bootstrap::{bootstrap_runtime_for_test, runtime_database_path},
+    bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test_at, runtime_database_path},
     commands::{
         keys::{default_key_summary_from_state, set_default_key_mode_from_runtime},
         logs::{
@@ -10,6 +10,7 @@ use codexlag_lib::{
     },
     routing::policy::{RoutingMode, HYBRID, RELAY_ONLY},
     secret_store::SecretKey,
+    state::{RuntimeLogConfig, RuntimeState},
 };
 
 #[tokio::test]
@@ -124,11 +125,19 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
 
 #[tokio::test]
 async fn diagnostics_export_returns_manifest_path() {
-    let runtime = bootstrap_runtime_for_test()
+    let isolated_root = isolated_test_root("diagnostics-export-success");
+    let database_path = isolated_root.join("state.sqlite3");
+    let app_state = bootstrap_state_for_test_at(&database_path)
         .await
-        .expect("bootstrap runtime");
+        .expect("bootstrap isolated app state");
+    let log_dir = isolated_root.join("logs");
+    let runtime = RuntimeState::new(
+        app_state,
+        RuntimeLogConfig {
+            log_dir: log_dir.clone(),
+        },
+    );
 
-    let log_dir = runtime.runtime_log().log_dir.clone();
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
     std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
 
@@ -157,15 +166,25 @@ async fn diagnostics_export_returns_manifest_path() {
         let file_name = file_name.to_string_lossy();
         assert!(!file_name.starts_with(".diagnostics-manifest.tmp-"));
     }
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
 }
 
 #[tokio::test]
 async fn diagnostics_export_preserves_existing_target_on_replace_failure() {
-    let runtime = bootstrap_runtime_for_test()
+    let isolated_root = isolated_test_root("diagnostics-export-failure");
+    let database_path = isolated_root.join("state.sqlite3");
+    let app_state = bootstrap_state_for_test_at(&database_path)
         .await
-        .expect("bootstrap runtime");
+        .expect("bootstrap isolated app state");
+    let log_dir = isolated_root.join("logs");
+    let runtime = RuntimeState::new(
+        app_state,
+        RuntimeLogConfig {
+            log_dir: log_dir.clone(),
+        },
+    );
 
-    let log_dir = runtime.runtime_log().log_dir.clone();
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
     std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
 
@@ -192,4 +211,14 @@ async fn diagnostics_export_preserves_existing_target_on_replace_failure() {
         let file_name = file_name.to_string_lossy();
         assert!(!file_name.starts_with(".diagnostics-manifest.tmp-"));
     }
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+fn isolated_test_root(prefix: &str) -> std::path::PathBuf {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .expect("system clock drift before unix epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}-{}-{now}", std::process::id()))
 }
