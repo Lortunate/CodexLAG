@@ -97,12 +97,22 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
         let file = log_dir.join(format!("gateway-{index:02}.log"));
         std::fs::write(&file, format!("entry-{index}")).expect("write log file");
     }
+    std::fs::write(log_dir.join("gateway.log.2026-04-12"), "rotated-entry")
+        .expect("write rotated gateway log file");
+    std::fs::write(log_dir.join("notes.txt"), "non-log").expect("write non-log file");
 
     let metadata = runtime_log_metadata_from_runtime(&runtime).expect("runtime log metadata");
 
     assert_eq!(metadata.log_dir, "<app-local-data>/logs");
     assert_ne!(metadata.log_dir, log_dir.to_string_lossy());
-    assert!(metadata.files.iter().all(|file_name| file_name.ends_with(".log")));
+    assert!(metadata.files.iter().all(|file_name| !file_name.ends_with(".txt")));
+    assert!(!metadata.files.iter().any(|file_name| file_name == "notes.txt"));
+    assert!(
+        metadata
+            .files
+            .iter()
+            .all(|file_name| file_name.ends_with(".log") || file_name.contains(".log."))
+    );
     assert!(metadata.files.len() <= 20);
 }
 
@@ -116,12 +126,14 @@ async fn diagnostics_export_returns_manifest_path() {
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
     std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
 
-    let manifest_path =
+    let manifest_display_path =
         export_runtime_diagnostics_from_runtime(&runtime).expect("export runtime diagnostics");
-    let manifest_path = std::path::PathBuf::from(manifest_path);
+    assert_eq!(
+        manifest_display_path,
+        "<app-local-data>/logs/diagnostics/diagnostics-manifest.txt"
+    );
 
-    assert_eq!(manifest_path.file_name().and_then(|name| name.to_str()), Some("diagnostics-manifest.txt"));
-    assert!(manifest_path.ends_with("diagnostics/diagnostics-manifest.txt"));
+    let manifest_path = log_dir.join("diagnostics").join("diagnostics-manifest.txt");
     assert!(manifest_path.exists());
 
     let manifest_contents =
@@ -130,4 +142,13 @@ async fn diagnostics_export_returns_manifest_path() {
     assert!(manifest_contents.contains("log_dir=<app-local-data>/logs"));
     assert!(manifest_contents.contains("files_count="));
     assert!(manifest_contents.contains("- gateway-export.log"));
+
+    let diagnostics_entries = std::fs::read_dir(log_dir.join("diagnostics"))
+        .expect("read diagnostics directory entries");
+    for entry in diagnostics_entries {
+        let entry = entry.expect("diagnostics directory entry");
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        assert!(!file_name.starts_with(".diagnostics-manifest.tmp-"));
+    }
 }

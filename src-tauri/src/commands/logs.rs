@@ -72,6 +72,9 @@ pub fn runtime_log_metadata_from_runtime(
                 }
 
                 let file_name = entry.file_name().to_string_lossy().to_string();
+                if !is_runtime_log_file_name(&file_name) {
+                    continue;
+                }
                 let modified = entry
                     .metadata()
                     .and_then(|metadata| metadata.modified())
@@ -140,10 +143,9 @@ pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result
         manifest.push('\n');
     }
 
-    std::fs::write(&manifest_path, manifest)
-        .map_err(|error| format!("failed to write diagnostics manifest: {error}"))?;
+    write_file_atomically(&manifest_path, &manifest)?;
 
-    Ok(manifest_path.to_string_lossy().to_string())
+    Ok(diagnostics_manifest_display_path(&log_dir))
 }
 
 fn sanitize_log_dir_for_display(path: &Path) -> String {
@@ -151,6 +153,57 @@ fn sanitize_log_dir_for_display(path: &Path) -> String {
         Some("logs") => "<app-local-data>/logs".into(),
         Some(tail) => format!("<app-local-data>/{tail}"),
         None => "<app-local-data>/logs".into(),
+    }
+}
+
+fn is_runtime_log_file_name(file_name: &str) -> bool {
+    let file_name = file_name.to_ascii_lowercase();
+    file_name.ends_with(".log")
+        || file_name.contains(".log.")
+        || file_name == "gateway"
+        || file_name.starts_with("gateway.")
+        || file_name.starts_with("gateway-")
+}
+
+fn diagnostics_manifest_display_path(log_dir: &Path) -> String {
+    format!(
+        "{}/diagnostics/diagnostics-manifest.txt",
+        sanitize_log_dir_for_display(log_dir)
+    )
+}
+
+fn write_file_atomically(target_path: &Path, content: &str) -> Result<(), String> {
+    let target_parent = target_path
+        .parent()
+        .ok_or_else(|| "failed to derive diagnostics manifest directory".to_string())?;
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(|error| format!("failed to derive diagnostics temp-file nonce: {error}"))?
+        .as_nanos();
+    let temp_path = target_parent.join(format!(
+        ".diagnostics-manifest.tmp-{}-{nonce}",
+        std::process::id()
+    ));
+
+    std::fs::write(&temp_path, content)
+        .map_err(|error| format!("failed to write diagnostics temp manifest: {error}"))?;
+
+    match std::fs::rename(&temp_path, target_path) {
+        Ok(()) => Ok(()),
+        Err(rename_error) => {
+            if target_path.exists() {
+                std::fs::remove_file(target_path)
+                    .map_err(|error| format!("failed to replace diagnostics manifest: {error}"))?;
+                std::fs::rename(&temp_path, target_path)
+                    .map_err(|error| format!("failed to finalize diagnostics manifest: {error}"))?;
+                return Ok(());
+            }
+
+            let _ = std::fs::remove_file(&temp_path);
+            Err(format!(
+                "failed to atomically replace diagnostics manifest: {rename_error}"
+            ))
+        }
     }
 }
 

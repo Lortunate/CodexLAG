@@ -281,7 +281,7 @@ describe("App shell", () => {
     exportRuntimeDiagnostics.mockRejectedValueOnce(new Error("export failed"));
     fireEvent.click(exportButton);
 
-    expect(await screen.findByText("Diagnostics manifest: unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Diagnostics manifest: Export failed")).toBeInTheDocument();
   });
 
   it("keeps overview available when runtime diagnostics loading fails", async () => {

@@ -173,7 +173,7 @@ export function OverviewPage() {
       const manifestPath = await exportRuntimeDiagnostics();
       setRuntimeDiagnosticsManifestPath(manifestPath);
     } catch {
-      setRuntimeDiagnosticsManifestPath("unavailable");
+      setRuntimeDiagnosticsManifestPath("Export failed");
     } finally {
       setIsExportingDiagnostics(false);
     }
