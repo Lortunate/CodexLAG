@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
 use crate::{
-    models::EndpointFailure,
     logging::runtime::build_attempt_id,
+    providers::invocation::InvocationOutcome,
     routing::engine::{
-        choose_endpoint_at, mark_success_for_endpoint, record_failure_for_endpoint, wall_clock_now_ms,
-        CandidateEndpoint, FailureRules, RoutingError,
+        choose_endpoint_at, mark_success_for_endpoint, record_failure_for_endpoint,
+        wall_clock_now_ms, CandidateEndpoint, FailureRules, RoutingError,
     },
 };
 
@@ -91,7 +91,7 @@ impl RuntimeRoutingState {
         mut invoke: F,
     ) -> Result<RouteSelection, RouteSelectionError>
     where
-        F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure>,
+        F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> InvocationOutcome,
     {
         let max_attempts = self.candidates.len().max(1);
         let mut attempt_count = 0usize;
@@ -134,7 +134,7 @@ impl RuntimeRoutingState {
             };
 
             match invoke(&selected, &context) {
-                Ok(()) => {
+                Ok(_) => {
                     let _ = mark_success_for_endpoint(&mut self.candidates, selected.id.as_str());
                     self.last_debug = Some(RouteDebugSnapshot {
                         request_id: request_id.to_string(),
@@ -150,7 +150,7 @@ impl RuntimeRoutingState {
                     let _ = record_failure_for_endpoint(
                         &mut self.candidates,
                         selected.id.as_str(),
-                        failure,
+                        failure.to_endpoint_failure(),
                         now_ms,
                         &self.rules,
                     );

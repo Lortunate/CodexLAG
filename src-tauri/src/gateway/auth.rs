@@ -2,7 +2,6 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, RwLock, RwLockReadGuard,
 };
-use std::sync::atomic::AtomicBool;
 
 use axum::{
     extract::FromRequestParts,
@@ -18,7 +17,11 @@ use crate::{
         server::default_candidates,
     },
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
-    models::{EndpointFailure, PlatformKey, RoutingPolicy},
+    models::{PlatformKey, RoutingPolicy},
+    providers::invocation::{
+        InvocationAttemptRecord, InvocationFailureClass, InvocationOutcome,
+        ProviderInvocationPipeline,
+    },
     routing::engine::{CandidateEndpoint, FailureRules, RoutingError},
     state::AppState,
 };
@@ -28,7 +31,7 @@ pub struct GatewayState {
     app_state: Arc<RwLock<AppState>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     routing: Arc<RwLock<RuntimeRoutingState>>,
-    allow_test_route_headers: Arc<AtomicBool>,
+    provider_invocation: ProviderInvocationPipeline,
     request_sequence: Arc<AtomicU64>,
 }
 
@@ -37,11 +40,7 @@ impl GatewayState {
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     ) -> Self {
-        Self::new_with_runtime(
-            app_state,
-            usage_records,
-            default_candidates(),
-        )
+        Self::new_with_runtime(app_state, usage_records, default_candidates())
     }
 
     pub fn new_with_runtime(
@@ -56,7 +55,7 @@ impl GatewayState {
                 candidates,
                 FailureRules::default(),
             ))),
-            allow_test_route_headers: Arc::new(AtomicBool::new(false)),
+            provider_invocation: ProviderInvocationPipeline::default(),
             request_sequence: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -109,12 +108,20 @@ impl GatewayState {
         invoke: F,
     ) -> Result<RouteSelection, RouteSelectionError>
     where
-        F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> Result<(), EndpointFailure>,
+        F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> InvocationOutcome,
     {
         self.routing
             .write()
             .expect("gateway routing lock poisoned")
             .choose_with_failover(request_id, mode, invoke)
+    }
+
+    pub fn invoke_provider(
+        &self,
+        endpoint: &CandidateEndpoint,
+        context: &RoutingAttemptContext,
+    ) -> InvocationOutcome {
+        self.provider_invocation.invoke(endpoint, context)
     }
 
     pub fn current_candidates(&self) -> Vec<CandidateEndpoint> {
@@ -164,12 +171,13 @@ impl GatewayState {
             .set_endpoint_availability(endpoint_id, available)
     }
 
-    pub fn enable_test_route_headers_for_test(&self) {
-        self.allow_test_route_headers.store(true, Ordering::Relaxed);
+    pub fn plan_provider_failure_for_test(&self, endpoint_id: &str, class: InvocationFailureClass) {
+        self.provider_invocation
+            .plan_failure_for_test(endpoint_id, class);
     }
 
-    pub fn test_route_headers_enabled(&self) -> bool {
-        self.allow_test_route_headers.load(Ordering::Relaxed)
+    pub fn invocation_attempts_for_test(&self) -> Vec<InvocationAttemptRecord> {
+        self.provider_invocation.attempts_for_test()
     }
 }
 

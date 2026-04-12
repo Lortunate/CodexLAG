@@ -1,21 +1,22 @@
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::logging::runtime::{build_attempt_id, format_event_fields};
 use crate::logging::usage::UsageRecordInput;
 use crate::logging::{log_route_downgrade, log_route_rejection};
+use crate::providers::invocation::models_for_endpoint;
 use crate::routing::engine::{
-    endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms, PoolKind,
-    RoutingError,
+    endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms, PoolKind, RoutingError,
 };
+use crate::routing::policy::RoutingMode;
 
 #[derive(Debug, Serialize)]
 struct CodexRequestSummary {
@@ -33,9 +34,18 @@ struct RoutingErrorResponse {
     attempt_count: usize,
 }
 
+#[derive(Debug, Serialize)]
+struct ModelsResponse {
+    platform_key: String,
+    policy: String,
+    allowed_mode: String,
+    models: Vec<String>,
+}
+
 pub fn build_routes() -> Router<GatewayState> {
     Router::new()
         .route("/health", get(health))
+        .route("/models", get(models))
         .route("/codex/request", post(codex_request))
 }
 
@@ -45,7 +55,6 @@ async fn health() -> &'static str {
 
 async fn codex_request(
     State(gateway_state): State<GatewayState>,
-    headers: HeaderMap,
     auth: AuthenticatedPlatformKey,
 ) -> Result<Json<CodexRequestSummary>, (StatusCode, Json<RoutingErrorResponse>)> {
     let platform_key = auth.platform_key();
@@ -53,11 +62,6 @@ async fn codex_request(
     let mode_value = platform_key.allowed_mode.clone();
     let mode = mode_value.as_str();
     let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "unrouted");
-    let endpoint_status_plan = if gateway_state.test_route_headers_enabled() {
-        parse_endpoint_status_plan(&headers)
-    } else {
-        HashMap::new()
-    };
 
     let accepted_line = format_event_fields(&[
         ("event", "gateway.request.accepted"),
@@ -91,8 +95,8 @@ async fn codex_request(
         }
     };
     let selection = gateway_state
-        .choose_endpoint_with_runtime_failover(request_id.as_str(), mode, |endpoint, _context| {
-            invoke_endpoint_with_plan(endpoint.id.as_str(), &endpoint_status_plan)
+        .choose_endpoint_with_runtime_failover(request_id.as_str(), mode, |endpoint, context| {
+            gateway_state.invoke_provider(endpoint, context)
         })
         .map_err(|route_error| {
             let candidates = gateway_state.current_candidates();
@@ -154,30 +158,39 @@ async fn codex_request(
     }))
 }
 
-fn parse_endpoint_status_plan(headers: &HeaderMap) -> HashMap<String, u16> {
-    headers
-        .get("x-codexlag-endpoint-status")
-        .and_then(|value| value.to_str().ok())
-        .map(|raw| {
-            raw.split(',')
-                .filter_map(|segment| {
-                    let (endpoint_id, status) = segment.trim().split_once(':')?;
-                    let status = status.trim().parse::<u16>().ok()?;
-                    Some((endpoint_id.trim().to_string(), status))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
+async fn models(
+    State(gateway_state): State<GatewayState>,
+    auth: AuthenticatedPlatformKey,
+) -> Result<Json<ModelsResponse>, (StatusCode, Json<RoutingErrorResponse>)> {
+    let platform_key = auth.platform_key();
+    let now_ms = wall_clock_now_ms();
+    let mode_value = platform_key.allowed_mode.clone();
+    let mode = mode_value.as_str();
+    let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "models");
+    let policy = match gateway_state.policy_for_platform_key(platform_key) {
+        Some(policy) => policy,
+        None => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(RoutingErrorResponse {
+                    error: "policy_missing",
+                    mode: platform_key.allowed_mode.clone(),
+                    request_id: public_request_id(request_id.as_str()),
+                    attempt_count: 0,
+                }),
+            ));
+        }
+    };
+    let candidates = gateway_state.current_candidates();
+    let models = allowed_models_for_mode(&candidates, mode)
+        .map_err(|error| map_routing_error(request_id.as_str(), 0, mode, error))?;
 
-fn invoke_endpoint_with_plan(
-    endpoint_id: &str,
-    status_plan: &HashMap<String, u16>,
-) -> Result<(), crate::models::EndpointFailure> {
-    match status_plan.get(endpoint_id) {
-        Some(status) if *status >= 400 => Err(crate::models::EndpointFailure::HttpStatus(*status)),
-        _ => Ok(()),
-    }
+    Ok(Json(ModelsResponse {
+        platform_key: platform_key.name.clone(),
+        policy: policy.name,
+        allowed_mode: platform_key.allowed_mode.clone(),
+        models,
+    }))
 }
 
 fn should_log_downgrade(
@@ -220,6 +233,34 @@ fn map_routing_error(
             attempt_count,
         }),
     )
+}
+
+fn allowed_models_for_mode(
+    candidates: &[crate::routing::engine::CandidateEndpoint],
+    mode: &str,
+) -> Result<Vec<String>, RoutingError> {
+    let parsed_mode = RoutingMode::parse(mode).ok_or(RoutingError::InvalidMode)?;
+    let mut models = BTreeSet::<String>::new();
+
+    for candidate in candidates {
+        let pool_allowed = match parsed_mode {
+            RoutingMode::AccountOnly => candidate.pool == PoolKind::Official,
+            RoutingMode::RelayOnly => candidate.pool == PoolKind::Relay,
+            RoutingMode::Hybrid => true,
+        };
+        if !pool_allowed {
+            continue;
+        }
+        for model in models_for_endpoint(candidate) {
+            models.insert((*model).to_string());
+        }
+    }
+
+    if models.is_empty() {
+        return Err(RoutingError::NoAvailableEndpoint);
+    }
+
+    Ok(models.into_iter().collect())
 }
 
 fn public_request_id(request_id: &str) -> String {
