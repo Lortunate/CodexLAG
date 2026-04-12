@@ -9,8 +9,10 @@ use axum::{
 };
 
 use crate::{
+    gateway::runtime_routing::{RouteDebugSnapshot, RuntimeRoutingState},
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
     models::{PlatformKey, RoutingPolicy},
+    routing::engine::{CandidateEndpoint, FailureRules, RoutingError},
     state::AppState,
 };
 
@@ -18,6 +20,7 @@ use crate::{
 pub struct GatewayState {
     app_state: Arc<RwLock<AppState>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+    routing: Arc<RwLock<RuntimeRoutingState>>,
     request_sequence: Arc<AtomicU64>,
 }
 
@@ -25,10 +28,15 @@ impl GatewayState {
     pub fn new(
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+        candidates: Vec<CandidateEndpoint>,
     ) -> Self {
         Self {
             app_state,
             usage_records,
+            routing: Arc::new(RwLock::new(RuntimeRoutingState::new(
+                candidates,
+                FailureRules::default(),
+            ))),
             request_sequence: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -72,6 +80,39 @@ impl GatewayState {
     ) -> String {
         let sequence = self.request_sequence.fetch_add(1, Ordering::Relaxed);
         format!("{platform_key_name}:{now_ms}:{endpoint_id}:{sequence}")
+    }
+
+    pub fn choose_endpoint_with_runtime_failover(
+        &self,
+        request_id: &str,
+        mode: &str,
+    ) -> Result<CandidateEndpoint, RoutingError> {
+        self.routing
+            .write()
+            .expect("gateway routing lock poisoned")
+            .choose_with_failover(request_id, mode)
+    }
+
+    pub fn current_candidates(&self) -> Vec<CandidateEndpoint> {
+        self.routing
+            .read()
+            .expect("gateway routing lock poisoned")
+            .candidates_snapshot()
+    }
+
+    pub fn set_test_outcomes(&self, outcomes: Vec<(String, Option<u16>)>) {
+        self.routing
+            .write()
+            .expect("gateway routing lock poisoned")
+            .set_test_outcomes(outcomes);
+    }
+
+    pub fn last_route_debug(&self) -> Option<RouteDebugSnapshot> {
+        self.routing
+            .read()
+            .expect("gateway routing lock poisoned")
+            .last_debug()
+            .cloned()
     }
 }
 

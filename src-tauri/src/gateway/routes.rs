@@ -7,13 +7,12 @@ use axum::{
 use serde::Serialize;
 
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
-use crate::gateway::server::default_candidates;
 use crate::logging::runtime::{build_attempt_id, format_event_fields};
 use crate::logging::usage::UsageRecordInput;
 use crate::logging::{log_route_downgrade, log_route_rejection};
 use crate::routing::engine::{
-    choose_endpoint_at, endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms,
-    PoolKind, RoutingError,
+    endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms, PoolKind,
+    RoutingError,
 };
 
 #[derive(Debug, Serialize)]
@@ -65,19 +64,20 @@ async fn codex_request(
             mode: platform_key.allowed_mode.clone(),
         }),
     ))?;
-    let candidates = default_candidates();
-    let selected = choose_endpoint_at(mode, &candidates, now_ms).map_err(|error| {
-        log_route_rejection(
-            request_id.as_str(),
-            mode,
-            &error,
-            &candidates,
-            now_ms,
-        );
-        map_routing_error(mode, error)
-    })?;
+    let selected = gateway_state
+        .choose_endpoint_with_runtime_failover(request_id.as_str(), mode)
+        .map_err(|error| {
+            let candidates = gateway_state.current_candidates();
+            log_route_rejection(request_id.as_str(), mode, &error, &candidates, now_ms);
+            map_routing_error(mode, error)
+        })?;
+    let candidates = gateway_state.current_candidates();
+    let attempt_index = gateway_state
+        .last_route_debug()
+        .map(|debug| debug.attempt_count.saturating_sub(1))
+        .unwrap_or(0);
+    let attempt_id = build_attempt_id(request_id.as_str(), attempt_index);
 
-    let attempt_id = build_attempt_id(request_id.as_str(), 0);
     let selected_line = format_event_fields(&[
         ("event", "routing.endpoint.selected"),
         ("request_id", request_id.as_str()),

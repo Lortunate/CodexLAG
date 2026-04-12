@@ -113,6 +113,29 @@ pub fn mark_success(endpoint: &mut CandidateEndpoint) {
     endpoint.health = EndpointHealth::default();
 }
 
+pub fn record_failure_for_endpoint(
+    endpoints: &mut [CandidateEndpoint],
+    endpoint_id: &str,
+    failure: EndpointFailure,
+    now_ms: u64,
+    rules: &FailureRules,
+) -> Option<EndpointHealthState> {
+    let endpoint = endpoints.iter_mut().find(|candidate| candidate.id == endpoint_id)?;
+    Some(record_failure(endpoint, failure, now_ms, rules))
+}
+
+pub fn mark_success_for_endpoint(endpoints: &mut [CandidateEndpoint], endpoint_id: &str) -> bool {
+    if let Some(endpoint) = endpoints
+        .iter_mut()
+        .find(|candidate| candidate.id == endpoint_id)
+    {
+        mark_success(endpoint);
+        return true;
+    }
+
+    false
+}
+
 pub fn endpoint_health_state(endpoint: &CandidateEndpoint) -> EndpointHealthState {
     endpoint.health.state
 }

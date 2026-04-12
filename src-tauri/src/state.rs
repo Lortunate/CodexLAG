@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::db::repositories::Repositories;
-use crate::gateway::server::LoopbackGateway;
+use crate::gateway::server::{default_candidates, LoopbackGateway};
 use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
 use crate::models::{PlatformKey, RoutingPolicy};
 use crate::routing::policy::RoutingMode;
@@ -99,8 +99,11 @@ impl RuntimeState {
     pub fn new(app_state: AppState, runtime_log: RuntimeLogConfig) -> Self {
         let app_state = Arc::new(RwLock::new(app_state));
         let usage_records = Arc::new(RwLock::new(Vec::new()));
-        let loopback_gateway =
-            LoopbackGateway::new(Arc::clone(&app_state), Arc::clone(&usage_records));
+        let loopback_gateway = LoopbackGateway::new(
+            Arc::clone(&app_state),
+            Arc::clone(&usage_records),
+            default_candidates(),
+        );
 
         Self {
             app_state,

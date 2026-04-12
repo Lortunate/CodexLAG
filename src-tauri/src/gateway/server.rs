@@ -19,8 +19,9 @@ impl LoopbackGateway {
     pub fn new(
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
+        candidates: Vec<CandidateEndpoint>,
     ) -> Self {
-        let state = GatewayState::new(app_state, usage_records);
+        let state = GatewayState::new(app_state, usage_records, candidates);
         let router = build_routes().with_state(state.clone());
 
         Self { state, router }
@@ -43,12 +44,25 @@ pub fn build_router(app_state: AppState) -> Router {
     LoopbackGateway::new(
         Arc::new(RwLock::new(app_state)),
         Arc::new(RwLock::new(Vec::new())),
+        default_candidates(),
     )
     .router()
 }
 
 pub fn build_router_for_test(app_state: AppState) -> Router {
     build_router(app_state)
+}
+
+pub fn build_router_for_test_with_runtime(
+    app_state: AppState,
+    candidates: Vec<CandidateEndpoint>,
+) -> Router {
+    LoopbackGateway::new(
+        Arc::new(RwLock::new(app_state)),
+        Arc::new(RwLock::new(Vec::new())),
+        candidates,
+    )
+    .router()
 }
 
 pub fn default_candidates() -> Vec<CandidateEndpoint> {
