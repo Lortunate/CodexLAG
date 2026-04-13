@@ -18,7 +18,9 @@ fn assert_structured_command_error(
     assert_eq!(payload.code, expected_code);
     assert_eq!(payload.category, expected_category);
     assert_eq!(payload.message, expected_message);
-    let internal_context = payload.internal_context.expect("internal context should be present");
+    let internal_context = payload
+        .internal_context
+        .expect("internal context should be present");
     assert!(
         internal_context.contains(expected_context_fragment),
         "internal_context should include '{expected_context_fragment}', got: {internal_context}"
@@ -55,7 +57,13 @@ async fn refresh_account_balance_returns_explicit_unknown_id_error() {
         .expect("bootstrap runtime");
     let error = refresh_account_balance_from_runtime(&runtime, "unknown-account".to_string())
         .expect_err("unknown account should be reported");
-    assert_eq!(error, "unknown account id: unknown-account");
+    assert_structured_command_error(
+        error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Unknown account id.",
+        "command=refresh_account_balance;account_id=unknown-account",
+    );
 }
 
 #[tokio::test]

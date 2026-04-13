@@ -11,6 +11,7 @@ use codexlag_lib::{
         },
         policies::policy_summaries_from_state,
     },
+    error::ErrorCategory,
     routing::{
         engine::PoolKind,
         policy::{RoutingMode, HYBRID, RELAY_ONLY},
@@ -105,7 +106,10 @@ async fn runtime_default_key_summary_marks_unavailable_mode_when_no_candidates_e
             .loopback_gateway()
             .state()
             .set_endpoint_availability(candidate.id.as_str(), false);
-        assert!(updated, "candidate availability should be mutable for runtime updates");
+        assert!(
+            updated,
+            "candidate availability should be mutable for runtime updates"
+        );
     }
 
     let summary = default_key_summary_from_runtime(&runtime).expect("default key summary");
@@ -163,16 +167,26 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
 
     assert_eq!(metadata.log_dir, "<app-local-data>/logs");
     assert_ne!(metadata.log_dir, log_dir.to_string_lossy());
-    assert!(metadata.files.iter().all(|file_name| !file_name.ends_with(".txt")));
-    assert!(!metadata.files.iter().any(|file_name| file_name == "notes.txt"));
-    assert!(!metadata.files.iter().any(|file_name| file_name == "gateway.backup"));
-    assert!(!metadata.files.iter().any(|file_name| file_name == "gateway-snapshot"));
-    assert!(
-        metadata
-            .files
-            .iter()
-            .all(|file_name| file_name.ends_with(".log") || file_name.contains(".log."))
-    );
+    assert!(metadata
+        .files
+        .iter()
+        .all(|file_name| !file_name.ends_with(".txt")));
+    assert!(!metadata
+        .files
+        .iter()
+        .any(|file_name| file_name == "notes.txt"));
+    assert!(!metadata
+        .files
+        .iter()
+        .any(|file_name| file_name == "gateway.backup"));
+    assert!(!metadata
+        .files
+        .iter()
+        .any(|file_name| file_name == "gateway-snapshot"));
+    assert!(metadata
+        .files
+        .iter()
+        .all(|file_name| file_name.ends_with(".log") || file_name.contains(".log.")));
     assert!(metadata.files.len() <= 20);
 }
 
@@ -192,7 +206,8 @@ async fn diagnostics_export_returns_manifest_path() {
     );
 
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
-    std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
+    std::fs::write(log_dir.join("gateway-export.log"), "entry-export")
+        .expect("write export log file");
     std::fs::write(log_dir.join("ck_local_abc123xyz.log"), "tokenized filename")
         .expect("write token-like log file");
     std::fs::write(log_dir.join("Bearer demo-token.log"), "bearer filename")
@@ -220,8 +235,8 @@ async fn diagnostics_export_returns_manifest_path() {
     assert!(!manifest_contents.contains("Bearer demo-token"));
     assert!(!manifest_contents.contains("bearer demo-token"));
 
-    let diagnostics_entries = std::fs::read_dir(log_dir.join("diagnostics"))
-        .expect("read diagnostics directory entries");
+    let diagnostics_entries =
+        std::fs::read_dir(log_dir.join("diagnostics")).expect("read diagnostics directory entries");
     for entry in diagnostics_entries {
         let entry = entry.expect("diagnostics directory entry");
         let file_name = entry.file_name();
@@ -248,14 +263,16 @@ async fn diagnostics_export_preserves_existing_target_on_replace_failure() {
     );
 
     std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
-    std::fs::write(log_dir.join("gateway-export.log"), "entry-export").expect("write export log file");
+    std::fs::write(log_dir.join("gateway-export.log"), "entry-export")
+        .expect("write export log file");
 
     let diagnostics_dir = log_dir.join("diagnostics");
     std::fs::create_dir_all(&diagnostics_dir).expect("create diagnostics dir");
     let manifest_path = diagnostics_dir.join("diagnostics-manifest.txt");
     if manifest_path.exists() {
         if manifest_path.is_dir() {
-            std::fs::remove_dir_all(&manifest_path).expect("remove stale conflicting manifest directory");
+            std::fs::remove_dir_all(&manifest_path)
+                .expect("remove stale conflicting manifest directory");
         } else {
             std::fs::remove_file(&manifest_path).expect("remove stale manifest file");
         }
@@ -263,10 +280,21 @@ async fn diagnostics_export_preserves_existing_target_on_replace_failure() {
     std::fs::create_dir_all(&manifest_path).expect("create conflicting manifest directory");
 
     let error = export_runtime_diagnostics_from_runtime(&runtime).expect_err("export should fail");
-    assert!(error.contains("failed to atomically replace diagnostics manifest"));
+    let payload = error.to_payload();
+    assert_eq!(payload.code, "config.unknown");
+    assert_eq!(payload.category, ErrorCategory::ConfigError);
+    assert_eq!(
+        payload.message,
+        "Failed to atomically replace diagnostics manifest."
+    );
+    assert!(payload
+        .internal_context
+        .unwrap_or_default()
+        .contains("command=export_runtime_diagnostics;operation=rename_manifest"));
     assert!(manifest_path.is_dir());
 
-    let diagnostics_entries = std::fs::read_dir(&diagnostics_dir).expect("read diagnostics directory entries");
+    let diagnostics_entries =
+        std::fs::read_dir(&diagnostics_dir).expect("read diagnostics directory entries");
     for entry in diagnostics_entries {
         let entry = entry.expect("diagnostics directory entry");
         let file_name = entry.file_name();

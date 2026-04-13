@@ -4,6 +4,7 @@ use tauri::State;
 
 use crate::commands::accounts::list_accounts_from_state;
 use crate::commands::relays::list_relays_from_state;
+use crate::error::{CodexLagError, ConfigErrorKind, Result};
 use crate::models::{FailureRules, RecoveryRules, RoutingPolicy};
 use crate::state::{AppState, RuntimeState};
 
@@ -62,14 +63,14 @@ pub fn list_policies(state: State<'_, RuntimeState>) -> Vec<PolicySummary> {
 pub fn update_policy(
     input: PolicyUpdateInput,
     state: State<'_, RuntimeState>,
-) -> Result<PolicyUpdateInput, String> {
+) -> Result<PolicyUpdateInput> {
     update_policy_from_runtime(&state, input)
 }
 
 pub fn update_policy_from_runtime(
     runtime: &RuntimeState,
     input: PolicyUpdateInput,
-) -> Result<PolicyUpdateInput, String> {
+) -> Result<PolicyUpdateInput> {
     validate_policy_update_input(&input)?;
     {
         let app_state = runtime.app_state();
@@ -81,7 +82,13 @@ pub fn update_policy_from_runtime(
         .get_policy_by_id(input.policy_id.as_str())
         .is_none()
     {
-        return Err(format!("unknown policy id: {}", input.policy_id));
+        return Err(invalid_payload_error(
+            "Unknown policy id.",
+            format!(
+                "command=update_policy;field=policy_id;value={}",
+                input.policy_id
+            ),
+        ));
     }
 
     let policy = RoutingPolicy {
@@ -100,61 +107,101 @@ pub fn update_policy_from_runtime(
             success_close_after: input.success_close_after,
         },
     };
-    app_state
-        .save_policy(policy)
-        .map_err(|error| error.to_string())?;
+    app_state.save_policy(policy).map_err(|error| {
+        CodexLagError::new("Failed to persist policy update.").with_internal_context(format!(
+            "command=update_policy;operation=save_policy;policy_id={};cause={error}",
+            input.policy_id
+        ))
+    })?;
     Ok(input)
 }
 
-fn validate_policy_update_input(input: &PolicyUpdateInput) -> Result<(), String> {
+fn validate_policy_update_input(input: &PolicyUpdateInput) -> Result<()> {
     if input.policy_id.trim().is_empty() {
-        return Err("policy_id must not be empty".to_string());
+        return Err(invalid_payload_error(
+            "policy_id must not be empty",
+            "command=policy_validation;field=policy_id;value=empty",
+        ));
     }
     if input.name.trim().is_empty() {
-        return Err("name must not be empty".to_string());
+        return Err(invalid_payload_error(
+            "name must not be empty",
+            "command=policy_validation;field=name;value=empty",
+        ));
     }
     if input.selection_order.is_empty() {
-        return Err("selection_order must contain at least one endpoint id".to_string());
+        return Err(invalid_payload_error(
+            "selection_order must contain at least one endpoint id",
+            "command=policy_validation;field=selection_order;value=empty",
+        ));
     }
 
     let mut seen = HashSet::new();
     for endpoint_id in &input.selection_order {
         let endpoint_id = endpoint_id.trim();
         if endpoint_id.is_empty() {
-            return Err("selection_order entries must not be empty".to_string());
+            return Err(invalid_payload_error(
+                "selection_order entries must not be empty",
+                "command=policy_validation;field=selection_order;value=empty_entry",
+            ));
         }
         if !endpoint_id.chars().all(|character| {
             character.is_ascii_alphanumeric() || character == '-' || character == '_'
         }) {
-            return Err(
-                "selection_order entries must use only ascii letters, numbers, '-' or '_'"
-                    .to_string(),
-            );
+            return Err(invalid_payload_error(
+                "selection_order entries must use only ascii letters, numbers, '-' or '_'",
+                format!(
+                    "command=policy_validation;field=selection_order;value={endpoint_id};reason=invalid_chars"
+                ),
+            ));
         }
         if !seen.insert(endpoint_id.to_string()) {
-            return Err(format!(
-                "selection_order must not contain duplicate endpoint ids: {endpoint_id}"
+            return Err(invalid_payload_error(
+                format!(
+                    "selection_order must not contain duplicate endpoint ids: {endpoint_id}"
+                ),
+                format!(
+                    "command=policy_validation;field=selection_order;value={endpoint_id};reason=duplicate"
+                ),
             ));
         }
     }
 
     if input.retry_budget == 0 {
-        return Err("retry_budget must be greater than 0".to_string());
+        return Err(invalid_payload_error(
+            "retry_budget must be greater than 0",
+            "command=policy_validation;field=retry_budget;value=0",
+        ));
     }
     if input.timeout_open_after == 0 {
-        return Err("timeout_open_after must be greater than 0".to_string());
+        return Err(invalid_payload_error(
+            "timeout_open_after must be greater than 0",
+            "command=policy_validation;field=timeout_open_after;value=0",
+        ));
     }
     if input.server_error_open_after == 0 {
-        return Err("server_error_open_after must be greater than 0".to_string());
+        return Err(invalid_payload_error(
+            "server_error_open_after must be greater than 0",
+            "command=policy_validation;field=server_error_open_after;value=0",
+        ));
     }
     if input.cooldown_ms == 0 {
-        return Err("cooldown_ms must be greater than 0".to_string());
+        return Err(invalid_payload_error(
+            "cooldown_ms must be greater than 0",
+            "command=policy_validation;field=cooldown_ms;value=0",
+        ));
     }
     if input.half_open_after_ms == 0 {
-        return Err("half_open_after_ms must be greater than 0".to_string());
+        return Err(invalid_payload_error(
+            "half_open_after_ms must be greater than 0",
+            "command=policy_validation;field=half_open_after_ms;value=0",
+        ));
     }
     if input.success_close_after == 0 {
-        return Err("success_close_after must be greater than 0".to_string());
+        return Err(invalid_payload_error(
+            "success_close_after must be greater than 0",
+            "command=policy_validation;field=success_close_after;value=0",
+        ));
     }
 
     Ok(())
@@ -163,7 +210,7 @@ fn validate_policy_update_input(input: &PolicyUpdateInput) -> Result<(), String>
 fn validate_selection_order_endpoint_ids(
     state: &AppState,
     selection_order: &[String],
-) -> Result<(), String> {
+) -> Result<()> {
     let known_endpoint_ids = list_accounts_from_state(state)
         .into_iter()
         .map(|account| account.account_id)
@@ -177,11 +224,16 @@ fn validate_selection_order_endpoint_ids(
     for endpoint_id in selection_order {
         let endpoint_id = endpoint_id.trim();
         if !known_endpoint_ids.contains(endpoint_id) {
-            return Err(format!(
-                "unknown selection_order endpoint id: {endpoint_id}"
+            return Err(invalid_payload_error(
+                "Unknown selection_order endpoint id.",
+                format!("command=update_policy;field=selection_order;value={endpoint_id}"),
             ));
         }
     }
 
     Ok(())
+}
+
+fn invalid_payload_error(message: impl Into<String>, context: impl Into<String>) -> CodexLagError {
+    CodexLagError::config(ConfigErrorKind::InvalidPayload, message).with_internal_context(context)
 }

@@ -80,7 +80,9 @@ function parseStructuredErrorPayload(value: unknown): AppErrorPayload | null {
     return null;
   }
 
-  const code = typeof value.code === "string" ? value.code : typeof value.error === "string" ? value.error : null;
+  const typedCode = typeof value.code === "string" ? value.code : null;
+  const legacyCode = typeof value.error === "string" ? value.error : null;
+  const code = typedCode ?? legacyCode;
   if (code) {
     const category = isErrorCategory(value.category) ? value.category : categoryFromCode(code);
     const message =

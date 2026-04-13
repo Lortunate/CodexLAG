@@ -11,8 +11,9 @@ use codexlag_lib::commands::keys::{
     enable_platform_key_from_runtime, list_platform_keys_from_runtime, CreatePlatformKeyInput,
 };
 use codexlag_lib::commands::logs::{
-    export_runtime_diagnostics_from_runtime, usage_ledger_from_runtime,
-    usage_request_detail_from_runtime, usage_request_history_from_runtime,
+    export_runtime_diagnostics_from_runtime, runtime_log_metadata_from_runtime,
+    usage_ledger_from_runtime, usage_request_detail_from_runtime,
+    usage_request_history_from_runtime,
 };
 use codexlag_lib::commands::policies::{
     policy_summaries_from_state, update_policy_from_runtime, PolicyUpdateInput,
@@ -86,7 +87,9 @@ fn assert_structured_command_error(
     assert_eq!(payload.code, expected_code);
     assert_eq!(payload.category, expected_category);
     assert_eq!(payload.message, expected_message);
-    let internal_context = payload.internal_context.expect("internal context should be present");
+    let internal_context = payload
+        .internal_context
+        .expect("internal context should be present");
     assert!(
         internal_context.contains(expected_context_fragment),
         "internal_context should include '{expected_context_fragment}', got: {internal_context}"
@@ -142,7 +145,13 @@ async fn capability_detail_commands_return_explicit_errors_for_unknown_ids() {
     let account_error =
         get_account_capability_detail_from_runtime(&runtime, "unknown-account".to_string())
             .expect_err("unknown account should be reported");
-    assert_eq!(account_error, "unknown account id: unknown-account");
+    assert_structured_command_error(
+        account_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Unknown account id.",
+        "command=get_account_capability_detail;account_id=unknown-account",
+    );
 
     let relay_error =
         get_relay_capability_detail_from_runtime(&runtime, "relay-missing".to_string())
@@ -203,9 +212,12 @@ async fn account_import_login_command_validates_and_persists_entry() {
         },
     )
     .expect_err("invalid session credential ref should be rejected");
-    assert_eq!(
+    assert_structured_command_error(
         invalid_error,
-        "session credential ref must start with 'credential://official/session/'"
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "session credential ref must start with 'credential://official/session/'",
+        "command=account_import_validation;field=session credential ref",
     );
 
     let reserved_error = import_official_account_login_from_runtime(
@@ -221,9 +233,12 @@ async fn account_import_login_command_validates_and_persists_entry() {
         },
     )
     .expect_err("reserved built-in account ids should be rejected");
-    assert_eq!(
+    assert_structured_command_error(
         reserved_error,
-        "account_id is reserved and cannot be imported: official-primary"
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "account_id is reserved and cannot be imported: official-primary",
+        "command=account_import_validation;field=account_id;value=official-primary;reason=reserved",
     );
 
     drop(first_runtime);
@@ -295,9 +310,12 @@ async fn account_import_login_rolls_back_when_credential_ref_persistence_fails()
         },
     )
     .expect_err("credential ref write failures should fail import");
-    assert!(
-        error.contains("failed to persist credential reference"),
-        "expected credential persistence failure error, got: {error}"
+    assert_structured_command_error(
+        error,
+        "config.unknown",
+        ErrorCategory::ConfigError,
+        "Failed to persist imported official account login.",
+        "command=import_official_account_login;operation=save_imported_official_account",
     );
     assert!(
         list_accounts_from_runtime(&runtime)
@@ -651,7 +669,13 @@ async fn policy_update_command_enforces_strict_validation() {
         },
     )
     .expect_err("retry_budget must be strictly positive");
-    assert_eq!(invalid_error, "retry_budget must be greater than 0");
+    assert_structured_command_error(
+        invalid_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "retry_budget must be greater than 0",
+        "command=policy_validation;field=retry_budget;value=0",
+    );
 
     let unknown_endpoint_error = update_policy_from_runtime(
         &first_runtime,
@@ -661,9 +685,12 @@ async fn policy_update_command_enforces_strict_validation() {
         },
     )
     .expect_err("selection_order should reject unknown endpoint ids");
-    assert_eq!(
+    assert_structured_command_error(
         unknown_endpoint_error,
-        "unknown selection_order endpoint id: relay-missing"
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Unknown selection_order endpoint id.",
+        "command=update_policy;field=selection_order;value=relay-missing",
     );
 
     let unknown_error = update_policy_from_runtime(
@@ -674,7 +701,13 @@ async fn policy_update_command_enforces_strict_validation() {
         },
     )
     .expect_err("unknown policy id should be explicit");
-    assert_eq!(unknown_error, "unknown policy id: missing-policy");
+    assert_structured_command_error(
+        unknown_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "Unknown policy id.",
+        "command=update_policy;field=policy_id;value=missing-policy",
+    );
 
     drop(first_runtime);
 
@@ -895,4 +928,46 @@ async fn diagnostics_export_manifest_redacts_plain_platform_secret() {
         manifest_contents.contains("bearer [redacted]"),
         "diagnostics manifest should redact bearer token values"
     );
+}
+
+#[tokio::test]
+async fn logs_commands_return_structured_errors_when_log_root_is_invalid() {
+    let isolated_root = isolated_test_root("command-logs-errors");
+    std::fs::create_dir_all(&isolated_root).expect("create isolated root");
+    let metadata_db_path = isolated_root.join("state-metadata.sqlite3");
+    let invalid_log_root = isolated_root.join("logs-file");
+    std::fs::write(&invalid_log_root, "not a directory").expect("create invalid log root file");
+    let metadata_runtime = runtime_for_paths(&metadata_db_path, &invalid_log_root).await;
+
+    let metadata_error = runtime_log_metadata_from_runtime(&metadata_runtime)
+        .expect_err("log metadata should fail when log root is not a directory");
+    assert_structured_command_error(
+        metadata_error,
+        "config.unknown",
+        ErrorCategory::ConfigError,
+        "Failed to read runtime log metadata.",
+        "command=get_runtime_log_metadata;log_dir=",
+    );
+    drop(metadata_runtime);
+
+    let diagnostics_db_path = isolated_root.join("state-diagnostics.sqlite3");
+    let diagnostics_log_root = isolated_root.join("logs-diagnostics");
+    std::fs::create_dir_all(&diagnostics_log_root).expect("create diagnostics log root directory");
+    std::fs::write(diagnostics_log_root.join("gateway.log"), "entry").expect("seed log file");
+    std::fs::write(diagnostics_log_root.join("diagnostics"), "conflict")
+        .expect("create diagnostics path conflict");
+    let diagnostics_runtime = runtime_for_paths(&diagnostics_db_path, &diagnostics_log_root).await;
+
+    let diagnostics_error = export_runtime_diagnostics_from_runtime(&diagnostics_runtime)
+        .expect_err("diagnostics export should fail when diagnostics directory cannot be created");
+    assert_structured_command_error(
+        diagnostics_error,
+        "config.unknown",
+        ErrorCategory::ConfigError,
+        "Failed to create diagnostics directory.",
+        "command=export_runtime_diagnostics;operation=create_dir_all",
+    );
+    drop(diagnostics_runtime);
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
 }

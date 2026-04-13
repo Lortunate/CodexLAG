@@ -5,6 +5,7 @@ use std::path::Path;
 use std::time::SystemTime;
 use tauri::State;
 
+use crate::error::{CodexLagError, ConfigErrorKind, Result};
 use crate::logging::usage::{
     query_usage_ledger as query_usage_ledger_model, request_detail, request_history, UsageLedger,
     UsageLedgerQuery, UsageRequestDetail,
@@ -34,7 +35,10 @@ pub fn log_summary_from_runtime(runtime: &RuntimeState) -> LogSummary {
     let gateway_ready = runtime.loopback_gateway().is_ready_for_mode(mode);
     let level = if gateway_ready { "info" } else { "warn" };
     let last_event = if gateway_ready {
-        format!("Loopback gateway ready for key '{}' in {} mode", key_name, mode)
+        format!(
+            "Loopback gateway ready for key '{}' in {} mode",
+            key_name, mode
+        )
     } else {
         format!(
             "Loopback gateway unavailable for key '{}' in {} mode",
@@ -53,9 +57,7 @@ pub fn get_log_summary(state: State<'_, RuntimeState>) -> LogSummary {
     log_summary_from_runtime(&state)
 }
 
-pub fn runtime_log_metadata_from_runtime(
-    runtime: &RuntimeState,
-) -> Result<RuntimeLogMetadata, String> {
+pub fn runtime_log_metadata_from_runtime(runtime: &RuntimeState) -> Result<RuntimeLogMetadata> {
     const MAX_FILES: usize = 20;
 
     let log_dir = runtime.runtime_log().log_dir.clone();
@@ -99,7 +101,16 @@ pub fn runtime_log_metadata_from_runtime(
             files
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(error) => return Err(format!("failed to read runtime log directory: {error}")),
+        Err(error) => {
+            return Err(CodexLagError::config(
+                ConfigErrorKind::Unknown,
+                "Failed to read runtime log metadata.",
+            )
+            .with_internal_context(format!(
+                "command=get_runtime_log_metadata;log_dir={};cause={error}",
+                log_dir.display()
+            )));
+        }
     };
 
     Ok(RuntimeLogMetadata {
@@ -113,31 +124,52 @@ pub fn runtime_log_metadata_from_runtime(
 }
 
 #[tauri::command]
-pub fn get_runtime_log_metadata(
-    state: State<'_, RuntimeState>,
-) -> Result<RuntimeLogMetadata, String> {
+pub fn get_runtime_log_metadata(state: State<'_, RuntimeState>) -> Result<RuntimeLogMetadata> {
     runtime_log_metadata_from_runtime(&state)
 }
 
 #[tauri::command]
-pub fn export_runtime_diagnostics(state: State<'_, RuntimeState>) -> Result<String, String> {
+pub fn export_runtime_diagnostics(state: State<'_, RuntimeState>) -> Result<String> {
     export_runtime_diagnostics_from_runtime(&state)
 }
 
-pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result<String, String> {
+pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result<String> {
     let metadata = runtime_log_metadata_from_runtime(runtime)?;
     let log_dir = runtime.runtime_log().log_dir.clone();
     let diagnostics_dir = log_dir.join("diagnostics");
-    std::fs::create_dir_all(&diagnostics_dir)
-        .map_err(|error| format!("failed to create diagnostics directory: {error}"))?;
+    std::fs::create_dir_all(&diagnostics_dir).map_err(|error| {
+        CodexLagError::config(
+            ConfigErrorKind::Unknown,
+            "Failed to create diagnostics directory.",
+        )
+        .with_internal_context(format!(
+            "command=export_runtime_diagnostics;operation=create_dir_all;diagnostics_dir={};cause={error}",
+            diagnostics_dir.display()
+        ))
+    })?;
 
     let generated_at_unix = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|error| format!("failed to derive diagnostics timestamp: {error}"))?
+        .map_err(|error| {
+            CodexLagError::config(
+                ConfigErrorKind::Unknown,
+                "Failed to derive diagnostics timestamp.",
+            )
+            .with_internal_context(format!(
+                "command=export_runtime_diagnostics;operation=duration_since_unix_epoch;cause={error}"
+            ))
+        })?
         .as_secs();
 
-    let files_payload = serde_json::to_string(&metadata.files)
-        .map_err(|error| format!("failed to serialize diagnostics manifest files: {error}"))?;
+    let files_payload = serde_json::to_string(&metadata.files).map_err(|error| {
+        CodexLagError::config(
+            ConfigErrorKind::Unknown,
+            "Failed to serialize diagnostics manifest files.",
+        )
+        .with_internal_context(format!(
+            "command=export_runtime_diagnostics;operation=serialize_manifest_files;cause={error}"
+        ))
+    })?;
     let manifest_path = diagnostics_dir.join("diagnostics-manifest.txt");
     let manifest = redact_token_like_values(&format!(
         "generated_at_unix={generated_at_unix}\nlog_dir={}\nfiles_count={}\nfiles={files_payload}\n",
@@ -235,13 +267,29 @@ fn redact_bearer_token(value: &str) -> String {
     output
 }
 
-fn write_file_atomically(target_path: &Path, content: &str) -> Result<(), String> {
-    let target_parent = target_path
-        .parent()
-        .ok_or_else(|| "failed to derive diagnostics manifest directory".to_string())?;
+fn write_file_atomically(target_path: &Path, content: &str) -> Result<()> {
+    let target_parent = target_path.parent().ok_or_else(|| {
+        CodexLagError::config(
+            ConfigErrorKind::Unknown,
+            "Failed to derive diagnostics manifest directory.",
+        )
+        .with_internal_context(format!(
+            "command=export_runtime_diagnostics;operation=derive_manifest_directory;target_path={}",
+            target_path.display()
+        ))
+    })?;
     let nonce = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|error| format!("failed to derive diagnostics temp-file nonce: {error}"))?
+        .map_err(|error| {
+            CodexLagError::config(
+                ConfigErrorKind::Unknown,
+                "Failed to derive diagnostics temp-file nonce.",
+            )
+            .with_internal_context(format!(
+                "command=export_runtime_diagnostics;operation=derive_temp_file_nonce;target_path={};cause={error}",
+                target_path.display()
+            ))
+        })?
         .as_nanos();
     let temp_path = target_parent.join(format!(
         ".diagnostics-manifest.tmp-{}-{nonce}",
@@ -250,18 +298,37 @@ fn write_file_atomically(target_path: &Path, content: &str) -> Result<(), String
 
     std::fs::write(&temp_path, content).map_err(|error| {
         let _ = std::fs::remove_file(&temp_path);
-        format!("failed to write diagnostics temp manifest: {error}")
+        CodexLagError::config(
+            ConfigErrorKind::Unknown,
+            "Failed to write diagnostics temp manifest.",
+        )
+        .with_internal_context(format!(
+            "command=export_runtime_diagnostics;operation=write_temp_manifest;temp_path={};cause={error}",
+            temp_path.display()
+        ))
     })?;
 
     if let Err(rename_error) = std::fs::rename(&temp_path, target_path) {
         let cleanup_error = std::fs::remove_file(&temp_path).err();
         return Err(match cleanup_error {
-            Some(cleanup_error) => format!(
-                "failed to atomically replace diagnostics manifest without touching existing target: {rename_error}; failed to cleanup temp file: {cleanup_error}"
-            ),
-            None => format!(
-                "failed to atomically replace diagnostics manifest without touching existing target: {rename_error}"
-            ),
+            Some(cleanup_error) => CodexLagError::config(
+                ConfigErrorKind::Unknown,
+                "Failed to atomically replace diagnostics manifest.",
+            )
+            .with_internal_context(format!(
+                "command=export_runtime_diagnostics;operation=rename_manifest;temp_path={};target_path={};cause={rename_error};cleanup_cause={cleanup_error}",
+                temp_path.display(),
+                target_path.display()
+            )),
+            None => CodexLagError::config(
+                ConfigErrorKind::Unknown,
+                "Failed to atomically replace diagnostics manifest.",
+            )
+            .with_internal_context(format!(
+                "command=export_runtime_diagnostics;operation=rename_manifest;temp_path={};target_path={};cause={rename_error}",
+                temp_path.display(),
+                target_path.display()
+            )),
         });
     }
 
