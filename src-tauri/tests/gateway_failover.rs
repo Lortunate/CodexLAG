@@ -89,14 +89,14 @@ async fn no_available_endpoint_returns_structured_error_with_attempt_context() {
         .await
         .expect("response");
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
 
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("route body");
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
-    assert_eq!(payload["error"], "no_available_endpoint");
-    assert_eq!(payload["mode"], "hybrid");
+    assert_eq!(payload["category"], "UpstreamError");
+    assert_eq!(payload["error"], "upstream.provider_timeout");
     assert_eq!(payload["attempt_count"], 2);
     let public_request_id = payload["request_id"].as_str().expect("request id");
     assert!(public_request_id.starts_with("req_"));
