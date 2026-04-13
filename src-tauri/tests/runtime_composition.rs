@@ -78,6 +78,18 @@ async fn bootstrapped_runtime_feeds_commands_and_tray_from_shared_state() {
 }
 
 #[tokio::test]
+async fn runtime_exposes_gateway_host_status_for_the_running_loopback_server() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let status = runtime.gateway_host_status();
+    assert!(status.is_running);
+    assert_eq!(status.listen_addr.ip().to_string(), "127.0.0.1");
+    assert_eq!(status.listen_addr.port(), 8787);
+}
+
+#[tokio::test]
 async fn runtime_mode_switch_updates_default_key_summary_and_tray_model() {
     let runtime = bootstrap_runtime_for_test()
         .await

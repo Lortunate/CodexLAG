@@ -45,13 +45,14 @@ async fn tray_model_exposes_operational_summary_lines() {
 }
 
 #[tokio::test]
-async fn restart_tray_action_restores_gateway_and_reports_success() {
+async fn restart_tray_action_restarts_the_real_gateway_host() {
     let runtime = bootstrap_runtime_for_test()
         .await
         .expect("bootstrap runtime");
     runtime
         .set_current_mode(RoutingMode::RelayOnly)
         .expect("switch to relay-only");
+    let before = runtime.gateway_host_status();
 
     for candidate in runtime.loopback_gateway().state().current_candidates() {
         if candidate.pool == PoolKind::Relay {
@@ -77,7 +78,12 @@ async fn restart_tray_action_restores_gateway_and_reports_success() {
 
     let restarted = apply_tray_action_for_runtime(&runtime, TrayItemId::RestartGateway)
         .expect("restart tray action should succeed");
+    let after = runtime.gateway_host_status();
 
+    assert!(before.is_running);
+    assert!(after.is_running);
+    assert_eq!(after.listen_addr.ip().to_string(), "127.0.0.1");
+    assert_eq!(after.listen_addr.port(), 8787);
     assert_eq!(restarted.current_mode(), Some(RoutingMode::RelayOnly));
     assert_eq!(
         tray_label(&restarted, TrayItemId::GatewayStatus),

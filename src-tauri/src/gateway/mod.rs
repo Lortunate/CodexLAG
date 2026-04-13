@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod host;
 pub mod routes;
 pub mod runtime_routing;
 pub mod server;

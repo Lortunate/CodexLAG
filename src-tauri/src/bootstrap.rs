@@ -80,7 +80,7 @@ pub fn bootstrap_runtime_at_with_log_dir(
         log_dir: runtime_log_dir.as_ref().to_path_buf(),
     };
 
-    Ok(RuntimeState::new(app_state, runtime_log))
+    RuntimeState::start(app_state, runtime_log)
 }
 
 pub fn bootstrap_runtime_at(database_path: impl AsRef<Path>) -> Result<RuntimeState> {
@@ -119,7 +119,7 @@ pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
         log_dir: runtime_log_dir(app_local_data_dir),
     };
 
-    Ok(RuntimeState::new(app_state, runtime_log))
+    RuntimeState::start(app_state, runtime_log)
 }
 
 fn test_database_path() -> PathBuf {

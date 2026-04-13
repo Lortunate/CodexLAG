@@ -5,7 +5,11 @@ use std::{
 };
 
 use crate::db::repositories::{Repositories, UsageCostEstimate};
-use crate::gateway::server::LoopbackGateway;
+use crate::error::CodexLagError;
+use crate::gateway::{
+    host::{GatewayHost, GatewayHostStatus, LOOPBACK_BIND_ADDR},
+    server::LoopbackGateway,
+};
 use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
 use crate::models::{ImportedOfficialAccount, ManagedRelay, PlatformKey, RoutingPolicy};
 use crate::routing::policy::RoutingMode;
@@ -267,6 +271,7 @@ pub struct RuntimeState {
     app_state: Arc<RwLock<AppState>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     loopback_gateway: Arc<RwLock<LoopbackGateway>>,
+    gateway_host: Arc<RwLock<Option<GatewayHost>>>,
     runtime_log: RuntimeLogConfig,
     last_balance_refresh: Arc<RwLock<Option<String>>>,
     last_restart_feedback: Arc<RwLock<Option<String>>>,
@@ -283,10 +288,18 @@ impl RuntimeState {
             app_state,
             usage_records,
             loopback_gateway: Arc::new(RwLock::new(loopback_gateway)),
+            gateway_host: Arc::new(RwLock::new(None)),
             runtime_log,
             last_balance_refresh: Arc::new(RwLock::new(None)),
             last_restart_feedback: Arc::new(RwLock::new(None)),
         }
+    }
+
+    pub fn start(app_state: AppState, runtime_log: RuntimeLogConfig) -> crate::error::Result<Self> {
+        let runtime = Self::new(app_state, runtime_log);
+        let host = GatewayHost::start(runtime.loopback_gateway().router())?;
+        runtime.set_gateway_host(Some(host))?;
+        Ok(runtime)
     }
 
     pub fn app_state(&self) -> RwLockReadGuard<'_, AppState> {
@@ -325,6 +338,17 @@ impl RuntimeState {
             .write()
             .expect("runtime usage records lock poisoned");
         append_usage_record(&mut records, input);
+    }
+
+    pub fn gateway_host_status(&self) -> GatewayHostStatus {
+        self.gateway_host
+            .read()
+            .ok()
+            .and_then(|host| host.as_ref().map(GatewayHost::status))
+            .unwrap_or(GatewayHostStatus {
+                is_running: false,
+                listen_addr: LOOPBACK_BIND_ADDR,
+            })
     }
 
     pub fn tray_model(&self) -> TrayModel {
@@ -370,19 +394,69 @@ impl RuntimeState {
     pub fn restart_gateway(&self) -> crate::error::Result<()> {
         let replacement =
             LoopbackGateway::new(Arc::clone(&self.app_state), Arc::clone(&self.usage_records));
-        let mut gateway = match self.loopback_gateway.write() {
-            Ok(gateway) => gateway,
-            Err(_) => {
+        let router = replacement.router();
+
+        let existing_host = {
+            let mut host = match self.gateway_host.write() {
+                Ok(host) => host,
+                Err(_) => {
+                    self.record_restart_feedback("failed".to_string());
+                    return Err(
+                        CodexLagError::new("Failed to restart loopback gateway host.")
+                            .with_internal_context(
+                                "operation=restart_gateway;cause=gateway_host_lock_poisoned",
+                            ),
+                    );
+                }
+            };
+            host.take()
+        };
+        if let Some(existing_host) = existing_host {
+            if let Err(error) = existing_host.shutdown() {
                 self.record_restart_feedback("failed".to_string());
-                return Err(crate::error::CodexLagError::new(
-                    "Failed to restart loopback gateway.",
-                )
-                .with_internal_context("operation=restart_gateway;cause=lock_poisoned"));
+                return Err(
+                    error.with_internal_context("operation=restart_gateway;cause=shutdown_failed")
+                );
+            }
+        }
+
+        let restarted_host = match GatewayHost::start(router) {
+            Ok(host) => host,
+            Err(error) => {
+                if let Ok(fallback_host) = GatewayHost::start(self.loopback_gateway().router()) {
+                    let _ = self.set_gateway_host(Some(fallback_host));
+                }
+                self.record_restart_feedback("failed".to_string());
+                return Err(
+                    error.with_internal_context("operation=restart_gateway;cause=start_failed")
+                );
             }
         };
-        *gateway = replacement;
-        drop(gateway);
+        {
+            let mut gateway = match self.loopback_gateway.write() {
+                Ok(gateway) => gateway,
+                Err(_) => {
+                    self.record_restart_feedback("failed".to_string());
+                    return Err(CodexLagError::new("Failed to restart loopback gateway.")
+                        .with_internal_context(
+                            "operation=restart_gateway;cause=loopback_lock_poisoned",
+                        ));
+                }
+            };
+            *gateway = replacement;
+        }
+        self.set_gateway_host(Some(restarted_host))?;
+
         self.record_restart_feedback("ok".to_string());
+        Ok(())
+    }
+
+    fn set_gateway_host(&self, host: Option<GatewayHost>) -> crate::error::Result<()> {
+        let mut gateway_host = self.gateway_host.write().map_err(|_| {
+            CodexLagError::new("Failed to update loopback gateway host.")
+                .with_internal_context("operation=set_gateway_host;cause=lock_poisoned")
+        })?;
+        *gateway_host = host;
         Ok(())
     }
 }

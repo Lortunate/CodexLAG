@@ -1,5 +1,4 @@
 use crate::{
-    gateway::server::LOOPBACK_GATEWAY_LISTEN_ADDRESS,
     routing::engine::{endpoint_rejection_reason, wall_clock_now_ms, PoolKind},
     routing::policy::RoutingMode,
     state::RuntimeState,
@@ -17,6 +16,7 @@ pub struct TraySummaryModel {
 
 pub fn build_tray_summary_for_runtime(runtime: &RuntimeState) -> TraySummaryModel {
     let current_mode = runtime.current_mode();
+    let host_status = runtime.gateway_host_status();
     let gateway_state = runtime.loopback_gateway().state();
     let unavailable_reason = gateway_state.unavailable_reason_for_mode(current_mode.as_str());
     let current_mode_label = match unavailable_reason.as_ref() {
@@ -32,9 +32,13 @@ pub fn build_tray_summary_for_runtime(runtime: &RuntimeState) -> TraySummaryMode
         ),
     };
 
-    let mut gateway_status_label = match unavailable_reason {
-        Some(reason) => format!("Gateway status | unavailable ({reason})"),
-        None => "Gateway status | ready".to_string(),
+    let mut gateway_status_label = if host_status.is_running {
+        match unavailable_reason {
+            Some(reason) => format!("Gateway status | unavailable ({reason})"),
+            None => "Gateway status | ready".to_string(),
+        }
+    } else {
+        "Gateway status | stopped".to_string()
     };
     if let Some(feedback) = runtime.last_restart_feedback() {
         gateway_status_label.push_str(" | last restart: ");
@@ -66,7 +70,7 @@ pub fn build_tray_summary_for_runtime(runtime: &RuntimeState) -> TraySummaryMode
         current_mode,
         current_mode_label,
         gateway_status_label,
-        listen_address_label: format!("Listen address | {LOOPBACK_GATEWAY_LISTEN_ADDRESS}"),
+        listen_address_label: format!("Listen address | http://{}", host_status.listen_addr),
         available_endpoints_label,
         last_balance_refresh_label,
     }
