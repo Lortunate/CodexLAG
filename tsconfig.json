@@ -5,8 +5,12 @@
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,

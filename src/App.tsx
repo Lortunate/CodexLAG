@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { AppShell } from "./components/app-shell";
 import { AccountsPage } from "./features/accounts/accounts-page";
 import { KeysPage } from "./features/keys/keys-page";
 import { LogsPage } from "./features/logs/logs-page";
 import { OverviewPage } from "./features/overview/overview-page";
 import { PoliciesPage } from "./features/policies/policies-page";
 import { RelaysPage } from "./features/relays/relays-page";
+import { cn } from "./lib/utils";
 
 type PageId =
   | "overview"
@@ -51,16 +53,25 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <h1>CodexLAG</h1>
-        <p className="sidebar-subtitle">Desktop control plane</p>
-        <nav>
+    <AppShell
+      navigation={
+        <nav aria-label="Primary" className="space-y-2">
+          <div className="mb-8">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+              Local control plane
+            </p>
+            <h1 className="text-2xl font-semibold">CodexLAG</h1>
+          </div>
           {sections.map((section) => (
             <button
               key={section.id}
               type="button"
-              className={section.id === activePage ? "is-active" : undefined}
+              className={cn(
+                "w-full rounded-xl px-4 py-3 text-left transition-colors",
+                section.id === activePage
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-transparent hover:bg-muted",
+              )}
               aria-pressed={section.id === activePage ? "true" : "false"}
               onClick={() => setActivePage(section.id)}
             >
@@ -68,8 +79,9 @@ export default function App() {
             </button>
           ))}
         </nav>
-      </aside>
-      <main className="content">{activeContent}</main>
-    </div>
+      }
+    >
+      {activeContent}
+    </AppShell>
   );
 }

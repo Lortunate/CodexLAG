@@ -351,6 +351,33 @@ describe("App shell", () => {
     });
   });
 
+  it("renders the production desktop shell with persistent navigation and header chrome", () => {
+    render(<App />);
+
+    expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
+    expect(screen.getByText("CodexLAG")).toBeInTheDocument();
+    expect(screen.getByText("Gateway Overview")).toBeInTheDocument();
+  });
+
+  it("renders the shared desktop shell and highlights the active page", () => {
+    render(<App />);
+
+    const overviewButton = screen.getByRole("button", { name: /overview/i });
+    expect(overviewButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("main")).toBeInTheDocument();
+  });
+
+  it("keeps the six primary navigation targets available from the new shell", () => {
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: /overview/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /accounts/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /relays/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /platform keys/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /policies/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /logs/i })).toBeInTheDocument();
+  });
+
   it("renders overview status cards with balance and usage summaries", async () => {
     render(<App />);
 
