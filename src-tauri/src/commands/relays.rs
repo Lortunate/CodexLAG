@@ -1,5 +1,5 @@
 use std::net::{TcpStream, ToSocketAddrs};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -78,13 +78,15 @@ pub fn refresh_relay_balance_from_runtime(
     let summary = relay_summary_by_id_from_state(&state, relay_id.as_str())?;
     let adapter = relay_adapter_for_state(&state, summary.relay_id.as_str())?;
     let payload = relay_balance_fixture_payload(&state, summary.relay_id.as_str());
-    let balance = normalize_relay_balance_response(adapter, payload)
-        .map_err(|error| {
-            with_command_context(
-                error.into_codex_lag_error(),
-                format!("command=refresh_relay_balance;relay_id={}", summary.relay_id),
-            )
-        })?;
+    let balance = normalize_relay_balance_response(adapter, payload).map_err(|error| {
+        with_command_context(
+            error.into_codex_lag_error(),
+            format!(
+                "command=refresh_relay_balance;relay_id={}",
+                summary.relay_id
+            ),
+        )
+    })?;
     let balance = match balance {
         Some(value) => RelayBalanceAvailability::Queryable {
             adapter: adapter_name(adapter),
@@ -99,6 +101,14 @@ pub fn refresh_relay_balance_from_runtime(
         relay_id: summary.relay_id,
         endpoint: summary.endpoint,
         balance,
+    })
+    .inspect(|snapshot| {
+        runtime.record_balance_refresh_summary(format!(
+            "relay:{} @ {} ({})",
+            snapshot.relay_id,
+            current_unix_timestamp_string(),
+            relay_balance_status(snapshot)
+        ));
     })
 }
 
@@ -153,20 +163,16 @@ pub fn add_relay_from_runtime(
         .app_state_mut()
         .save_managed_relay(created.clone())
         .map_err(|error| {
-            CodexLagError::new("Failed to persist relay.")
-                .with_internal_context(format!(
-                    "command=add_relay;operation=save_managed_relay;relay_id={};cause={error}",
-                    created.relay_id
-                ))
+            CodexLagError::new("Failed to persist relay.").with_internal_context(format!(
+                "command=add_relay;operation=save_managed_relay;relay_id={};cause={error}",
+                created.relay_id
+            ))
         })?;
     Ok(relay_summary(&created))
 }
 
 #[tauri::command]
-pub fn add_relay(
-    input: RelayUpsertInput,
-    state: State<'_, RuntimeState>,
-) -> Result<RelaySummary> {
+pub fn add_relay(input: RelayUpsertInput, state: State<'_, RuntimeState>) -> Result<RelaySummary> {
     add_relay_from_runtime(&state, input)
 }
 
@@ -191,11 +197,10 @@ pub fn update_relay_from_runtime(
         .app_state_mut()
         .save_managed_relay(updated.clone())
         .map_err(|error| {
-            CodexLagError::new("Failed to persist relay.")
-                .with_internal_context(format!(
-                    "command=update_relay;operation=save_managed_relay;relay_id={};cause={error}",
-                    updated.relay_id
-                ))
+            CodexLagError::new("Failed to persist relay.").with_internal_context(format!(
+                "command=update_relay;operation=save_managed_relay;relay_id={};cause={error}",
+                updated.relay_id
+            ))
         })?;
     Ok(relay_summary(&updated))
 }
@@ -324,10 +329,7 @@ fn relay_by_id_from_state(state: &AppState, relay_id: &str) -> Option<ManagedRel
     default_relay_by_id(relay_id)
 }
 
-fn relay_summary_by_id_from_state(
-    state: &AppState,
-    relay_id: &str,
-) -> Result<RelaySummary> {
+fn relay_summary_by_id_from_state(state: &AppState, relay_id: &str) -> Result<RelaySummary> {
     relay_by_id_from_state(state, relay_id)
         .map(|relay| relay_summary(&relay))
         .ok_or_else(|| {
@@ -338,10 +340,7 @@ fn relay_summary_by_id_from_state(
         })
 }
 
-fn relay_adapter_for_state(
-    state: &AppState,
-    relay_id: &str,
-) -> Result<RelayBalanceAdapter> {
+fn relay_adapter_for_state(state: &AppState, relay_id: &str) -> Result<RelayBalanceAdapter> {
     relay_by_id_from_state(state, relay_id)
         .map(|relay| relay.adapter)
         .ok_or_else(|| {
@@ -401,30 +400,23 @@ fn build_managed_relay(relay_id: String, input: RelayUpsertInput) -> Result<Mana
 
 fn probe_relay_endpoint(endpoint: &str) -> Result<u64> {
     let (host, port) = parse_host_port(endpoint)?;
-    let mut addrs = (host.as_str(), port)
-        .to_socket_addrs()
-        .map_err(|error| {
-            CodexLagError::new("Failed to resolve relay endpoint.")
-                .with_internal_context(format!(
-                    "command=probe_relay_endpoint;endpoint={endpoint};cause={error}"
-                ))
-        })?;
-    let address = addrs
-        .next()
-        .ok_or_else(|| {
-            CodexLagError::new("Failed to resolve relay endpoint.")
-                .with_internal_context(format!(
-                    "command=probe_relay_endpoint;endpoint={endpoint};cause=no_address"
-                ))
-        })?;
+    let mut addrs = (host.as_str(), port).to_socket_addrs().map_err(|error| {
+        CodexLagError::new("Failed to resolve relay endpoint.").with_internal_context(format!(
+            "command=probe_relay_endpoint;endpoint={endpoint};cause={error}"
+        ))
+    })?;
+    let address = addrs.next().ok_or_else(|| {
+        CodexLagError::new("Failed to resolve relay endpoint.").with_internal_context(format!(
+            "command=probe_relay_endpoint;endpoint={endpoint};cause=no_address"
+        ))
+    })?;
 
     let started = Instant::now();
-    TcpStream::connect_timeout(&address, Duration::from_secs(3))
-        .map_err(|error| {
-            CodexLagError::new("Failed to connect to relay endpoint.").with_internal_context(
-                format!("command=probe_relay_endpoint;endpoint={endpoint};cause={error}"),
-            )
-        })?;
+    TcpStream::connect_timeout(&address, Duration::from_secs(3)).map_err(|error| {
+        CodexLagError::new("Failed to connect to relay endpoint.").with_internal_context(format!(
+            "command=probe_relay_endpoint;endpoint={endpoint};cause={error}"
+        ))
+    })?;
     Ok(started.elapsed().as_millis() as u64)
 }
 
@@ -440,15 +432,12 @@ fn parse_host_port(endpoint: &str) -> Result<(String, u16)> {
         ));
     };
 
-    let authority = rest
-        .split('/')
-        .next()
-        .ok_or_else(|| {
-            invalid_payload_error(
-                "Relay endpoint must include a host.",
-                format!("command=parse_host_port;field=endpoint;value={endpoint}"),
-            )
-        })?;
+    let authority = rest.split('/').next().ok_or_else(|| {
+        invalid_payload_error(
+            "Relay endpoint must include a host.",
+            format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+        )
+    })?;
     if authority.is_empty() {
         return Err(invalid_payload_error(
             "Relay endpoint must include a host.",
@@ -458,14 +447,12 @@ fn parse_host_port(endpoint: &str) -> Result<(String, u16)> {
     let authority = authority.rsplit('@').next().unwrap_or(authority);
 
     if authority.starts_with('[') {
-        let close = authority
-            .find(']')
-            .ok_or_else(|| {
-                invalid_payload_error(
-                    "Relay endpoint contains invalid IPv6 host format.",
-                    format!("command=parse_host_port;field=endpoint;value={endpoint}"),
-                )
-            })?;
+        let close = authority.find(']').ok_or_else(|| {
+            invalid_payload_error(
+                "Relay endpoint contains invalid IPv6 host format.",
+                format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+            )
+        })?;
         let host = authority[1..close].to_string();
         if host.is_empty() {
             return Err(invalid_payload_error(
@@ -508,14 +495,12 @@ fn parse_host_port(endpoint: &str) -> Result<(String, u16)> {
                 format!("command=parse_host_port;field=endpoint;value={endpoint}"),
             ));
         }
-        let port = port_raw
-            .parse::<u16>()
-            .map_err(|_| {
-                invalid_payload_error(
-                    "Relay endpoint contains invalid port.",
-                    format!("command=parse_host_port;field=endpoint;value={endpoint}"),
-                )
-            })?;
+        let port = port_raw.parse::<u16>().map_err(|_| {
+            invalid_payload_error(
+                "Relay endpoint contains invalid port.",
+                format!("command=parse_host_port;field=endpoint;value={endpoint}"),
+            )
+        })?;
         return Ok((host.to_string(), port));
     }
 
@@ -570,9 +555,23 @@ fn parse_adapter(raw: Option<&str>) -> Result<RelayBalanceAdapter> {
     }
 }
 
+fn relay_balance_status(snapshot: &RelayBalanceSnapshot) -> &'static str {
+    match snapshot.balance {
+        RelayBalanceAvailability::Queryable { .. } => "queryable",
+        RelayBalanceAvailability::Unsupported { .. } => "unsupported",
+    }
+}
+
+fn current_unix_timestamp_string() -> String {
+    SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .to_string()
+}
+
 fn invalid_payload_error(message: impl Into<String>, context: impl Into<String>) -> CodexLagError {
-    CodexLagError::config(ConfigErrorKind::InvalidPayload, message)
-        .with_internal_context(context)
+    CodexLagError::config(ConfigErrorKind::InvalidPayload, message).with_internal_context(context)
 }
 
 fn with_command_context(error: CodexLagError, context: String) -> CodexLagError {

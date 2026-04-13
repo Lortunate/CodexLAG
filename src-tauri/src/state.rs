@@ -10,7 +10,7 @@ use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
 use crate::models::{ImportedOfficialAccount, ManagedRelay, PlatformKey, RoutingPolicy};
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
-use crate::tray::{build_tray_model, TrayModel};
+use crate::tray::{build_tray_model_for_runtime, TrayModel};
 
 pub struct AppState {
     repositories: Repositories,
@@ -266,8 +266,10 @@ fn is_runtime_log_file_name(file_name: &str) -> bool {
 pub struct RuntimeState {
     app_state: Arc<RwLock<AppState>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
-    loopback_gateway: LoopbackGateway,
+    loopback_gateway: Arc<RwLock<LoopbackGateway>>,
     runtime_log: RuntimeLogConfig,
+    last_balance_refresh: Arc<RwLock<Option<String>>>,
+    last_restart_feedback: Arc<RwLock<Option<String>>>,
 }
 
 impl RuntimeState {
@@ -280,8 +282,10 @@ impl RuntimeState {
         Self {
             app_state,
             usage_records,
-            loopback_gateway,
+            loopback_gateway: Arc::new(RwLock::new(loopback_gateway)),
             runtime_log,
+            last_balance_refresh: Arc::new(RwLock::new(None)),
+            last_restart_feedback: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -297,8 +301,11 @@ impl RuntimeState {
             .expect("runtime app state lock poisoned")
     }
 
-    pub fn loopback_gateway(&self) -> &LoopbackGateway {
-        &self.loopback_gateway
+    pub fn loopback_gateway(&self) -> LoopbackGateway {
+        self.loopback_gateway
+            .read()
+            .expect("runtime loopback gateway lock poisoned")
+            .clone()
     }
 
     pub fn runtime_log(&self) -> &RuntimeLogConfig {
@@ -321,15 +328,7 @@ impl RuntimeState {
     }
 
     pub fn tray_model(&self) -> TrayModel {
-        let mode = self
-            .app_state()
-            .current_mode()
-            .unwrap_or(RoutingMode::Hybrid);
-        let unavailable_reason = self
-            .loopback_gateway
-            .state()
-            .unavailable_reason_for_mode(mode.as_str());
-        build_tray_model(mode, unavailable_reason)
+        build_tray_model_for_runtime(self)
     }
 
     pub fn current_mode(&self) -> RoutingMode {
@@ -340,5 +339,50 @@ impl RuntimeState {
 
     pub fn set_current_mode(&self, mode: RoutingMode) -> crate::error::Result<()> {
         self.app_state_mut().set_default_key_allowed_mode(mode)
+    }
+
+    pub fn record_balance_refresh_summary(&self, summary: String) {
+        if let Ok(mut last_balance_refresh) = self.last_balance_refresh.write() {
+            *last_balance_refresh = Some(summary);
+        }
+    }
+
+    pub fn record_restart_feedback(&self, summary: String) {
+        if let Ok(mut last_restart_feedback) = self.last_restart_feedback.write() {
+            *last_restart_feedback = Some(summary);
+        }
+    }
+
+    pub fn last_balance_refresh_summary(&self) -> Option<String> {
+        self.last_balance_refresh
+            .read()
+            .ok()
+            .and_then(|summary| summary.clone())
+    }
+
+    pub fn last_restart_feedback(&self) -> Option<String> {
+        self.last_restart_feedback
+            .read()
+            .ok()
+            .and_then(|summary| summary.clone())
+    }
+
+    pub fn restart_gateway(&self) -> crate::error::Result<()> {
+        let replacement =
+            LoopbackGateway::new(Arc::clone(&self.app_state), Arc::clone(&self.usage_records));
+        let mut gateway = match self.loopback_gateway.write() {
+            Ok(gateway) => gateway,
+            Err(_) => {
+                self.record_restart_feedback("failed".to_string());
+                return Err(crate::error::CodexLagError::new(
+                    "Failed to restart loopback gateway.",
+                )
+                .with_internal_context("operation=restart_gateway;cause=lock_poisoned"));
+            }
+        };
+        *gateway = replacement;
+        drop(gateway);
+        self.record_restart_feedback("ok".to_string());
+        Ok(())
     }
 }

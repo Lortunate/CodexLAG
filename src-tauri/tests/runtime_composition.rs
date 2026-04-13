@@ -18,7 +18,17 @@ use codexlag_lib::{
     },
     secret_store::SecretKey,
     state::{RuntimeLogConfig, RuntimeState},
+    tray::{build_tray_model_for_runtime, TrayItemId},
 };
+
+fn tray_label(model: &codexlag_lib::tray::TrayModel, id: TrayItemId) -> String {
+    model
+        .items
+        .iter()
+        .find(|item| item.id == id)
+        .map(|item| item.label.text().to_string())
+        .unwrap_or_else(|| panic!("missing tray item {:?}", id))
+}
 
 #[tokio::test]
 async fn bootstrapped_runtime_feeds_commands_and_tray_from_shared_state() {
@@ -38,6 +48,23 @@ async fn bootstrapped_runtime_feeds_commands_and_tray_from_shared_state() {
     assert_eq!(
         runtime.tray_model().current_mode(),
         Some(RoutingMode::Hybrid)
+    );
+    let tray_model = build_tray_model_for_runtime(&runtime);
+    assert_eq!(
+        tray_label(&tray_model, TrayItemId::GatewayStatus),
+        "Gateway status | ready"
+    );
+    assert_eq!(
+        tray_label(&tray_model, TrayItemId::ListenAddress),
+        "Listen address | http://127.0.0.1:8787"
+    );
+    assert_eq!(
+        tray_label(&tray_model, TrayItemId::AvailableEndpoints),
+        "Available endpoints | official: 1, relay: 1"
+    );
+    assert_eq!(
+        tray_label(&tray_model, TrayItemId::LastBalanceRefresh),
+        "Last balance refresh | none"
     );
     assert!(runtime.loopback_gateway().is_ready());
     assert_eq!(log_summary.level, "info");
@@ -67,6 +94,15 @@ async fn runtime_mode_switch_updates_default_key_summary_and_tray_model() {
     assert_eq!(
         runtime.tray_model().current_mode(),
         Some(RoutingMode::RelayOnly)
+    );
+    let tray_model = build_tray_model_for_runtime(&runtime);
+    assert_eq!(
+        tray_label(&tray_model, TrayItemId::CurrentMode),
+        "Default key state | Current mode: relay_only"
+    );
+    assert_eq!(
+        tray_label(&tray_model, TrayItemId::GatewayStatus),
+        "Gateway status | ready"
     );
 }
 
@@ -181,10 +217,7 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
         .files
         .iter()
         .all(|file| !file.name.ends_with(".txt")));
-    assert!(!metadata
-        .files
-        .iter()
-        .any(|file| file.name == "notes.txt"));
+    assert!(!metadata.files.iter().any(|file| file.name == "notes.txt"));
     assert!(!metadata
         .files
         .iter()
@@ -198,7 +231,10 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
         .iter()
         .all(|file| file.name.ends_with(".log") || file.name.contains(".log.")));
     assert!(metadata.files.iter().all(|file| !file.path.is_empty()));
-    assert!(metadata.files.iter().all(|file| file.path.starts_with("<app-local-data>/logs/")));
+    assert!(metadata
+        .files
+        .iter()
+        .all(|file| file.path.starts_with("<app-local-data>/logs/")));
     assert!(metadata.files.iter().all(|file| file.size > 0));
     assert!(metadata.files.iter().all(|file| file.mtime > 0));
     assert!(metadata.files.len() <= 20);

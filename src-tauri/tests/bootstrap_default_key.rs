@@ -1,9 +1,11 @@
+use codexlag_lib::routing::policy::HYBRID;
 use codexlag_lib::{
-    bootstrap::{bootstrap_state_for_test, bootstrap_state_for_test_at},
+    bootstrap::{
+        bootstrap_runtime_for_test, bootstrap_state_for_test, bootstrap_state_for_test_at,
+    },
     routing::policy::RoutingMode,
     secret_store::SecretKey,
 };
-use codexlag_lib::routing::policy::HYBRID;
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::Connection;
 
@@ -64,11 +66,16 @@ async fn bootstrap_persists_default_state_across_restarts() {
 
     drop(first_state);
 
-    assert!(database_path.exists(), "bootstrap should create sqlite file");
+    assert!(
+        database_path.exists(),
+        "bootstrap should create sqlite file"
+    );
 
     let connection = Connection::open(&database_path).expect("open sqlite database");
     let policy_rows: i64 = connection
-        .query_row("SELECT COUNT(*) FROM routing_policies", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM routing_policies", [], |row| {
+            row.get(0)
+        })
         .expect("count routing policies");
     let key_rows: i64 = connection
         .query_row("SELECT COUNT(*) FROM platform_keys", [], |row| row.get(0))
@@ -92,7 +99,10 @@ async fn bootstrap_persists_default_state_across_restarts() {
         .get_platform_key_by_name("default")
         .expect("second default key");
 
-    assert_eq!(second_key.allowed_mode.as_str(), RoutingMode::RelayOnly.as_str());
+    assert_eq!(
+        second_key.allowed_mode.as_str(),
+        RoutingMode::RelayOnly.as_str()
+    );
     assert_eq!(second_state.iter_policies().count(), 1);
     assert_eq!(second_state.iter_platform_keys().count(), 1);
 
@@ -110,11 +120,13 @@ fn random_suffix() -> String {
 async fn tray_model_contains_default_key_mode_actions() {
     use codexlag_lib::{
         routing::policy::RoutingMode,
-        tray::{build_tray_model_for_state, TrayItemId, TrayItemKind},
+        tray::{build_tray_model_for_runtime, TrayItemId, TrayItemKind},
     };
 
-    let state = bootstrap_state_for_test().await.expect("bootstrap");
-    let model = build_tray_model_for_state(&state);
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let model = build_tray_model_for_runtime(&runtime);
 
     assert!(model.items.iter().any(|item| {
         item.kind == TrayItemKind::Mode && item.id == TrayItemId::Mode(RoutingMode::AccountOnly)
@@ -125,45 +137,80 @@ async fn tray_model_contains_default_key_mode_actions() {
     assert!(model.items.iter().any(|item| {
         item.kind == TrayItemKind::Mode && item.id == TrayItemId::Mode(RoutingMode::Hybrid)
     }));
-    assert!(
-        model
-            .items
-            .iter()
-            .any(|item| item.id.menu_id().as_ref() == "mode:account_only")
-    );
-    assert!(
-        model
-            .items
-            .iter()
-            .any(|item| item.id.menu_id().as_ref() == "mode:relay_only")
-    );
-    assert!(
-        model
-            .items
-            .iter()
-            .any(|item| item.id.menu_id().as_ref() == "mode:hybrid")
-    );
+    assert!(model
+        .items
+        .iter()
+        .any(|item| item.id.menu_id().as_ref() == "mode:account_only"));
+    assert!(model
+        .items
+        .iter()
+        .any(|item| item.id.menu_id().as_ref() == "mode:relay_only"));
+    assert!(model
+        .items
+        .iter()
+        .any(|item| item.id.menu_id().as_ref() == "mode:hybrid"));
     assert_eq!(model.current_mode(), Some(RoutingMode::Hybrid));
+    assert!(model
+        .items
+        .iter()
+        .any(|item| item.id == TrayItemId::GatewayStatus));
+    assert!(model
+        .items
+        .iter()
+        .any(|item| item.id == TrayItemId::ListenAddress));
+    assert!(model
+        .items
+        .iter()
+        .any(|item| item.id == TrayItemId::AvailableEndpoints));
+    assert!(model
+        .items
+        .iter()
+        .any(|item| item.id == TrayItemId::LastBalanceRefresh));
 }
 
-#[test]
-fn tray_model_status_text_includes_unavailable_reason_when_provided() {
+#[tokio::test]
+async fn tray_model_status_text_includes_unavailable_reason_when_provided() {
     use codexlag_lib::{
-        routing::policy::RoutingMode,
-        tray::{build_tray_model, TrayItemId},
+        routing::{engine::PoolKind, policy::RoutingMode},
+        tray::{build_tray_model_for_runtime, TrayItemId},
     };
 
-    let model = build_tray_model(
-        RoutingMode::RelayOnly,
-        Some("no available endpoint for mode 'relay_only'".to_string()),
-    );
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
+        .expect("switch to relay-only");
+    for candidate in runtime.loopback_gateway().state().current_candidates() {
+        if candidate.pool == PoolKind::Relay {
+            let updated = runtime
+                .loopback_gateway()
+                .state()
+                .set_endpoint_availability(candidate.id.as_str(), false);
+            assert!(updated, "relay candidate availability should be mutable");
+        }
+    }
+
+    let model = build_tray_model_for_runtime(&runtime);
     let status_label = model
         .items
         .iter()
         .find(|item| item.id == TrayItemId::CurrentMode)
         .map(|item| item.label.text().to_string())
         .expect("tray status label");
+    let gateway_label = model
+        .items
+        .iter()
+        .find(|item| item.id == TrayItemId::GatewayStatus)
+        .map(|item| item.label.text().to_string())
+        .expect("gateway status label");
 
-    assert!(status_label.contains("Current mode: relay_only"));
-    assert!(status_label.contains("no available endpoint for mode 'relay_only'"));
+    assert_eq!(
+        status_label,
+        "Default key state | Current mode: relay_only (no available endpoint for mode 'relay_only')"
+    );
+    assert_eq!(
+        gateway_label,
+        "Gateway status | unavailable (no available endpoint for mode 'relay_only')"
+    );
 }
