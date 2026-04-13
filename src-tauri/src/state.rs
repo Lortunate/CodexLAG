@@ -1,6 +1,7 @@
 use std::{
     path::PathBuf,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    time::SystemTime,
 };
 
 use crate::db::repositories::Repositories;
@@ -139,6 +140,94 @@ impl AppState {
 #[derive(Clone)]
 pub struct RuntimeLogConfig {
     pub log_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeLogFileMetadata {
+    pub name: String,
+    pub path: PathBuf,
+    pub size: u64,
+    pub mtime: u64,
+}
+
+impl RuntimeLogConfig {
+    pub fn recent_log_files(
+        &self,
+        max_files: usize,
+    ) -> std::io::Result<Vec<RuntimeLogFileMetadata>> {
+        if max_files == 0 {
+            return Ok(Vec::new());
+        }
+
+        let entries = match std::fs::read_dir(&self.log_dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error),
+        };
+
+        let mut files = Vec::new();
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => continue,
+            };
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !is_runtime_log_file_name(&name) {
+                continue;
+            }
+
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            let mtime = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64)
+                .unwrap_or(0);
+
+            files.push(RuntimeLogFileMetadata {
+                name,
+                path: entry.path(),
+                size: metadata.len(),
+                mtime,
+            });
+        }
+
+        files.sort_by(|left, right| {
+            right
+                .mtime
+                .cmp(&left.mtime)
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        if files.len() > max_files {
+            files.truncate(max_files);
+        }
+
+        Ok(files)
+    }
+}
+
+fn is_runtime_log_file_name(file_name: &str) -> bool {
+    let file_name = file_name.to_ascii_lowercase();
+    if file_name.ends_with(".log") {
+        return true;
+    }
+
+    if let Some((_, suffix)) = file_name.split_once(".log.") {
+        return !suffix.is_empty();
+    }
+
+    false
 }
 
 #[derive(Clone)]

@@ -1,16 +1,15 @@
 use serde::Serialize;
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tauri::State;
 
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
+use crate::logging::redaction::redact_sensitive_value;
 use crate::logging::usage::{
     query_usage_ledger as query_usage_ledger_model, request_detail, request_history, UsageLedger,
     UsageLedgerQuery, UsageRequestDetail,
 };
-use crate::state::RuntimeState;
+use crate::state::{RuntimeLogFileMetadata as RuntimeLogFileMetadataState, RuntimeState};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LogSummary {
@@ -21,7 +20,15 @@ pub struct LogSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RuntimeLogMetadata {
     pub log_dir: String,
-    pub files: Vec<String>,
+    pub files: Vec<RuntimeLogFileMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RuntimeLogFileMetadata {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub mtime: u64,
 }
 
 pub fn log_summary_from_runtime(runtime: &RuntimeState) -> LogSummary {
@@ -61,64 +68,26 @@ pub fn runtime_log_metadata_from_runtime(runtime: &RuntimeState) -> Result<Runti
     const MAX_FILES: usize = 20;
 
     let log_dir = runtime.runtime_log().log_dir.clone();
-    let files = match std::fs::read_dir(&log_dir) {
-        Ok(entries) => {
-            let mut recent_files: BinaryHeap<Reverse<(SystemTime, String)>> = BinaryHeap::new();
-
-            for entry in entries {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    Err(_) => continue,
-                };
-                let file_type = match entry.file_type() {
-                    Ok(file_type) => file_type,
-                    Err(_) => continue,
-                };
-                if !file_type.is_file() {
-                    continue;
-                }
-
-                let file_name = entry.file_name().to_string_lossy().to_string();
-                if !is_runtime_log_file_name(&file_name) {
-                    continue;
-                }
-                let modified = entry
-                    .metadata()
-                    .and_then(|metadata| metadata.modified())
-                    .unwrap_or(SystemTime::UNIX_EPOCH);
-
-                recent_files.push(Reverse((modified, file_name)));
-                if recent_files.len() > MAX_FILES {
-                    recent_files.pop();
-                }
-            }
-
-            let mut files = recent_files
-                .into_iter()
-                .map(|Reverse((modified, file_name))| (file_name, modified))
-                .collect::<Vec<_>>();
-            files.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-            files
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(error) => {
-            return Err(CodexLagError::config(
+    let files = runtime
+        .runtime_log()
+        .recent_log_files(MAX_FILES)
+        .map_err(|error| {
+            CodexLagError::config(
                 ConfigErrorKind::Unknown,
                 "Failed to read runtime log metadata.",
             )
             .with_internal_context(format!(
                 "command=get_runtime_log_metadata;log_dir={};cause={error}",
                 log_dir.display()
-            )));
-        }
-    };
+            ))
+        })?;
+    let log_dir_display = sanitize_log_dir_for_display(&log_dir);
 
     Ok(RuntimeLogMetadata {
-        log_dir: sanitize_log_dir_for_display(&log_dir),
+        log_dir: log_dir_display.clone(),
         files: files
             .into_iter()
-            .take(MAX_FILES)
-            .map(|(file_name, _)| file_name)
+            .map(|file| runtime_log_file_metadata_for_display(&log_dir, &log_dir_display, file))
             .collect(),
     })
 }
@@ -171,7 +140,7 @@ pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result
         ))
     })?;
     let manifest_path = diagnostics_dir.join("diagnostics-manifest.txt");
-    let manifest = redact_token_like_values(&format!(
+    let manifest = redact_sensitive_value(&format!(
         "generated_at_unix={generated_at_unix}\nlog_dir={}\nfiles_count={}\nfiles={files_payload}\n",
         metadata.log_dir,
         metadata.files.len()
@@ -190,19 +159,6 @@ fn sanitize_log_dir_for_display(path: &Path) -> String {
     }
 }
 
-fn is_runtime_log_file_name(file_name: &str) -> bool {
-    let file_name = file_name.to_ascii_lowercase();
-    if file_name.ends_with(".log") {
-        return true;
-    }
-
-    if let Some((_, suffix)) = file_name.split_once(".log.") {
-        return !suffix.is_empty();
-    }
-
-    false
-}
-
 fn diagnostics_manifest_display_path(log_dir: &Path) -> String {
     format!(
         "{}/diagnostics/diagnostics-manifest.txt",
@@ -210,61 +166,37 @@ fn diagnostics_manifest_display_path(log_dir: &Path) -> String {
     )
 }
 
-fn redact_token_like_values(value: &str) -> String {
-    let value = redact_prefixed_token(value, "ck_local_");
-    redact_bearer_token(&value)
+fn runtime_log_file_metadata_for_display(
+    log_dir: &Path,
+    log_dir_display: &str,
+    file: RuntimeLogFileMetadataState,
+) -> RuntimeLogFileMetadata {
+    RuntimeLogFileMetadata {
+        name: file.name.clone(),
+        path: runtime_log_file_display_path(
+            log_dir,
+            log_dir_display,
+            &file.path,
+            file.name.as_str(),
+        ),
+        size: file.size,
+        mtime: file.mtime,
+    }
 }
 
-fn redact_prefixed_token(value: &str, prefix: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    let mut cursor = 0usize;
-
-    while let Some(relative_start) = value[cursor..].find(prefix) {
-        let start = cursor + relative_start;
-        output.push_str(&value[cursor..start]);
-        output.push_str(prefix);
-        output.push_str("[redacted]");
-
-        let mut token_end = start + prefix.len();
-        for ch in value[token_end..].chars() {
-            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
-                token_end += ch.len_utf8();
-            } else {
-                break;
-            }
-        }
-
-        cursor = token_end;
-    }
-
-    output.push_str(&value[cursor..]);
-    output
-}
-
-fn redact_bearer_token(value: &str) -> String {
-    let marker = "bearer ";
-    let lowercase = value.to_ascii_lowercase();
-    let mut output = String::with_capacity(value.len());
-    let mut cursor = 0usize;
-
-    while let Some(relative_start) = lowercase[cursor..].find(marker) {
-        let start = cursor + relative_start;
-        output.push_str(&value[cursor..start]);
-        output.push_str(marker);
-        output.push_str("[redacted]");
-
-        let mut token_end = start + marker.len();
-        for ch in value[token_end..].chars() {
-            if ch.is_whitespace() || ch == '"' || ch == '\'' || ch == ',' {
-                break;
-            }
-            token_end += ch.len_utf8();
-        }
-        cursor = token_end;
-    }
-
-    output.push_str(&value[cursor..]);
-    output
+fn runtime_log_file_display_path(
+    log_dir: &Path,
+    log_dir_display: &str,
+    file_path: &Path,
+    file_name: &str,
+) -> String {
+    let relative_path = file_path
+        .strip_prefix(log_dir)
+        .ok()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from(file_name));
+    let relative_display = relative_path.to_string_lossy().replace('\\', "/");
+    format!("{log_dir_display}/{relative_display}")
 }
 
 fn write_file_atomically(target_path: &Path, content: &str) -> Result<()> {

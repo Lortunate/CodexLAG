@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use codexlag_lib::bootstrap::{bootstrap_runtime_for_test, runtime_database_path, runtime_log_dir};
-use codexlag_lib::logging::runtime::{build_attempt_id, format_event_fields, redact_secret_value};
+use codexlag_lib::logging::runtime::{
+    build_attempt_id, format_event_fields, format_runtime_event_fields, redact_secret_value,
+};
 
 #[test]
 fn runtime_log_dir_uses_app_local_data_logs_subfolder() {
@@ -69,6 +71,29 @@ fn format_event_fields_escapes_unsafe_values_and_stays_single_line() {
         "event=routing.endpoint.rejected request_id=\"req 123\" error=\"invalid=mode\" detail=\"line1\\nline2\""
     );
     assert!(!formatted.contains('\n'));
+}
+
+#[test]
+fn format_runtime_event_fields_sets_required_schema_defaults() {
+    let formatted = format_runtime_event_fields(
+        "gateway",
+        "gateway.request.accepted",
+        "req-100",
+        None,
+        None,
+        None,
+        None,
+        &[("mode", "hybrid")],
+    );
+
+    assert!(formatted.contains("component=gateway"));
+    assert!(formatted.contains("event=gateway.request.accepted"));
+    assert!(formatted.contains("request_id=req-100"));
+    assert!(formatted.contains("attempt_id=none"));
+    assert!(formatted.contains("endpoint_id=none"));
+    assert!(formatted.contains("latency_ms=none"));
+    assert!(formatted.contains("error_code=none"));
+    assert!(formatted.contains("mode=hybrid"));
 }
 
 #[test]

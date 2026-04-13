@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::error::{CodexLagError, ConfigErrorKind, ErrorCategory, RoutingErrorKind};
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
-use crate::logging::runtime::{build_attempt_id, format_event_fields};
+use crate::logging::runtime::{build_attempt_id, format_runtime_event_fields};
 use crate::logging::usage::UsageRecordInput;
 use crate::logging::{log_route_downgrade, log_route_rejection};
 use crate::providers::invocation::{
@@ -72,25 +72,35 @@ async fn codex_request(
     let mode = mode_value.as_str();
     let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "unrouted");
 
-    let accepted_line = format_event_fields(&[
-        ("event", "gateway.request.accepted"),
-        ("request_id", request_id.as_str()),
-        ("platform_key", platform_key.name.as_str()),
-        ("mode", mode),
-    ]);
+    let accepted_line = format_runtime_event_fields(
+        "gateway",
+        "gateway.request.accepted",
+        request_id.as_str(),
+        None,
+        None,
+        None,
+        None,
+        &[("platform_key", platform_key.name.as_str()), ("mode", mode)],
+    );
     log::info!("{accepted_line}");
 
     let policy = match gateway_state.policy_for_platform_key(platform_key) {
         Some(policy) => policy,
         None => {
-            let line = format_event_fields(&[
-                ("event", "routing.endpoint.rejected"),
-                ("request_id", request_id.as_str()),
-                ("attempt_count", "0"),
-                ("mode", mode),
-                ("error", "policy_missing"),
-                ("reasons", "policy_missing"),
-            ]);
+            let line = format_runtime_event_fields(
+                "routing",
+                "routing.endpoint.rejected",
+                request_id.as_str(),
+                None,
+                None,
+                None,
+                Some("policy_missing"),
+                &[
+                    ("attempt_count", "0"),
+                    ("mode", mode),
+                    ("reasons", "policy_missing"),
+                ],
+            );
             log::warn!("{line}");
             return Err(map_gateway_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -136,12 +146,16 @@ async fn codex_request(
     let attempt_index = selection.attempt_count.saturating_sub(1);
     let attempt_id = build_attempt_id(request_id.as_str(), attempt_index);
 
-    let selected_line = format_event_fields(&[
-        ("event", "routing.endpoint.selected"),
-        ("request_id", request_id.as_str()),
-        ("attempt_id", attempt_id.as_str()),
-        ("endpoint_id", selected.id.as_str()),
-    ]);
+    let selected_line = format_runtime_event_fields(
+        "routing",
+        "routing.endpoint.selected",
+        request_id.as_str(),
+        Some(attempt_id.as_str()),
+        Some(selected.id.as_str()),
+        None,
+        None,
+        &[("mode", mode)],
+    );
     log::info!("{selected_line}");
 
     if should_log_downgrade(mode, &selected, &candidates, now_ms) {

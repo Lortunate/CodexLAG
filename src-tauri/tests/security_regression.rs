@@ -31,10 +31,21 @@ async fn diagnostics_and_db_artifacts_never_contain_plain_platform_secret() {
         "trigger bearer redaction",
     )
     .expect("write bearer trigger log file");
+    std::fs::write(
+        log_dir.join(format!("api_key={platform_secret}.log")),
+        "trigger api-key redaction",
+    )
+    .expect("write api-key trigger log file");
+    std::fs::write(
+        log_dir.join(format!("session_token={platform_secret}.log")),
+        "trigger session-token redaction",
+    )
+    .expect("write session token trigger log file");
 
     let _ = export_runtime_diagnostics_from_runtime(&runtime).expect("export diagnostics");
     let manifest_path = log_dir.join("diagnostics").join("diagnostics-manifest.txt");
-    let manifest_content = std::fs::read_to_string(&manifest_path).expect("read diagnostics manifest");
+    let manifest_content =
+        std::fs::read_to_string(&manifest_path).expect("read diagnostics manifest");
     let database_bytes = std::fs::read(&database_path).expect("read sqlite file");
     let database_text = String::from_utf8_lossy(&database_bytes);
 
@@ -45,6 +56,14 @@ async fn diagnostics_and_db_artifacts_never_contain_plain_platform_secret() {
     assert!(
         manifest_content.contains("bearer [redacted]"),
         "diagnostics manifest should redact bearer token values case-insensitively"
+    );
+    assert!(
+        manifest_content.contains("api_key=[redacted]"),
+        "diagnostics manifest should redact api-key patterns"
+    );
+    assert!(
+        manifest_content.contains("session_token=[redacted]"),
+        "diagnostics manifest should redact session token semantics"
     );
     assert!(
         !database_text.contains(platform_secret.as_str()),
