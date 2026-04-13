@@ -156,6 +156,17 @@ impl AppState {
             reasoning_tokens,
         )
     }
+
+    pub fn active_pricing_profile_id_for_model_at(
+        &self,
+        model: &str,
+        at_ms: i64,
+    ) -> crate::error::Result<Option<String>> {
+        Ok(self
+            .repositories
+            .active_pricing_profile_by_model(model, at_ms)?
+            .map(|profile| profile.id))
+    }
 }
 
 #[derive(Clone)]

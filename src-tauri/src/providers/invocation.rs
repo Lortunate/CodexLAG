@@ -13,6 +13,26 @@ pub struct InvocationSuccessMetadata {
     pub attempt_id: String,
     pub endpoint_id: String,
     pub upstream_status: u16,
+    pub usage_dimensions: Option<InvocationUsageDimensions>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvocationUsageDimensions {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cache_read_tokens: u32,
+    pub cache_write_tokens: u32,
+    pub reasoning_tokens: u32,
+}
+
+impl InvocationUsageDimensions {
+    pub fn has_non_zero_dimensions(&self) -> bool {
+        self.input_tokens > 0
+            || self.output_tokens > 0
+            || self.cache_read_tokens > 0
+            || self.cache_write_tokens > 0
+            || self.reasoning_tokens > 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +126,7 @@ impl ProviderInvocationPipeline {
             attempt_id: context.attempt_id.clone(),
             endpoint_id: endpoint.id.clone(),
             upstream_status: 200,
+            usage_dimensions: None,
         })
     }
 

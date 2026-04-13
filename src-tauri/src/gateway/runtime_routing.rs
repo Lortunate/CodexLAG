@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     logging::runtime::build_attempt_id,
-    providers::invocation::{InvocationFailure, InvocationOutcome},
+    providers::invocation::{InvocationFailure, InvocationOutcome, InvocationSuccessMetadata},
     routing::engine::{
         choose_endpoint_at, mark_success_for_endpoint, record_failure_for_endpoint,
         wall_clock_now_ms, CandidateEndpoint, FailureRules, RoutingError,
@@ -35,6 +35,7 @@ pub struct RouteSelectionError {
 pub struct RouteSelection {
     pub endpoint: CandidateEndpoint,
     pub attempt_count: usize,
+    pub success_metadata: InvocationSuccessMetadata,
 }
 
 pub struct RuntimeRoutingState {
@@ -138,7 +139,7 @@ impl RuntimeRoutingState {
             };
 
             match invoke(&selected, &context) {
-                Ok(_) => {
+                Ok(success_metadata) => {
                     let _ = mark_success_for_endpoint(&mut self.candidates, selected.id.as_str());
                     self.last_debug = Some(RouteDebugSnapshot {
                         request_id: request_id.to_string(),
@@ -148,6 +149,7 @@ impl RuntimeRoutingState {
                     return Ok(RouteSelection {
                         endpoint: selected,
                         attempt_count,
+                        success_metadata,
                     });
                 }
                 Err(failure) => {

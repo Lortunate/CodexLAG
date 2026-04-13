@@ -5,6 +5,7 @@ use axum::{
     Json, Router,
 };
 use serde::Serialize;
+use serde_json::json;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
@@ -102,7 +103,7 @@ async fn codex_request(
                 ],
             );
             log::warn!("{line}");
-            return Err(map_gateway_error(
+            let (status, error_payload) = map_gateway_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 request_id.as_str(),
                 0,
@@ -111,14 +112,57 @@ async fn codex_request(
                     ConfigErrorKind::PolicyMissing,
                     "Selected platform key policy is missing.",
                 ),
-            ));
+            );
+            let error_code = error_payload.0.error.clone();
+            let error_reason = error_payload.0.message.clone();
+            gateway_state.record_usage_request(UsageRecordInput {
+                request_id: request_id.clone(),
+                endpoint_id: "unrouted".to_string(),
+                model: None,
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+                estimated_cost: String::new(),
+                cost_provenance: UsageProvenance::Unknown,
+                cost_is_estimated: false,
+                pricing_profile_id: None,
+                declared_capability_requirements: Some(capability_requirements_snapshot(
+                    mode,
+                    platform_key.policy_id.as_str(),
+                    None,
+                )),
+                effective_capability_result: Some(capability_result_snapshot(
+                    mode,
+                    0,
+                    None,
+                    None,
+                    "error",
+                    None,
+                    Some(error_code.as_str()),
+                    Some(error_reason.as_str()),
+                )),
+                final_upstream_status: None,
+                final_upstream_error_code: Some(error_code),
+                final_upstream_error_reason: Some(error_reason),
+            });
+            return Err((status, error_payload));
         }
     };
-    let selection = gateway_state
-        .choose_endpoint_with_runtime_failover(request_id.as_str(), mode, |endpoint, context| {
-            gateway_state.invoke_provider(endpoint, context)
-        })
-        .map_err(|route_error| {
+    let policy_name = policy.name.clone();
+    let declared_capability_requirements = Some(capability_requirements_snapshot(
+        mode,
+        policy.id.as_str(),
+        Some(policy_name.as_str()),
+    ));
+    let selection = match gateway_state.choose_endpoint_with_runtime_failover(
+        request_id.as_str(),
+        mode,
+        |endpoint, context| gateway_state.invoke_provider(endpoint, context),
+    ) {
+        Ok(selection) => selection,
+        Err(route_error) => {
             let candidates = gateway_state.current_candidates();
             log_route_rejection(
                 request_id.as_str(),
@@ -133,14 +177,55 @@ async fn codex_request(
                 attempt_count,
                 last_invocation_failure,
             } = route_error;
-            map_routing_error(
+            let failure_endpoint_id = last_invocation_failure
+                .as_ref()
+                .map(|failure| failure.endpoint_id.as_str());
+            let model = failure_endpoint_id
+                .and_then(|endpoint_id| model_for_endpoint_id(&candidates, endpoint_id));
+            let (status, error_payload) = map_routing_error(
                 request_id.as_str(),
                 attempt_count,
                 mode,
                 error,
                 last_invocation_failure.as_ref(),
-            )
-        })?;
+            );
+            let error_code = error_payload.0.error.clone();
+            let error_reason = error_payload.0.message.clone();
+            gateway_state.record_usage_request(UsageRecordInput {
+                request_id: request_id.clone(),
+                endpoint_id: failure_endpoint_id.unwrap_or("unrouted").to_string(),
+                model,
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+                estimated_cost: String::new(),
+                cost_provenance: UsageProvenance::Unknown,
+                cost_is_estimated: false,
+                pricing_profile_id: None,
+                declared_capability_requirements: declared_capability_requirements.clone(),
+                effective_capability_result: Some(capability_result_snapshot(
+                    mode,
+                    attempt_count,
+                    failure_endpoint_id,
+                    last_invocation_failure
+                        .as_ref()
+                        .map(|failure| &failure.pool),
+                    "error",
+                    None,
+                    Some(error_code.as_str()),
+                    Some(error_reason.as_str()),
+                )),
+                final_upstream_status: last_invocation_failure
+                    .as_ref()
+                    .and_then(|failure| failure.upstream_status),
+                final_upstream_error_code: Some(error_code),
+                final_upstream_error_reason: Some(error_reason),
+            });
+            return Err((status, error_payload));
+        }
+    };
     let selected = selection.endpoint;
     let candidates = gateway_state.current_candidates();
     let attempt_index = selection.attempt_count.saturating_sub(1);
@@ -170,6 +255,15 @@ async fn codex_request(
     }
 
     let endpoint_id = selected.id.clone();
+    let usage_dimensions = selection.success_metadata.usage_dimensions;
+    let has_usage_dimensions = usage_dimensions
+        .as_ref()
+        .is_some_and(|dimensions| dimensions.has_non_zero_dimensions());
+    let input_tokens = usage_dimensions.map_or(0, |dimensions| dimensions.input_tokens);
+    let output_tokens = usage_dimensions.map_or(0, |dimensions| dimensions.output_tokens);
+    let cache_read_tokens = usage_dimensions.map_or(0, |dimensions| dimensions.cache_read_tokens);
+    let cache_write_tokens = usage_dimensions.map_or(0, |dimensions| dimensions.cache_write_tokens);
+    let reasoning_tokens = usage_dimensions.map_or(0, |dimensions| dimensions.reasoning_tokens);
     let model = models_for_endpoint(&selected)
         .first()
         .map(|model| (*model).to_string());
@@ -177,35 +271,76 @@ async fn codex_request(
     let mut cost_provenance = UsageProvenance::Unknown;
     let mut cost_is_estimated = false;
     let mut pricing_profile_id = None;
+    let mut pricing_estimation_status = "not_attempted";
 
     if let Some(model_name) = model.as_deref() {
         let at_ms = i64::try_from(now_ms).unwrap_or(i64::MAX);
-        match gateway_state
-            .app_state()
-            .estimate_usage_cost_for_model_at(model_name, at_ms, 0, 0, 0, 0, 0)
-        {
-            Ok(Some(estimate)) => {
-                estimated_cost = estimate.amount;
-                cost_provenance = estimate.provenance;
-                cost_is_estimated = estimate.estimated;
-                pricing_profile_id = Some(estimate.pricing_profile_id);
+        let app_state = gateway_state.app_state();
+        if has_usage_dimensions {
+            match app_state.estimate_usage_cost_for_model_at(
+                model_name,
+                at_ms,
+                input_tokens,
+                output_tokens,
+                cache_read_tokens,
+                cache_write_tokens,
+                reasoning_tokens,
+            ) {
+                Ok(Some(estimate)) => {
+                    estimated_cost = estimate.amount;
+                    cost_provenance = estimate.provenance;
+                    cost_is_estimated = estimate.estimated;
+                    pricing_profile_id = Some(estimate.pricing_profile_id);
+                    pricing_estimation_status = "estimated";
+                }
+                Ok(None) => {
+                    pricing_estimation_status = "pricing_profile_missing";
+                }
+                Err(error) => {
+                    pricing_estimation_status = "lookup_failed";
+                    let cause = error.to_string();
+                    log::warn!(
+                        "{}",
+                        format_runtime_event_fields(
+                            "gateway",
+                            "gateway.usage.cost_profile_lookup_failed",
+                            request_id.as_str(),
+                            Some(attempt_id.as_str()),
+                            Some(endpoint_id.as_str()),
+                            None,
+                            None,
+                            &[("cause", cause.as_str())]
+                        )
+                    );
+                }
             }
-            Ok(None) => {}
-            Err(error) => {
-                let cause = error.to_string();
-                log::warn!(
-                    "{}",
-                    format_runtime_event_fields(
-                        "gateway",
-                        "gateway.usage.cost_profile_lookup_failed",
-                        request_id.as_str(),
-                        Some(attempt_id.as_str()),
-                        Some(endpoint_id.as_str()),
-                        None,
-                        None,
-                        &[("cause", cause.as_str())]
-                    )
-                );
+        } else {
+            match app_state.active_pricing_profile_id_for_model_at(model_name, at_ms) {
+                Ok(profile_id) => {
+                    pricing_profile_id = profile_id;
+                    pricing_estimation_status = if pricing_profile_id.is_some() {
+                        "deferred_missing_dimensions"
+                    } else {
+                        "pricing_profile_missing"
+                    };
+                }
+                Err(error) => {
+                    pricing_estimation_status = "lookup_failed";
+                    let cause = error.to_string();
+                    log::warn!(
+                        "{}",
+                        format_runtime_event_fields(
+                            "gateway",
+                            "gateway.usage.cost_profile_lookup_failed",
+                            request_id.as_str(),
+                            Some(attempt_id.as_str()),
+                            Some(endpoint_id.as_str()),
+                            None,
+                            None,
+                            &[("cause", cause.as_str())]
+                        )
+                    );
+                }
             }
         }
     }
@@ -214,25 +349,34 @@ async fn codex_request(
         request_id: request_id.clone(),
         endpoint_id: endpoint_id.clone(),
         model,
-        input_tokens: 0,
-        output_tokens: 0,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-        reasoning_tokens: 0,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+        reasoning_tokens,
         estimated_cost,
         cost_provenance,
         cost_is_estimated,
         pricing_profile_id,
-        declared_capability_requirements: None,
-        effective_capability_result: None,
-        final_upstream_status: Some(200),
+        declared_capability_requirements: declared_capability_requirements.clone(),
+        effective_capability_result: Some(capability_result_snapshot(
+            mode,
+            selection.attempt_count,
+            Some(endpoint_id.as_str()),
+            Some(&selected.pool),
+            "success",
+            Some(pricing_estimation_status),
+            None,
+            None,
+        )),
+        final_upstream_status: Some(selection.success_metadata.upstream_status),
         final_upstream_error_code: None,
         final_upstream_error_reason: None,
     });
 
     Ok(Json(CodexRequestSummary {
         platform_key: platform_key.name.clone(),
-        policy: policy.name,
+        policy: policy_name,
         allowed_mode: platform_key.allowed_mode.clone(),
         endpoint_id,
     }))
@@ -290,6 +434,61 @@ fn should_log_downgrade(
             && (endpoint_rejection_reason(candidate, now_ms).is_some()
                 || endpoint_downgrade_reason(candidate, now_ms).is_some())
     })
+}
+
+fn capability_requirements_snapshot(
+    mode: &str,
+    policy_id: &str,
+    policy_name: Option<&str>,
+) -> String {
+    json!({
+        "routing_mode": mode,
+        "policy_id": policy_id,
+        "policy_name": policy_name,
+    })
+    .to_string()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn capability_result_snapshot(
+    mode: &str,
+    attempt_count: usize,
+    endpoint_id: Option<&str>,
+    pool: Option<&PoolKind>,
+    outcome: &str,
+    pricing_estimation: Option<&str>,
+    error_code: Option<&str>,
+    error_reason: Option<&str>,
+) -> String {
+    json!({
+        "routing_mode": mode,
+        "attempt_count": attempt_count,
+        "selected_endpoint_id": endpoint_id,
+        "selected_pool": pool.map(pool_kind_label),
+        "outcome": outcome,
+        "pricing_estimation": pricing_estimation,
+        "error_code": error_code,
+        "error_reason": error_reason,
+    })
+    .to_string()
+}
+
+fn pool_kind_label(pool: &PoolKind) -> &'static str {
+    match pool {
+        PoolKind::Official => "official",
+        PoolKind::Relay => "relay",
+    }
+}
+
+fn model_for_endpoint_id(
+    candidates: &[crate::routing::engine::CandidateEndpoint],
+    endpoint_id: &str,
+) -> Option<String> {
+    candidates
+        .iter()
+        .find(|candidate| candidate.id == endpoint_id)
+        .and_then(|candidate| models_for_endpoint(candidate).first())
+        .map(|model| (*model).to_string())
 }
 
 fn map_routing_error(
