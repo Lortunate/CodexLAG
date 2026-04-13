@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CodexLagError, ConfigErrorKind, QuotaErrorKind, UpstreamErrorKind};
+use crate::error::{
+    CodexLagError, ConfigErrorKind, CredentialErrorKind, QuotaErrorKind, UpstreamErrorKind,
+};
 use crate::providers::invocation::{InvocationFailure, InvocationFailureClass};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -104,8 +106,8 @@ pub(crate) fn map_relay_invocation_failure(failure: &InvocationFailure) -> Codex
             UpstreamErrorKind::ProviderTimeout,
             "Relay provider timed out while handling the request.",
         ),
-        InvocationFailureClass::Auth => CodexLagError::config(
-            ConfigErrorKind::ProviderRejectedRequest,
+        InvocationFailureClass::Auth => CodexLagError::credential(
+            CredentialErrorKind::ProviderAuthFailed,
             "Relay rejected credentials for the selected endpoint.",
         ),
         InvocationFailureClass::Config => CodexLagError::config(

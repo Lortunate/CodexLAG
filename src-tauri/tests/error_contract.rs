@@ -86,6 +86,46 @@ async fn gateway_config_failure_maps_to_config_error_contract() {
 }
 
 #[tokio::test]
+async fn gateway_relay_auth_failure_maps_to_credential_error_contract() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
+        .expect("set default mode");
+    runtime
+        .loopback_gateway()
+        .state()
+        .plan_provider_failure_for_test("relay-default", InvocationFailureClass::Auth);
+
+    let (status, payload) = request_codex_error(&runtime).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_contract(
+        &payload,
+        "CredentialError",
+        "credential.provider_auth_failed",
+    );
+}
+
+#[tokio::test]
+async fn gateway_relay_config_failure_maps_to_config_error_contract() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
+        .expect("set default mode");
+    runtime
+        .loopback_gateway()
+        .state()
+        .plan_provider_failure_for_test("relay-default", InvocationFailureClass::Config);
+
+    let (status, payload) = request_codex_error(&runtime).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_contract(&payload, "ConfigError", "config.provider_rejected_request");
+}
+
+#[tokio::test]
 async fn gateway_no_endpoint_maps_to_routing_error_contract() {
     let runtime = bootstrap_runtime_for_test()
         .await

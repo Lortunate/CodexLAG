@@ -138,6 +138,11 @@ function payloadFromUnknown(error: unknown): AppErrorPayload {
 
 function parseLegacyErrorMessage(message: string): AppErrorPayload {
   const normalized = message.toLowerCase();
+  const timeoutLike =
+    normalized.includes("timeout") ||
+    normalized.includes("timed out") ||
+    normalized.includes("timedout") ||
+    normalized.includes("deadline exceeded");
   if (normalized.includes("provider_auth_failed") || normalized.includes("credential")) {
     return {
       code: "credential.provider_auth_failed",
@@ -162,15 +167,13 @@ function parseLegacyErrorMessage(message: string): AppErrorPayload {
       internal_context: null,
     };
   }
-  if (
-    normalized.includes("timeout") ||
-    normalized.includes("upstream") ||
-    normalized.includes("payload parse error")
-  ) {
+  if (timeoutLike || normalized.includes("upstream") || normalized.includes("payload parse error")) {
     return {
       code: normalized.includes("payload parse error")
         ? "upstream.relay_payload_invalid"
-        : "upstream.provider_http_failure",
+        : timeoutLike
+          ? "upstream.provider_timeout"
+          : "upstream.provider_http_failure",
       category: "UpstreamError",
       message,
       internal_context: null,

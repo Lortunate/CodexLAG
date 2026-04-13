@@ -14,12 +14,24 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import {
+  CodexLagInvokeError,
   getAccountCapabilityDetail,
   getRelayCapabilityDetail,
+  listAccounts,
   getUsageRequestDetail,
   refreshAccountBalance,
   refreshRelayBalance,
 } from "../lib/tauri";
+
+async function expectInvokeError(operation: Promise<unknown>): Promise<CodexLagInvokeError> {
+  try {
+    await operation;
+    throw new Error("Expected CodexLagInvokeError");
+  } catch (error) {
+    expect(error).toBeInstanceOf(CodexLagInvokeError);
+    return error as CodexLagInvokeError;
+  }
+}
 
 describe("tauri wrappers", () => {
   beforeEach(() => {
@@ -68,6 +80,81 @@ describe("tauri wrappers", () => {
     expect(detail.balance_capability).toEqual({
       kind: "queryable",
       adapter: "new_api",
+    });
+  });
+
+  it("parses structured object payloads from invoke failures", async () => {
+    invokeMock.mockRejectedValue({
+      code: "quota.provider_rate_limited",
+      category: "QuotaError",
+      message: "Rate limited by relay provider.",
+      internal_context: "provider=relay;status=429",
+    });
+
+    const error = await expectInvokeError(listAccounts());
+
+    expect(error.payload).toEqual({
+      code: "quota.provider_rate_limited",
+      category: "QuotaError",
+      message: "Rate limited by relay provider.",
+      internal_context: "provider=relay;status=429",
+    });
+  });
+
+  it("parses nested error and payload wrappers from invoke failures", async () => {
+    invokeMock.mockRejectedValue({
+      error: {
+        payload: {
+          code: "routing.no_available_endpoint",
+          category: "RoutingError",
+          message: "No endpoint matched routing policy.",
+          internal_context: "mode=relay_only",
+        },
+      },
+    });
+
+    const error = await expectInvokeError(refreshAccountBalance("acc-1"));
+
+    expect(error.payload).toEqual({
+      code: "routing.no_available_endpoint",
+      category: "RoutingError",
+      message: "No endpoint matched routing policy.",
+      internal_context: "mode=relay_only",
+    });
+  });
+
+  it("parses JSON-string payloads from invoke failures", async () => {
+    invokeMock.mockRejectedValue(
+      JSON.stringify({
+        payload: {
+          code: "credential.provider_auth_failed",
+          category: "CredentialError",
+          message: "Relay credentials were rejected.",
+          internal_context: "provider=relay;status=401",
+        },
+      }),
+    );
+
+    const error = await expectInvokeError(listAccounts());
+
+    expect(error.payload).toEqual({
+      code: "credential.provider_auth_failed",
+      category: "CredentialError",
+      message: "Relay credentials were rejected.",
+      internal_context: "provider=relay;status=401",
+    });
+  });
+
+  it("uses legacy timeout fallback for timeout-like invoke failure strings", async () => {
+    invokeMock.mockRejectedValue("Upstream request timed out while contacting relay.");
+
+    const error = await expectInvokeError(listAccounts());
+
+    expect(error.payload).toEqual({
+      code: "upstream.provider_timeout",
+      category: "UpstreamError",
+      message: "Upstream request timed out while contacting relay.",
+      internal_context: null,
     });
   });
 });
