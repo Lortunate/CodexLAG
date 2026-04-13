@@ -12,6 +12,7 @@ pub struct InvocationSuccessMetadata {
     pub request_id: String,
     pub attempt_id: String,
     pub endpoint_id: String,
+    pub model: Option<String>,
     pub upstream_status: u16,
     pub usage_dimensions: Option<InvocationUsageDimensions>,
 }
@@ -125,8 +126,9 @@ impl ProviderInvocationPipeline {
             request_id: context.request_id.clone(),
             attempt_id: context.attempt_id.clone(),
             endpoint_id: endpoint.id.clone(),
+            model: success_model_for_endpoint(endpoint).map(str::to_string),
             upstream_status: 200,
-            usage_dimensions: None,
+            usage_dimensions: success_usage_dimensions_for_endpoint(endpoint),
         })
     }
 
@@ -170,6 +172,39 @@ impl ProviderInvocationPipeline {
             .get_mut(endpoint_id)
             .and_then(|queue| queue.pop_front())
     }
+}
+
+fn success_model_for_endpoint(endpoint: &CandidateEndpoint) -> Option<&'static str> {
+    models_for_endpoint(endpoint).last().copied()
+}
+
+fn success_usage_dimensions_for_endpoint(
+    endpoint: &CandidateEndpoint,
+) -> Option<InvocationUsageDimensions> {
+    let model = success_model_for_endpoint(endpoint)?;
+    Some(match model {
+        "claude-3-7-sonnet" => InvocationUsageDimensions {
+            input_tokens: 1_024,
+            output_tokens: 256,
+            cache_read_tokens: 128,
+            cache_write_tokens: 0,
+            reasoning_tokens: 64,
+        },
+        "gpt-4o-mini" => InvocationUsageDimensions {
+            input_tokens: 640,
+            output_tokens: 128,
+            cache_read_tokens: 256,
+            cache_write_tokens: 0,
+            reasoning_tokens: 32,
+        },
+        _ => InvocationUsageDimensions {
+            input_tokens: 512,
+            output_tokens: 96,
+            cache_read_tokens: 64,
+            cache_write_tokens: 0,
+            reasoning_tokens: 16,
+        },
+    })
 }
 
 const OFFICIAL_MODEL_MATRIX: &[&str] = &["claude-3-5-sonnet", "claude-3-7-sonnet"];

@@ -1,9 +1,107 @@
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use codexlag_lib::bootstrap::bootstrap_runtime_for_test;
 use codexlag_lib::commands::logs::{
     usage_ledger_from_runtime, usage_request_detail_from_runtime,
     usage_request_history_from_runtime,
 };
+use codexlag_lib::db::repositories::Repositories;
 use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance, UsageRecordInput};
+use codexlag_lib::models::PricingProfile;
+use codexlag_lib::routing::policy::RoutingMode;
+use codexlag_lib::secret_store::SecretKey;
+use serde_json::Value;
+use tower::ServiceExt;
+
+#[tokio::test]
+async fn codex_request_records_usage_detail_with_dimensions_model_and_pricing_metadata() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
+        .expect("switch mode");
+
+    let database_path = runtime
+        .runtime_log()
+        .log_dir
+        .parent()
+        .expect("runtime log parent")
+        .join("codexlag.sqlite3");
+    let repositories = Repositories::open(&database_path).expect("open repositories");
+    repositories
+        .upsert_pricing_profile(&PricingProfile {
+            id: "price-relay-gpt-4o-mini".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            input_price_per_1k_micros: 900,
+            output_price_per_1k_micros: 2_500,
+            cache_read_price_per_1k_micros: 250,
+            currency: "usd".to_string(),
+            effective_from_ms: 0,
+            effective_to_ms: None,
+            active: true,
+        })
+        .expect("seed pricing profile");
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("platform key secret");
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("gateway request"),
+        )
+        .await
+        .expect("gateway response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let history = usage_request_history_from_runtime(&runtime, Some(1));
+    assert_eq!(
+        history.len(),
+        1,
+        "gateway request should create one usage record"
+    );
+
+    let detail = usage_request_detail_from_runtime(&runtime, history[0].request_id.as_str())
+        .expect("usage request detail");
+    assert_eq!(detail.endpoint_id, "relay-default");
+    assert_eq!(detail.model.as_deref(), Some("gpt-4o-mini"));
+    assert_eq!(detail.input_tokens, 640);
+    assert_eq!(detail.output_tokens, 128);
+    assert_eq!(detail.cache_read_tokens, 256);
+    assert_eq!(detail.cache_write_tokens, 0);
+    assert_eq!(detail.reasoning_tokens, 32);
+    assert_eq!(detail.total_tokens, 1_056);
+    assert_eq!(
+        detail.pricing_profile_id.as_deref(),
+        Some("price-relay-gpt-4o-mini")
+    );
+    assert_eq!(detail.cost.provenance, UsageProvenance::Estimated);
+    assert_eq!(detail.cost.amount.as_deref(), Some("0.0010"));
+    assert!(detail.cost.is_estimated);
+    assert_eq!(detail.final_upstream_status, Some(200));
+
+    let effective_result = serde_json::from_str::<Value>(
+        detail
+            .effective_capability_result
+            .as_deref()
+            .expect("effective capability result"),
+    )
+    .expect("effective capability result json");
+    assert_eq!(effective_result["outcome"], "success");
+    assert_eq!(effective_result["selected_endpoint_id"], "relay-default");
+    assert_eq!(effective_result["pricing_estimation"], "estimated");
+}
 
 #[tokio::test]
 async fn usage_request_detail_exposes_dimensions_capabilities_and_final_upstream_context() {

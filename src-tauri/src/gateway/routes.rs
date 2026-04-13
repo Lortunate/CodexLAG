@@ -1,8 +1,8 @@
 use axum::{
+    Json, Router,
     extract::State,
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -15,12 +15,12 @@ use crate::logging::runtime::{build_attempt_id, format_runtime_event_fields};
 use crate::logging::usage::{UsageProvenance, UsageRecordInput};
 use crate::logging::{log_route_downgrade, log_route_rejection};
 use crate::providers::invocation::{
-    models_for_endpoint, InvocationFailure, InvocationFailureClass,
+    InvocationFailure, InvocationFailureClass, models_for_endpoint,
 };
 use crate::providers::official::map_official_invocation_failure;
 use crate::providers::relay::map_relay_invocation_failure;
 use crate::routing::engine::{
-    endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms, PoolKind, RoutingError,
+    PoolKind, RoutingError, endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms,
 };
 use crate::routing::policy::RoutingMode;
 
@@ -227,8 +227,10 @@ async fn codex_request(
         }
     };
     let selected = selection.endpoint;
+    let success_metadata = selection.success_metadata;
+    let attempt_count = selection.attempt_count;
     let candidates = gateway_state.current_candidates();
-    let attempt_index = selection.attempt_count.saturating_sub(1);
+    let attempt_index = attempt_count.saturating_sub(1);
     let attempt_id = build_attempt_id(request_id.as_str(), attempt_index);
 
     let selected_line = format_runtime_event_fields(
@@ -255,7 +257,7 @@ async fn codex_request(
     }
 
     let endpoint_id = selected.id.clone();
-    let usage_dimensions = selection.success_metadata.usage_dimensions;
+    let usage_dimensions = success_metadata.usage_dimensions;
     let has_usage_dimensions = usage_dimensions
         .as_ref()
         .is_some_and(|dimensions| dimensions.has_non_zero_dimensions());
@@ -264,9 +266,7 @@ async fn codex_request(
     let cache_read_tokens = usage_dimensions.map_or(0, |dimensions| dimensions.cache_read_tokens);
     let cache_write_tokens = usage_dimensions.map_or(0, |dimensions| dimensions.cache_write_tokens);
     let reasoning_tokens = usage_dimensions.map_or(0, |dimensions| dimensions.reasoning_tokens);
-    let model = models_for_endpoint(&selected)
-        .first()
-        .map(|model| (*model).to_string());
+    let model = success_metadata.model.clone();
     let mut estimated_cost = String::new();
     let mut cost_provenance = UsageProvenance::Unknown;
     let mut cost_is_estimated = false;
@@ -361,7 +361,7 @@ async fn codex_request(
         declared_capability_requirements: declared_capability_requirements.clone(),
         effective_capability_result: Some(capability_result_snapshot(
             mode,
-            selection.attempt_count,
+            attempt_count,
             Some(endpoint_id.as_str()),
             Some(&selected.pool),
             "success",
@@ -369,7 +369,7 @@ async fn codex_request(
             None,
             None,
         )),
-        final_upstream_status: Some(selection.success_metadata.upstream_status),
+        final_upstream_status: Some(success_metadata.upstream_status),
         final_upstream_error_code: None,
         final_upstream_error_reason: None,
     });
