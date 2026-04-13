@@ -128,8 +128,18 @@ async fn set_default_key_mode_rejects_invalid_mode_strings() {
 
     let error = set_default_key_mode_from_runtime(&runtime, "invalid-mode")
         .expect_err("invalid mode should fail");
+    let payload = error.to_payload();
 
-    assert!(error.to_string().contains("unsupported default key mode"));
+    assert_eq!(payload.code, "config.unsupported_mode");
+    assert_eq!(payload.category, ErrorCategory::ConfigError);
+    assert_eq!(
+        payload.message,
+        "Allowed mode must be one of: hybrid, account_only, relay_only."
+    );
+    assert!(payload
+        .internal_context
+        .unwrap_or_default()
+        .contains("command=set_default_key_mode;mode=invalid-mode"));
 }
 
 #[test]
