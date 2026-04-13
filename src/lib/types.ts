@@ -80,7 +80,7 @@ export interface RelayUpsertInput {
   relay_id: string;
   name: string;
   endpoint: string;
-  adapter?: string | null;
+  adapter?: "newapi" | "none" | "nobalance" | null;
 }
 
 export interface RelayConnectionTestResult {
@@ -135,7 +135,7 @@ export interface PlatformKeyInventoryEntry {
   id: string;
   name: string;
   policy_id: string;
-  allowed_mode: string;
+  allowed_mode: DefaultKeyMode;
   enabled: boolean;
 }
 
@@ -143,7 +143,7 @@ export interface CreatePlatformKeyInput {
   key_id: string;
   name: string;
   policy_id: string;
-  allowed_mode: string;
+  allowed_mode: DefaultKeyMode;
 }
 
 export type UsageProvenance = "actual" | "estimated" | "unknown";
@@ -189,6 +189,14 @@ export interface PolicySummary {
   policy_id: string;
   name: string;
   status: string;
+  selection_order?: string[];
+  cross_pool_fallback?: boolean;
+  retry_budget?: number;
+  timeout_open_after?: number;
+  server_error_open_after?: number;
+  cooldown_ms?: number;
+  half_open_after_ms?: number;
+  success_close_after?: number;
 }
 
 export interface PolicyUpdateInput {

@@ -38,9 +38,9 @@ export function KeysPage() {
     };
   }, []);
 
-  async function handleCreateKey(input: CreatePlatformKeyInput) {
+  async function handleCreateKey(input: CreatePlatformKeyInput): Promise<boolean> {
     if (isCreatingKey) {
-      return;
+      return false;
     }
 
     setIsCreatingKey(true);
@@ -50,8 +50,10 @@ export function KeysPage() {
       const created = await createPlatformKey(input);
       setKeys((current) => [...current.filter((key) => key.id !== created.id), created]);
       setPanelSuccessMessage(`Created key: ${created.id}`);
+      return true;
     } catch (error) {
       setPanelErrorMessage(error instanceof Error ? error.message : "Failed to create key.");
+      return false;
     } finally {
       setIsCreatingKey(false);
     }

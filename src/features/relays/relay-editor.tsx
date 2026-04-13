@@ -6,7 +6,7 @@ interface RelayEditorProps {
   errorMessage: string | null;
   isCreating: boolean;
   isTestingRelayId: string | null;
-  onCreate: (input: RelayUpsertInput) => Promise<void>;
+  onCreate: (input: RelayUpsertInput) => Promise<boolean>;
   onTest: (relayId: string) => Promise<void>;
   relays: RelaySummary[];
   successMessage: string | null;
@@ -16,14 +16,14 @@ interface RelayDraft {
   relay_id: string;
   name: string;
   endpoint: string;
-  adapter: string;
+  adapter: "newapi" | "none";
 }
 
 const initialDraft: RelayDraft = {
   relay_id: "",
   name: "",
   endpoint: "",
-  adapter: "new_api",
+  adapter: "newapi",
 };
 
 export function RelayEditor({
@@ -40,16 +40,18 @@ export function RelayEditor({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onCreate({
+    const didCreate = await onCreate({
       relay_id: draft.relay_id.trim(),
       name: draft.name.trim(),
       endpoint: draft.endpoint.trim(),
-      adapter: draft.adapter.trim(),
+      adapter: draft.adapter,
     });
-    setDraft((current) => ({
-      ...initialDraft,
-      adapter: current.adapter,
-    }));
+    if (didCreate) {
+      setDraft((current) => ({
+        ...initialDraft,
+        adapter: current.adapter,
+      }));
+    }
   }
 
   return (
@@ -99,11 +101,14 @@ export function RelayEditor({
               name="adapter"
               value={draft.adapter}
               onChange={(event) =>
-                setDraft((current) => ({ ...current, adapter: event.target.value }))
+                setDraft((current) => ({
+                  ...current,
+                  adapter: event.target.value as RelayDraft["adapter"],
+                }))
               }
             >
-              <option value="new_api">new_api</option>
-              <option value="no_balance">no_balance</option>
+              <option value="newapi">newapi</option>
+              <option value="none">none</option>
             </select>
           </label>
         </p>

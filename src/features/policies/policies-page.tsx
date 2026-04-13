@@ -55,7 +55,7 @@ export function PoliciesPage() {
       const saved = await updatePolicy(input);
       setPolicies((current) =>
         current.map((policy) =>
-          policy.policy_id === saved.policy_id ? { ...policy, name: saved.name } : policy,
+          policy.policy_id === saved.policy_id ? { ...policy, ...saved } : policy,
         ),
       );
       setEditorSuccessMessage(`Policy saved: ${saved.name}`);

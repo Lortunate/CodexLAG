@@ -188,7 +188,21 @@ describe("App shell", () => {
       refresh_capability: true,
       balance_capability: "non_queryable",
     }));
-    listPolicies.mockResolvedValue([{ policy_id: "default-policy", name: "default", status: "active" }]);
+    listPolicies.mockResolvedValue([
+      {
+        policy_id: "default-policy",
+        name: "default",
+        status: "active",
+        selection_order: ["official-primary", "relay-newapi"],
+        cross_pool_fallback: false,
+        retry_budget: 2,
+        timeout_open_after: 3,
+        server_error_open_after: 3,
+        cooldown_ms: 1000,
+        half_open_after_ms: 1000,
+        success_close_after: 2,
+      },
+    ]);
     listRelays.mockResolvedValue([
       {
         relay_id: "relay-newapi",
@@ -484,32 +498,33 @@ describe("App shell", () => {
   });
 
   it("creates a relay and runs connection test flow", async () => {
-    let listRelaysCallCount = 0;
-    listRelays.mockImplementation(async () => {
-      listRelaysCallCount += 1;
-      if (listRelaysCallCount >= 3) {
-        return [
-          {
-            relay_id: "relay-newapi",
-            name: "Local Gateway",
-            endpoint: "http://127.0.0.1:8787",
-          },
-          {
-            relay_id: "relay-managed",
-            name: "Managed Relay",
-            endpoint: "https://managed.example.test",
-          },
-        ];
-      }
-
-      return [
+    listRelays
+      .mockResolvedValueOnce([
         {
           relay_id: "relay-newapi",
           name: "Local Gateway",
           endpoint: "http://127.0.0.1:8787",
         },
-      ];
-    });
+      ])
+      .mockResolvedValueOnce([
+        {
+          relay_id: "relay-newapi",
+          name: "Local Gateway",
+          endpoint: "http://127.0.0.1:8787",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          relay_id: "relay-newapi",
+          name: "Local Gateway",
+          endpoint: "http://127.0.0.1:8787",
+        },
+        {
+          relay_id: "relay-managed",
+          name: "Managed Relay",
+          endpoint: "https://managed.example.test",
+        },
+      ]);
 
     render(<App />);
 
@@ -528,7 +543,7 @@ describe("App shell", () => {
       relay_id: "relay-managed",
       name: "Managed Relay",
       endpoint: "https://managed.example.test",
-      adapter: "new_api",
+      adapter: "newapi",
     });
     expect(await screen.findByText("Created relay: relay-managed")).toBeInTheDocument();
 

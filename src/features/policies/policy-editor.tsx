@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { PolicySummary, PolicyUpdateInput } from "../../lib/types";
 
 interface PolicyEditorProps {
@@ -14,7 +14,7 @@ interface PolicyDraft {
   policy_id: string;
   name: string;
   selection_order: string;
-  cross_pool_fallback: boolean;
+  cross_pool_fallback: boolean | null;
   retry_budget: string;
   timeout_open_after: string;
   server_error_open_after: string;
@@ -23,13 +23,37 @@ interface PolicyDraft {
   success_close_after: string;
 }
 
-function defaultSelectionOrder(endpointIds: string[]) {
-  return endpointIds.join(", ");
+function policyToDraft(policy: PolicySummary): PolicyDraft {
+  return {
+    policy_id: policy.policy_id,
+    name: policy.name,
+    selection_order: policy.selection_order?.join(", ") ?? "",
+    cross_pool_fallback: policy.cross_pool_fallback ?? null,
+    retry_budget: policy.retry_budget?.toString() ?? "",
+    timeout_open_after: policy.timeout_open_after?.toString() ?? "",
+    server_error_open_after: policy.server_error_open_after?.toString() ?? "",
+    cooldown_ms: policy.cooldown_ms?.toString() ?? "",
+    half_open_after_ms: policy.half_open_after_ms?.toString() ?? "",
+    success_close_after: policy.success_close_after?.toString() ?? "",
+  };
 }
 
-function toPositiveInteger(raw: string, fallback: number) {
+function parsePositiveInteger(raw: string): number | null {
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function hasHydratedPolicySnapshot(policy: PolicySummary) {
+  return (
+    policy.selection_order !== undefined &&
+    policy.cross_pool_fallback !== undefined &&
+    policy.retry_budget !== undefined &&
+    policy.timeout_open_after !== undefined &&
+    policy.server_error_open_after !== undefined &&
+    policy.cooldown_ms !== undefined &&
+    policy.half_open_after_ms !== undefined &&
+    policy.success_close_after !== undefined
+  );
 }
 
 export function PolicyEditor({
@@ -40,57 +64,98 @@ export function PolicyEditor({
   policies,
   successMessage,
 }: PolicyEditorProps) {
-  const [draft, setDraft] = useState<PolicyDraft>({
-    policy_id: "",
-    name: "",
-    selection_order: defaultSelectionOrder(endpointIds),
-    cross_pool_fallback: false,
-    retry_budget: "2",
-    timeout_open_after: "3",
-    server_error_open_after: "3",
-    cooldown_ms: "1000",
-    half_open_after_ms: "1000",
-    success_close_after: "2",
-  });
+  const [activePolicyId, setActivePolicyId] = useState("");
+  const [draftsByPolicyId, setDraftsByPolicyId] = useState<Record<string, PolicyDraft>>({});
 
   useEffect(() => {
     if (policies.length === 0) {
+      setActivePolicyId("");
+      setDraftsByPolicyId({});
       return;
     }
 
-    setDraft((current) => {
-      const activePolicy =
-        policies.find((policy) => policy.policy_id === current.policy_id) ?? policies[0];
-      const hasName = current.name.trim().length > 0;
-      const hasSelectionOrder = current.selection_order.trim().length > 0;
-      return {
-        ...current,
-        policy_id: activePolicy.policy_id,
-        name: hasName ? current.name : activePolicy.name,
-        selection_order: hasSelectionOrder
-          ? current.selection_order
-          : defaultSelectionOrder(endpointIds),
-      };
+    setDraftsByPolicyId((current) => {
+      const next = { ...current };
+      for (const policy of policies) {
+        if (!next[policy.policy_id]) {
+          next[policy.policy_id] = policyToDraft(policy);
+        }
+      }
+      return next;
     });
-  }, [endpointIds, policies]);
+
+    setActivePolicyId((current) => {
+      if (current && policies.some((policy) => policy.policy_id === current)) {
+        return current;
+      }
+      return policies[0].policy_id;
+    });
+  }, [policies]);
+
+  const activePolicy = useMemo(
+    () => policies.find((policy) => policy.policy_id === activePolicyId) ?? null,
+    [activePolicyId, policies],
+  );
+  const activeDraft = activePolicyId ? draftsByPolicyId[activePolicyId] : undefined;
+  const selectionOrder = activeDraft
+    ? activeDraft.selection_order
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+    : [];
+  const retryBudget = activeDraft ? parsePositiveInteger(activeDraft.retry_budget) : null;
+  const timeoutOpenAfter = activeDraft ? parsePositiveInteger(activeDraft.timeout_open_after) : null;
+  const serverErrorOpenAfter = activeDraft
+    ? parsePositiveInteger(activeDraft.server_error_open_after)
+    : null;
+  const cooldownMs = activeDraft ? parsePositiveInteger(activeDraft.cooldown_ms) : null;
+  const halfOpenAfterMs = activeDraft ? parsePositiveInteger(activeDraft.half_open_after_ms) : null;
+  const successCloseAfter = activeDraft ? parsePositiveInteger(activeDraft.success_close_after) : null;
+  const canSave =
+    !!activeDraft &&
+    activeDraft.name.trim().length > 0 &&
+    selectionOrder.length > 0 &&
+    activeDraft.cross_pool_fallback !== null &&
+    retryBudget !== null &&
+    timeoutOpenAfter !== null &&
+    serverErrorOpenAfter !== null &&
+    cooldownMs !== null &&
+    halfOpenAfterMs !== null &&
+    successCloseAfter !== null;
+  const crossPoolFallbackValue = activeDraft
+    ? activeDraft.cross_pool_fallback === null
+      ? ""
+      : activeDraft.cross_pool_fallback
+        ? "true"
+        : "false"
+    : "";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (
+      !activeDraft ||
+      activeDraft.cross_pool_fallback === null ||
+      retryBudget === null ||
+      timeoutOpenAfter === null ||
+      serverErrorOpenAfter === null ||
+      cooldownMs === null ||
+      halfOpenAfterMs === null ||
+      successCloseAfter === null
+    ) {
+      return;
+    }
 
     await onSave({
-      policy_id: draft.policy_id,
-      name: draft.name.trim(),
-      selection_order: draft.selection_order
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0),
-      cross_pool_fallback: draft.cross_pool_fallback,
-      retry_budget: toPositiveInteger(draft.retry_budget, 2),
-      timeout_open_after: toPositiveInteger(draft.timeout_open_after, 3),
-      server_error_open_after: toPositiveInteger(draft.server_error_open_after, 3),
-      cooldown_ms: toPositiveInteger(draft.cooldown_ms, 1000),
-      half_open_after_ms: toPositiveInteger(draft.half_open_after_ms, 1000),
-      success_close_after: toPositiveInteger(draft.success_close_after, 2),
+      policy_id: activeDraft.policy_id,
+      name: activeDraft.name.trim(),
+      selection_order: selectionOrder,
+      cross_pool_fallback: activeDraft.cross_pool_fallback,
+      retry_budget: retryBudget,
+      timeout_open_after: timeoutOpenAfter,
+      server_error_open_after: serverErrorOpenAfter,
+      cooldown_ms: cooldownMs,
+      half_open_after_ms: halfOpenAfterMs,
+      success_close_after: successCloseAfter,
     });
   }
 
@@ -109,14 +174,9 @@ export function PolicyEditor({
           <label>
             Policy
             <select
-              value={draft.policy_id}
+              value={activePolicyId}
               onChange={(event) => {
-                const selectedPolicy = policies.find((policy) => policy.policy_id === event.target.value);
-                setDraft((current) => ({
-                  ...current,
-                  policy_id: event.target.value,
-                  name: selectedPolicy?.name ?? current.name,
-                }));
+                setActivePolicyId(event.target.value);
               }}
             >
               {policies.map((policy) => (
@@ -131,9 +191,15 @@ export function PolicyEditor({
           <label>
             Policy Name
             <input
-              value={draft.name}
+              value={activeDraft?.name ?? ""}
               onChange={(event) => {
-                setDraft((current) => ({ ...current, name: event.target.value }));
+                if (!activeDraft) {
+                  return;
+                }
+                setDraftsByPolicyId((current) => ({
+                  ...current,
+                  [activeDraft.policy_id]: { ...activeDraft, name: event.target.value },
+                }));
               }}
             />
           </label>
@@ -142,11 +208,17 @@ export function PolicyEditor({
           <label>
             Selection Order
             <input
-              value={draft.selection_order}
+              value={activeDraft?.selection_order ?? ""}
               onChange={(event) => {
-                setDraft((current) => ({
+                if (!activeDraft) {
+                  return;
+                }
+                setDraftsByPolicyId((current) => ({
                   ...current,
-                  selection_order: event.target.value,
+                  [activeDraft.policy_id]: {
+                    ...activeDraft,
+                    selection_order: event.target.value,
+                  },
                 }));
               }}
             />
@@ -154,26 +226,43 @@ export function PolicyEditor({
         </p>
         <p>
           <label>
-            <input
-              type="checkbox"
-              checked={draft.cross_pool_fallback}
+            Cross Pool Fallback
+            <select
+              value={crossPoolFallbackValue}
               onChange={(event) => {
-                setDraft((current) => ({
+                if (!activeDraft) {
+                  return;
+                }
+                const nextValue =
+                  event.target.value === "" ? null : event.target.value === "true";
+                setDraftsByPolicyId((current) => ({
                   ...current,
-                  cross_pool_fallback: event.target.checked,
+                  [activeDraft.policy_id]: {
+                    ...activeDraft,
+                    cross_pool_fallback: nextValue,
+                  },
                 }));
               }}
-            />
-            Cross Pool Fallback
+            >
+              <option value="">Select behavior</option>
+              <option value="false">false</option>
+              <option value="true">true</option>
+            </select>
           </label>
         </p>
         <p>
           <label>
             Retry Budget
             <input
-              value={draft.retry_budget}
+              value={activeDraft?.retry_budget ?? ""}
               onChange={(event) => {
-                setDraft((current) => ({ ...current, retry_budget: event.target.value }));
+                if (!activeDraft) {
+                  return;
+                }
+                setDraftsByPolicyId((current) => ({
+                  ...current,
+                  [activeDraft.policy_id]: { ...activeDraft, retry_budget: event.target.value },
+                }));
               }}
             />
           </label>
@@ -182,9 +271,18 @@ export function PolicyEditor({
           <label>
             Timeout Open After
             <input
-              value={draft.timeout_open_after}
+              value={activeDraft?.timeout_open_after ?? ""}
               onChange={(event) => {
-                setDraft((current) => ({ ...current, timeout_open_after: event.target.value }));
+                if (!activeDraft) {
+                  return;
+                }
+                setDraftsByPolicyId((current) => ({
+                  ...current,
+                  [activeDraft.policy_id]: {
+                    ...activeDraft,
+                    timeout_open_after: event.target.value,
+                  },
+                }));
               }}
             />
           </label>
@@ -193,11 +291,17 @@ export function PolicyEditor({
           <label>
             Server Error Open After
             <input
-              value={draft.server_error_open_after}
+              value={activeDraft?.server_error_open_after ?? ""}
               onChange={(event) => {
-                setDraft((current) => ({
+                if (!activeDraft) {
+                  return;
+                }
+                setDraftsByPolicyId((current) => ({
                   ...current,
-                  server_error_open_after: event.target.value,
+                  [activeDraft.policy_id]: {
+                    ...activeDraft,
+                    server_error_open_after: event.target.value,
+                  },
                 }));
               }}
             />
@@ -207,9 +311,18 @@ export function PolicyEditor({
           <label>
             Cooldown (ms)
             <input
-              value={draft.cooldown_ms}
+              value={activeDraft?.cooldown_ms ?? ""}
               onChange={(event) => {
-                setDraft((current) => ({ ...current, cooldown_ms: event.target.value }));
+                if (!activeDraft) {
+                  return;
+                }
+                setDraftsByPolicyId((current) => ({
+                  ...current,
+                  [activeDraft.policy_id]: {
+                    ...activeDraft,
+                    cooldown_ms: event.target.value,
+                  },
+                }));
               }}
             />
           </label>
@@ -218,11 +331,17 @@ export function PolicyEditor({
           <label>
             Half Open After (ms)
             <input
-              value={draft.half_open_after_ms}
+              value={activeDraft?.half_open_after_ms ?? ""}
               onChange={(event) => {
-                setDraft((current) => ({
+                if (!activeDraft) {
+                  return;
+                }
+                setDraftsByPolicyId((current) => ({
                   ...current,
-                  half_open_after_ms: event.target.value,
+                  [activeDraft.policy_id]: {
+                    ...activeDraft,
+                    half_open_after_ms: event.target.value,
+                  },
                 }));
               }}
             />
@@ -232,20 +351,35 @@ export function PolicyEditor({
           <label>
             Success Close After
             <input
-              value={draft.success_close_after}
+              value={activeDraft?.success_close_after ?? ""}
               onChange={(event) => {
-                setDraft((current) => ({
+                if (!activeDraft) {
+                  return;
+                }
+                setDraftsByPolicyId((current) => ({
                   ...current,
-                  success_close_after: event.target.value,
+                  [activeDraft.policy_id]: {
+                    ...activeDraft,
+                    success_close_after: event.target.value,
+                  },
                 }));
               }}
             />
           </label>
         </p>
-        <button type="submit" disabled={isSaving || policies.length === 0}>
+        <button type="submit" disabled={isSaving || policies.length === 0 || !canSave}>
           Save policy
         </button>
       </form>
+      {!activePolicy || hasHydratedPolicySnapshot(activePolicy) ? null : (
+        <p>
+          Policy snapshot details are not available from runtime. Enter all policy fields before
+          saving.
+        </p>
+      )}
+      {endpointIds.length > 0 ? (
+        <p>Known endpoint ids: {endpointIds.join(", ")}</p>
+      ) : null}
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       {successMessage ? <p>{successMessage}</p> : null}
     </section>

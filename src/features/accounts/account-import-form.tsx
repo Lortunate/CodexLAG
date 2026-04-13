@@ -4,7 +4,7 @@ import type { OfficialAccountImportInput } from "../../lib/types";
 interface AccountImportFormProps {
   errorMessage: string | null;
   isSubmitting: boolean;
-  onSubmit: (input: OfficialAccountImportInput) => Promise<void>;
+  onSubmit: (input: OfficialAccountImportInput) => Promise<boolean>;
   successMessage: string | null;
 }
 
@@ -39,7 +39,7 @@ export function AccountImportForm({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    await onSubmit({
+    const didSave = await onSubmit({
       account_id: draft.account_id.trim(),
       name: draft.name.trim(),
       provider: draft.provider.trim(),
@@ -49,10 +49,12 @@ export function AccountImportForm({
       auth_mode: draft.auth_mode.trim() || null,
     });
 
-    setDraft((current) => ({
-      ...initialDraft,
-      provider: current.provider,
-    }));
+    if (didSave) {
+      setDraft((current) => ({
+        ...initialDraft,
+        provider: current.provider,
+      }));
+    }
   }
 
   return (

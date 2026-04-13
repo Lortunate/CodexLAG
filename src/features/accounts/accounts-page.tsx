@@ -79,9 +79,9 @@ export function AccountsPage() {
     };
   }, []);
 
-  async function handleImportAccount(input: OfficialAccountImportInput) {
+  async function handleImportAccount(input: OfficialAccountImportInput): Promise<boolean> {
     if (isImportingAccount) {
-      return;
+      return false;
     }
 
     setIsImportingAccount(true);
@@ -93,8 +93,10 @@ export function AccountsPage() {
       await loadAccounts();
       setImportSuccessMessage(`Imported account: ${imported.account_id}`);
       setErrorMessage(null);
+      return true;
     } catch (error) {
       setImportErrorMessage(error instanceof Error ? error.message : "Failed to import account.");
+      return false;
     } finally {
       setIsImportingAccount(false);
     }

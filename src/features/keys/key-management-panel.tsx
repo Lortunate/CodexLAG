@@ -6,7 +6,7 @@ interface KeyManagementPanelProps {
   isCreating: boolean;
   keyActionId: string | null;
   keys: PlatformKeyInventoryEntry[];
-  onCreate: (input: CreatePlatformKeyInput) => Promise<void>;
+  onCreate: (input: CreatePlatformKeyInput) => Promise<boolean>;
   onDisable: (keyId: string) => Promise<void>;
   onEnable: (keyId: string) => Promise<void>;
   successMessage: string | null;
@@ -16,7 +16,7 @@ interface KeyDraft {
   key_id: string;
   name: string;
   policy_id: string;
-  allowed_mode: string;
+  allowed_mode: "hybrid" | "account_only" | "relay_only";
 }
 
 const initialDraft: KeyDraft = {
@@ -40,17 +40,19 @@ export function KeyManagementPanel({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onCreate({
+    const didCreate = await onCreate({
       key_id: draft.key_id.trim(),
       name: draft.name.trim(),
       policy_id: draft.policy_id.trim(),
-      allowed_mode: draft.allowed_mode.trim(),
+      allowed_mode: draft.allowed_mode,
     });
-    setDraft((current) => ({
-      ...initialDraft,
-      allowed_mode: current.allowed_mode,
-      policy_id: current.policy_id,
-    }));
+    if (didCreate) {
+      setDraft((current) => ({
+        ...initialDraft,
+        allowed_mode: current.allowed_mode,
+        policy_id: current.policy_id,
+      }));
+    }
   }
 
   return (
@@ -100,7 +102,10 @@ export function KeyManagementPanel({
               name="allowed_mode"
               value={draft.allowed_mode}
               onChange={(event) =>
-                setDraft((current) => ({ ...current, allowed_mode: event.target.value }))
+                setDraft((current) => ({
+                  ...current,
+                  allowed_mode: event.target.value as KeyDraft["allowed_mode"],
+                }))
               }
             >
               <option value="hybrid">hybrid</option>

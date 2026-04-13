@@ -84,9 +84,9 @@ export function RelaysPage() {
     };
   }, []);
 
-  async function handleCreateRelay(input: RelayUpsertInput) {
+  async function handleCreateRelay(input: RelayUpsertInput): Promise<boolean> {
     if (isCreatingRelay) {
-      return;
+      return false;
     }
 
     setIsCreatingRelay(true);
@@ -96,8 +96,10 @@ export function RelaysPage() {
       const created = await addRelay(input);
       await loadRelays();
       setEditorSuccessMessage(`Created relay: ${created.relay_id}`);
+      return true;
     } catch (error) {
       setEditorErrorMessage(error instanceof Error ? error.message : "Failed to create relay.");
+      return false;
     } finally {
       setIsCreatingRelay(false);
     }
