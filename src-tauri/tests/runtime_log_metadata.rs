@@ -3,7 +3,6 @@ use codexlag_lib::{
     commands::logs::runtime_log_metadata_from_runtime,
     state::{RuntimeLogConfig, RuntimeState},
 };
-use std::time::Duration;
 
 #[tokio::test]
 async fn runtime_log_metadata_returns_bounded_recent_file_entries() {
@@ -26,7 +25,6 @@ async fn runtime_log_metadata_returns_bounded_recent_file_entries() {
         let file_name = format!("gateway-{index:02}.log");
         std::fs::write(log_dir.join(file_name), format!("entry-{index}"))
             .expect("write runtime log file");
-        std::thread::sleep(Duration::from_millis(2));
     }
     std::fs::write(log_dir.join("ignored.txt"), "ignore").expect("write non-log file");
 

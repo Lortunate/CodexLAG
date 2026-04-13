@@ -1,4 +1,4 @@
-use crate::logging::redaction::redact_sensitive_value;
+use crate::logging::redaction::redact_sensitive_value_for_key;
 
 pub fn redact_secret_value(value: &str) -> String {
     if value.is_empty() {
@@ -44,7 +44,9 @@ pub fn format_runtime_event_fields(
         .map(|value| value.to_string())
         .unwrap_or_else(|| "none".to_string());
     append_event_field(&mut line, "latency_ms", latency_value.as_str());
-    append_event_field(&mut line, "error_code", error_code.unwrap_or("none"));
+    let error_value = error_code.unwrap_or("none");
+    append_event_field(&mut line, "error_code", error_value);
+    append_event_field(&mut line, "error", error_value);
 
     for (key, value) in extra_fields {
         append_event_field(&mut line, key, value);
@@ -83,7 +85,7 @@ fn append_event_field(line: &mut String, key: &str, value: &str) {
     if !line.is_empty() {
         line.push(' ');
     }
-    let redacted_value = redact_sensitive_value(value);
+    let redacted_value = redact_sensitive_value_for_key(key, value);
     line.push_str(key);
     line.push('=');
     line.push_str(&encode_field_value(redacted_value.as_str()));

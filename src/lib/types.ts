@@ -147,7 +147,14 @@ export interface LogSummary {
   level: string;
 }
 
+export interface RuntimeLogFileMetadata {
+  name: string;
+  path: string;
+  size: number;
+  mtime: number;
+}
+
 export interface RuntimeLogMetadata {
   log_dir: string;
-  files: string[];
+  files: RuntimeLogFileMetadata[];
 }

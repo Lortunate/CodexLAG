@@ -180,23 +180,27 @@ async fn runtime_log_metadata_exposes_log_dir_and_existing_files() {
     assert!(metadata
         .files
         .iter()
-        .all(|file_name| !file_name.ends_with(".txt")));
+        .all(|file| !file.name.ends_with(".txt")));
     assert!(!metadata
         .files
         .iter()
-        .any(|file_name| file_name == "notes.txt"));
+        .any(|file| file.name == "notes.txt"));
     assert!(!metadata
         .files
         .iter()
-        .any(|file_name| file_name == "gateway.backup"));
+        .any(|file| file.name == "gateway.backup"));
     assert!(!metadata
         .files
         .iter()
-        .any(|file_name| file_name == "gateway-snapshot"));
+        .any(|file| file.name == "gateway-snapshot"));
     assert!(metadata
         .files
         .iter()
-        .all(|file_name| file_name.ends_with(".log") || file_name.contains(".log.")));
+        .all(|file| file.name.ends_with(".log") || file.name.contains(".log.")));
+    assert!(metadata.files.iter().all(|file| !file.path.is_empty()));
+    assert!(metadata.files.iter().all(|file| file.path.starts_with("<app-local-data>/logs/")));
+    assert!(metadata.files.iter().all(|file| file.size > 0));
+    assert!(metadata.files.iter().all(|file| file.mtime > 0));
     assert!(metadata.files.len() <= 20);
 }
 

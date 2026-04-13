@@ -115,7 +115,20 @@ describe("App shell", () => {
     });
     getRuntimeLogMetadata.mockResolvedValue({
       log_dir: "<app-local-data>/logs",
-      files: ["gateway.log", "gateway.1.log"],
+      files: [
+        {
+          name: "gateway.log",
+          path: "<app-local-data>/logs/gateway.log",
+          size: 128,
+          mtime: 1713370000000,
+        },
+        {
+          name: "gateway.1.log",
+          path: "<app-local-data>/logs/gateway.1.log",
+          size: 96,
+          mtime: 1713369000000,
+        },
+      ],
     });
     exportRuntimeDiagnostics.mockResolvedValue(
       "<app-local-data>/logs/diagnostics/diagnostics-manifest.txt",

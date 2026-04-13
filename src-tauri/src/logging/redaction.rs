@@ -7,6 +7,14 @@ pub fn redact_sensitive_value(value: &str) -> String {
     redact_bearer_token(&value)
 }
 
+pub fn redact_sensitive_value_for_key(key: &str, value: &str) -> String {
+    if is_canonical_schema_identifier_key(key) {
+        return value.to_string();
+    }
+
+    redact_sensitive_value(value)
+}
+
 fn redact_sensitive_query_params(value: &str) -> String {
     let mut output = String::with_capacity(value.len());
     let bytes = value.as_bytes();
@@ -96,16 +104,62 @@ fn redact_named_secret_assignments(value: &str) -> String {
             value_start += 1;
         }
 
+        if value_start < bytes.len() && (bytes[value_start] == b'"' || bytes[value_start] == b'\'') {
+            let quote = bytes[value_start];
+            let mut value_end = value_start + 1;
+            while value_end < bytes.len() {
+                let byte = bytes[value_end];
+                if byte == b'\\' && value_end + 1 < bytes.len() {
+                    value_end += 2;
+                    continue;
+                }
+                if byte == quote {
+                    break;
+                }
+                value_end += 1;
+            }
+            let has_closing_quote = value_end < bytes.len() && bytes[value_end] == quote;
+            if has_closing_quote {
+                value_end += 1;
+            }
+
+            let has_value = if has_closing_quote {
+                value_end > value_start + 2
+            } else {
+                value_end > value_start + 1
+            };
+
+            if is_sensitive_parameter_key(key) && has_value {
+                output.push(quote as char);
+                output.push_str(REDACTED);
+                if has_closing_quote {
+                    output.push(quote as char);
+                }
+            } else {
+                output.push(quote as char);
+                let inner_start = value_start + 1;
+                let inner_end = if has_closing_quote {
+                    value_end.saturating_sub(1)
+                } else {
+                    value_end
+                };
+                if inner_end > inner_start {
+                    let inner_value = &value[inner_start..inner_end];
+                    output.push_str(&redact_sensitive_value(inner_value));
+                }
+                if has_closing_quote {
+                    output.push(quote as char);
+                }
+            }
+
+            cursor = value_end;
+            continue;
+        }
+
         let mut value_end = value_start;
         while value_end < bytes.len() {
             let byte = bytes[value_end];
-            if byte.is_ascii_whitespace()
-                || byte == b'&'
-                || byte == b','
-                || byte == b';'
-                || byte == b'"'
-                || byte == b'\''
-            {
+            if byte.is_ascii_whitespace() || byte == b'&' || byte == b',' || byte == b';' {
                 break;
             }
             value_end += 1;
@@ -121,6 +175,14 @@ fn redact_named_secret_assignments(value: &str) -> String {
     }
 
     output
+}
+
+fn is_canonical_schema_identifier_key(key: &str) -> bool {
+    let normalized = key.to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "request_id" | "attempt_id" | "endpoint_id"
+    )
 }
 
 fn is_sensitive_parameter_key(key: &str) -> bool {
