@@ -10,6 +10,7 @@ use codexlag_lib::commands::logs::{
 use codexlag_lib::db::repositories::Repositories;
 use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance, UsageRecordInput};
 use codexlag_lib::models::PricingProfile;
+use codexlag_lib::providers::invocation::InvocationFailureClass;
 use codexlag_lib::routing::policy::RoutingMode;
 use codexlag_lib::secret_store::SecretKey;
 use serde_json::Value;
@@ -258,4 +259,58 @@ async fn usage_ledger_tracks_actual_estimated_and_unknown_provenance() {
     assert_eq!(all_entries.entries.len(), 3);
     assert_eq!(all_entries.total_cost.provenance, UsageProvenance::Unknown);
     assert_eq!(all_entries.total_cost.amount, None);
+}
+
+#[tokio::test]
+async fn codex_request_preserves_request_and_attempt_id_lineage_across_observability_surfaces() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let gateway_state = runtime.loopback_gateway().state();
+    gateway_state
+        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Http5xx);
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("platform key secret");
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("gateway request"),
+        )
+        .await
+        .expect("gateway response");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let attempts = gateway_state.invocation_attempts_for_test();
+    assert_eq!(attempts.len(), 2);
+    let request_id = attempts[0].request_id.clone();
+    assert_eq!(attempts[1].request_id, request_id);
+    assert_eq!(
+        attempts[0].attempt_id,
+        format!("{}:0", attempts[0].request_id)
+    );
+    assert_eq!(
+        attempts[1].attempt_id,
+        format!("{}:1", attempts[1].request_id)
+    );
+    assert_eq!(attempts[0].endpoint_id, "official-default");
+    assert_eq!(attempts[1].endpoint_id, "relay-default");
+
+    let history = usage_request_history_from_runtime(&runtime, Some(1));
+    assert_eq!(history.len(), 1, "expected one persisted request record");
+    assert_eq!(history[0].request_id, request_id);
+
+    let detail = usage_request_detail_from_runtime(&runtime, request_id.as_str())
+        .expect("usage request detail");
+    assert_eq!(detail.request_id, request_id);
+    assert_eq!(detail.endpoint_id, "relay-default");
+    assert_eq!(detail.final_upstream_status, Some(200));
 }

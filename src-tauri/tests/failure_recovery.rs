@@ -146,3 +146,44 @@ fn cooldown_recovery_reenables_open_candidate() {
     let recovered = choose_endpoint_at("relay_only", &[endpoint], now_ms + 80);
     assert!(recovered.is_ok(), "candidate should recover after cooldown");
 }
+
+#[tokio::test]
+async fn codex_request_returns_typed_routing_error_when_all_candidates_are_unavailable() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let gateway_state = runtime.loopback_gateway().state();
+    for candidate in gateway_state.current_candidates() {
+        assert!(
+            gateway_state.set_endpoint_availability(candidate.id.as_str(), false),
+            "candidate availability should be mutable for {}",
+            candidate.id
+        );
+    }
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("platform key secret");
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("codex request"),
+        )
+        .await
+        .expect("codex response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("route body");
+    let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
+    assert_eq!(payload["category"], "RoutingError");
+    assert_eq!(payload["error"], "routing.no_available_endpoint");
+}

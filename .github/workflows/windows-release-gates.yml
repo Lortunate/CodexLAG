@@ -11,11 +11,15 @@ permissions:
 jobs:
   windows-gates:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
       - run: bun install --frozen-lockfile
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --test gateway_failover --test security_regression --test runtime_logging --test runtime_composition --test failure_recovery --test command_surface
-      - run: bun run test:smoke
+      - name: Validate v1 contract suites
+        run: cargo test --manifest-path src-tauri/Cargo.toml --test error_contract --test request_attempt_logging --test runtime_event_schema --test runtime_log_metadata --test tray_restart
+      - name: Run complete backend release matrix
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Run complete frontend release matrix
+        run: bun run test

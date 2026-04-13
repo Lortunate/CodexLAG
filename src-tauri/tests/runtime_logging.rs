@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use codexlag_lib::bootstrap::{bootstrap_runtime_for_test, runtime_database_path, runtime_log_dir};
+use codexlag_lib::commands::logs::runtime_log_metadata_from_runtime;
 use codexlag_lib::logging::runtime::{
     build_attempt_id, format_event_fields, format_runtime_event_fields, redact_secret_value,
 };
@@ -28,6 +29,28 @@ async fn bootstrapped_runtime_exposes_runtime_log_dir_metadata() {
 
     assert!(!log_dir.as_os_str().is_empty());
     assert!(log_dir.ends_with("logs"));
+}
+
+#[tokio::test]
+async fn runtime_log_metadata_includes_name_path_size_and_mtime_fields() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let log_dir = runtime.runtime_log().log_dir.clone();
+    std::fs::create_dir_all(&log_dir).expect("create runtime log directory");
+    std::fs::write(log_dir.join("runtime-contract.log"), "entry").expect("write runtime log file");
+
+    let metadata = runtime_log_metadata_from_runtime(&runtime).expect("runtime log metadata");
+    let file = metadata
+        .files
+        .iter()
+        .find(|candidate| candidate.name == "runtime-contract.log")
+        .expect("runtime-contract.log metadata");
+
+    assert_eq!(metadata.log_dir, "<app-local-data>/logs");
+    assert_eq!(file.path, "<app-local-data>/logs/runtime-contract.log");
+    assert!(file.size > 0);
+    assert!(file.mtime > 0);
 }
 
 #[test]

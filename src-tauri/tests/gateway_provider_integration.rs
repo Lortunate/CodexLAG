@@ -223,6 +223,90 @@ async fn config_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
 }
 
 #[tokio::test]
+async fn quota_failure_without_fallback_emits_typed_quota_error_contract() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .set_current_mode(RoutingMode::AccountOnly)
+        .expect("switch mode");
+    runtime
+        .loopback_gateway()
+        .state()
+        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Http429);
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("default key secret");
+
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("route body");
+    let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
+    assert_eq!(payload["category"], "QuotaError");
+    assert_eq!(payload["error"], "quota.provider_rate_limited");
+    assert_eq!(payload["attempt_count"], 1);
+}
+
+#[tokio::test]
+async fn timeout_failure_without_fallback_emits_typed_upstream_error_contract() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .set_current_mode(RoutingMode::AccountOnly)
+        .expect("switch mode");
+    runtime
+        .loopback_gateway()
+        .state()
+        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Timeout);
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("default key secret");
+
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("route body");
+    let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
+    assert_eq!(payload["category"], "UpstreamError");
+    assert_eq!(payload["error"], "upstream.provider_timeout");
+    assert_eq!(payload["attempt_count"], 1);
+}
+
+#[tokio::test]
 async fn models_route_returns_allowed_model_list_for_current_policy_mode() {
     let account_only = models_payload_for_mode(RoutingMode::AccountOnly).await;
     assert_eq!(account_only["allowed_mode"], "account_only");
