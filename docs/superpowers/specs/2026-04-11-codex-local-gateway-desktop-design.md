@@ -672,7 +672,7 @@ V1 测试重点放在后端稳定性，而不是完整 UI 自动化。
 2. SQLite 与凭据存储封装
 3. 平台 key 和策略模型
 4. 本地 loopback gateway
-5. 路由引擎和日志链路
+5. 路由引擎、请求日志链路与 Tauri 运行时日志
 6. 官方账号适配器
 7. NewAPI 中转适配器
 8. 概览页和列表管理页
@@ -694,3 +694,113 @@ V1 测试重点放在后端稳定性，而不是完整 UI 自动化。
 - 敏感凭据不落库明文
 - 托盘可切换 `default key` 三种模式并显示摘要状态
 - 请求日志、token 统计和费用估算可按 key 与节点维度查看
+
+## 17. Tauri 运行时日志系统（文件日志 + 终端日志）
+
+`RequestLog` / `RequestAttemptLog` 用于业务审计；本节定义的运行时日志用于诊断系统行为，两者不可互相替代。
+
+### 17.1 目标与边界
+
+V1 必须同时满足：
+
+- 有终端日志：开发期和本地调试可直接在终端观察行为
+- 有文件日志：线上可追溯启动、选路、调用失败和异常栈
+- 同一事件可关联到 `request_id` / `attempt_id`，便于跨表排障
+- 日志内容默认脱敏，不泄露 token、api key、session 等敏感值
+
+### 17.2 落地方案（Tauri v2）
+
+在 `src-tauri/src/lib.rs` 中接入 `tauri-plugin-log`，并同时启用 `Stdout` 与 `LogDir` target。
+
+建议基线配置（示例）：
+
+```rust
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+
+// Initialize runtime log system: terminal + local file.
+let log_plugin = tauri_plugin_log::Builder::new()
+    .target(Target::new(TargetKind::Stdout))
+    .target(Target::new(TargetKind::LogDir {
+        file_name: Some("gateway".to_string()),
+    }))
+    .max_file_size(10_000_000)
+    .rotation_strategy(RotationStrategy::KeepAll)
+    .timezone_strategy(TimezoneStrategy::UseLocal)
+    .build();
+```
+
+能力授权必须包含 `log:default`（`src-tauri/capabilities/default.json`）。
+
+### 17.3 文件日志策略
+
+- Windows 默认路径采用 Tauri `LogDir` 约定：`%LOCALAPPDATA%/{bundleIdentifier}/logs`
+- 文件前缀建议为 `gateway`，用于和未来 UI/diagnostics 日志区分
+- 默认级别建议：`Info`；开发模式可放宽到 `Debug`
+- 单文件上限建议 10 MB，启用轮转保留历史文件
+
+### 17.4 终端日志策略
+
+- 终端输出与文件输出共享同一条事件，禁止两套语义不一致的消息
+- 终端日志用于实时调试，优先输出关键状态变更和失败原因
+- 终端日志必须保持英文，便于跨团队和跨地区排障
+
+建议日志消息模板（英文）：
+
+```text
+[gateway.request.accepted] request_id={request_id} model={model} platform_key_id={platform_key_id}
+[routing.endpoint.selected] request_id={request_id} attempt_id={attempt_id} endpoint_id={endpoint_id} reason={reason}
+[provider.call.failed] request_id={request_id} attempt_id={attempt_id} endpoint_id={endpoint_id} error_code={error_code} retryable={retryable}
+```
+
+### 17.5 字段规范与脱敏规则
+
+运行时日志建议统一包含以下公共字段（按场景裁剪）：
+
+- `timestamp`
+- `level`
+- `component`（如 `gateway`, `routing`, `provider`, `control_plane`, `tauri_command`）
+- `event`
+- `request_id`
+- `attempt_id`
+- `platform_key_id`
+- `endpoint_id`
+- `latency_ms`
+- `error_code`
+
+脱敏要求：
+
+- 严禁记录 `Authorization` 原值
+- 严禁记录官方 session 原值、第三方 API key 原值、平台 key secret 原值
+- URL query 中疑似凭据字段必须先清洗再写日志
+
+### 17.6 注释与日志语言约束
+
+- 新增代码注释必须使用英文
+- 运行时日志 message 必须使用英文
+- 错误码保持稳定机器可读，错误 message 可读且可 grep
+
+## 18. Superpowers 下一步计划（增量）
+
+在现有 `docs/superpowers/plans/2026-04-11-codex-local-gateway-desktop-plan.md` 基础上，建议追加以下增量任务并优先执行：
+
+1. **P0: Runtime Log Foundation**
+- 引入 `tauri-plugin-log` 与 capability 权限
+- 在 `lib.rs` 完成 `Stdout + LogDir` 双 target 初始化
+- 定义统一日志字段 helper（request/attempt/component/event）
+- 为敏感字段清洗提供公共函数
+
+2. **P1: Gateway / Routing / Provider 日志接线**
+- 在网关入口写 `gateway.request.accepted`
+- 在选路成功和降级触发点写 `routing.endpoint.selected` / `routing.fallback.triggered`
+- 在上游调用失败写 `provider.call.failed`，并补全 `error_code`、`retryable`
+- 保证运行时日志与 `RequestLog`、`RequestAttemptLog` 可通过 `request_id` / `attempt_id` 关联
+
+3. **P2: 管理面可观测性闭环**
+- 新增 Tauri command：返回日志目录、最近日志文件元信息
+- UI 增加“导出诊断日志”入口（仅导出日志文件，不导出密钥）
+- 集成测试覆盖：日志文件落盘、终端输出、脱敏正确性
+
+4. **P3: 发布前验收**
+- 验证 Windows 安装包与开发模式下日志路径和轮转行为一致
+- 验证异常场景（429/5xx/timeout）日志可定位根因
+- 验证所有新增注释和日志 message 均为英文
