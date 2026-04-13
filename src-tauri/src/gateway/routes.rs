@@ -11,7 +11,7 @@ use std::hash::{Hash, Hasher};
 use crate::error::{CodexLagError, ConfigErrorKind, ErrorCategory, RoutingErrorKind};
 use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::logging::runtime::{build_attempt_id, format_runtime_event_fields};
-use crate::logging::usage::UsageRecordInput;
+use crate::logging::usage::{UsageProvenance, UsageRecordInput};
 use crate::logging::{log_route_downgrade, log_route_rejection};
 use crate::providers::invocation::{
     models_for_endpoint, InvocationFailure, InvocationFailureClass,
@@ -170,14 +170,64 @@ async fn codex_request(
     }
 
     let endpoint_id = selected.id.clone();
+    let model = models_for_endpoint(&selected)
+        .first()
+        .map(|model| (*model).to_string());
+    let mut estimated_cost = String::new();
+    let mut cost_provenance = UsageProvenance::Unknown;
+    let mut cost_is_estimated = false;
+    let mut pricing_profile_id = None;
+
+    if let Some(model_name) = model.as_deref() {
+        let at_ms = i64::try_from(now_ms).unwrap_or(i64::MAX);
+        match gateway_state
+            .app_state()
+            .estimate_usage_cost_for_model_at(model_name, at_ms, 0, 0, 0, 0, 0)
+        {
+            Ok(Some(estimate)) => {
+                estimated_cost = estimate.amount;
+                cost_provenance = estimate.provenance;
+                cost_is_estimated = estimate.estimated;
+                pricing_profile_id = Some(estimate.pricing_profile_id);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                let cause = error.to_string();
+                log::warn!(
+                    "{}",
+                    format_runtime_event_fields(
+                        "gateway",
+                        "gateway.usage.cost_profile_lookup_failed",
+                        request_id.as_str(),
+                        Some(attempt_id.as_str()),
+                        Some(endpoint_id.as_str()),
+                        None,
+                        None,
+                        &[("cause", cause.as_str())]
+                    )
+                );
+            }
+        }
+    }
+
     gateway_state.record_usage_request(UsageRecordInput {
         request_id: request_id.clone(),
         endpoint_id: endpoint_id.clone(),
+        model,
         input_tokens: 0,
         output_tokens: 0,
         cache_read_tokens: 0,
         cache_write_tokens: 0,
-        estimated_cost: String::new(),
+        reasoning_tokens: 0,
+        estimated_cost,
+        cost_provenance,
+        cost_is_estimated,
+        pricing_profile_id,
+        declared_capability_requirements: None,
+        effective_capability_result: None,
+        final_upstream_status: Some(200),
+        final_upstream_error_code: None,
+        final_upstream_error_reason: None,
     });
 
     Ok(Json(CodexRequestSummary {

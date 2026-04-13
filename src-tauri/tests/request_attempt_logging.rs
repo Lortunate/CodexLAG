@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use codexlag_lib::db::repositories::Repositories;
-use codexlag_lib::models::{PricingProfile, RequestAttemptLog, RequestLog};
+use codexlag_lib::models::{PricingProfile, RequestAttemptLog, RequestLog, UsageProvenance};
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::{params, Connection};
 
@@ -304,6 +304,70 @@ fn active_pricing_profile_lookup_is_model_and_time_scoped() {
         .expect("count active pricing rows");
     assert_eq!(pricing_rows, 2);
     assert_eq!(active_rows, 2);
+
+    let _ = std::fs::remove_file(&database_path);
+}
+
+#[test]
+fn pricing_profile_cost_estimation_is_scoped_by_model_and_time_and_marks_estimated() {
+    let database_path = temp_database_path("codexlag-pricing-estimate");
+    let repositories = Repositories::open(&database_path).expect("open repositories");
+
+    repositories
+        .upsert_pricing_profile(&PricingProfile {
+            id: "price-old".into(),
+            model: "gpt-5".into(),
+            input_price_per_1k_micros: 900,
+            output_price_per_1k_micros: 2_500,
+            cache_read_price_per_1k_micros: 100,
+            currency: "USD".into(),
+            effective_from_ms: 1_700_000_000_000,
+            effective_to_ms: Some(1_710_000_000_000),
+            active: true,
+        })
+        .expect("insert old pricing profile");
+
+    repositories
+        .upsert_pricing_profile(&PricingProfile {
+            id: "price-active".into(),
+            model: "gpt-5".into(),
+            input_price_per_1k_micros: 1_000,
+            output_price_per_1k_micros: 3_000,
+            cache_read_price_per_1k_micros: 120,
+            currency: "USD".into(),
+            effective_from_ms: 1_710_000_000_000,
+            effective_to_ms: None,
+            active: true,
+        })
+        .expect("insert active pricing profile");
+
+    let estimate = repositories
+        .estimate_usage_cost_for_model_at("gpt-5", 1_715_000_000_000, 1_000, 1_000, 1_000, 0, 1_000)
+        .expect("estimate usage cost for active profile")
+        .expect("active profile estimate");
+
+    assert_eq!(estimate.pricing_profile_id, "price-active");
+    assert_eq!(estimate.provenance, UsageProvenance::Estimated);
+    assert!(estimate.estimated);
+    assert_eq!(estimate.amount, "0.0071");
+
+    let before_effective = repositories
+        .estimate_usage_cost_for_model_at("gpt-5", 1_600_000_000_000, 1_000, 1_000, 1_000, 0, 1_000)
+        .expect("estimate before pricing effective window");
+    assert!(before_effective.is_none());
+
+    let other_model = repositories
+        .estimate_usage_cost_for_model_at(
+            "gpt-4.1-mini",
+            1_715_000_000_000,
+            1_000,
+            1_000,
+            1_000,
+            0,
+            1_000,
+        )
+        .expect("estimate for different model");
+    assert!(other_model.is_none());
 
     let _ = std::fs::remove_file(&database_path);
 }

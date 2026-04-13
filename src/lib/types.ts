@@ -107,22 +107,31 @@ export interface RelayCapabilityDetail {
   balance_capability: RelayBalanceCapability;
 }
 
-export type UsageProvenance = "estimated" | "unknown";
+export type UsageProvenance = "actual" | "estimated" | "unknown";
 
 export interface UsageCost {
   amount: string | null;
   provenance: UsageProvenance;
+  is_estimated: boolean;
 }
 
 export interface UsageRequestDetail {
   request_id: string;
   endpoint_id: string;
+  model: string | null;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
+  reasoning_tokens: number;
   total_tokens: number;
   cost: UsageCost;
+  pricing_profile_id: string | null;
+  declared_capability_requirements: string | null;
+  effective_capability_result: string | null;
+  final_upstream_status: number | null;
+  final_upstream_error_code: string | null;
+  final_upstream_error_reason: string | null;
 }
 
 export interface UsageLedgerQuery {

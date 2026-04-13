@@ -7,7 +7,7 @@ use crate::error::{CodexLagError, ConfigErrorKind, Result};
 use crate::logging::redaction::redact_sensitive_value;
 use crate::logging::usage::{
     query_usage_ledger as query_usage_ledger_model, request_detail, request_history, UsageLedger,
-    UsageLedgerQuery, UsageRequestDetail,
+    UsageLedgerQuery, UsageRecord, UsageRequestDetail,
 };
 use crate::state::{RuntimeLogFileMetadata as RuntimeLogFileMetadataState, RuntimeState};
 
@@ -295,7 +295,7 @@ pub fn usage_request_detail_from_runtime(
     runtime: &RuntimeState,
     request_id: &str,
 ) -> Option<UsageRequestDetail> {
-    let records = runtime.loopback_gateway().state().usage_records();
+    let records = usage_records(runtime);
     request_detail(&records, request_id)
 }
 
@@ -303,7 +303,7 @@ pub fn usage_request_history_from_runtime(
     runtime: &RuntimeState,
     limit: Option<usize>,
 ) -> Vec<UsageRequestDetail> {
-    let records = runtime.loopback_gateway().state().usage_records();
+    let records = usage_records(runtime);
     request_history(&records, limit)
 }
 
@@ -311,6 +311,10 @@ pub fn usage_ledger_from_runtime(
     runtime: &RuntimeState,
     query: Option<UsageLedgerQuery>,
 ) -> UsageLedger {
-    let records = runtime.loopback_gateway().state().usage_records();
+    let records = usage_records(runtime);
     query_usage_ledger_model(&records, query.unwrap_or_default())
+}
+
+fn usage_records(runtime: &RuntimeState) -> Vec<UsageRecord> {
+    runtime.loopback_gateway().state().usage_records()
 }

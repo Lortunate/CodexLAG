@@ -4,7 +4,7 @@ use std::{
     time::SystemTime,
 };
 
-use crate::db::repositories::Repositories;
+use crate::db::repositories::{Repositories, UsageCostEstimate};
 use crate::gateway::server::LoopbackGateway;
 use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
 use crate::models::{ImportedOfficialAccount, ManagedRelay, PlatformKey, RoutingPolicy};
@@ -134,6 +134,27 @@ impl AppState {
     pub fn set_default_key_allowed_mode(&mut self, mode: RoutingMode) -> crate::error::Result<()> {
         self.repositories
             .update_platform_key_allowed_mode("default", mode.as_str())
+    }
+
+    pub fn estimate_usage_cost_for_model_at(
+        &self,
+        model: &str,
+        at_ms: i64,
+        input_tokens: u32,
+        output_tokens: u32,
+        cache_read_tokens: u32,
+        cache_write_tokens: u32,
+        reasoning_tokens: u32,
+    ) -> crate::error::Result<Option<UsageCostEstimate>> {
+        self.repositories.estimate_usage_cost_for_model_at(
+            model,
+            at_ms,
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+            reasoning_tokens,
+        )
     }
 }
 

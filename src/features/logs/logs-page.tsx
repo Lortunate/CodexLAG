@@ -6,6 +6,7 @@ import {
   queryUsageLedger,
 } from "../../lib/tauri";
 import type { LogSummary, UsageLedger, UsageRequestDetail } from "../../lib/types";
+import { RequestDetailCapabilityPanel } from "./request-detail-capability-panel";
 
 export function LogsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -76,6 +77,7 @@ export function LogsPage() {
         <h3>Usage provenance</h3>
         <p>Total ledger tokens: {ledger?.total_tokens ?? 0}</p>
         <p>Total cost provenance: {ledger?.total_cost.provenance ?? "unknown"}</p>
+        <p>Total cost estimated marker: {ledger?.total_cost.is_estimated ? "yes" : "no"}</p>
       </section>
       <section className="panel">
         <h3>Request history</h3>
@@ -85,8 +87,12 @@ export function LogsPage() {
               <div>
                 <strong>{entry.request_id}</strong>
                 <p>Endpoint: {entry.endpoint_id}</p>
+                <p>Model: {entry.model ?? "n/a"}</p>
                 <p>Tokens: {entry.total_tokens}</p>
-                <p>{entry.cost.provenance}</p>
+                <p>
+                  {entry.cost.provenance}
+                  {entry.cost.is_estimated ? " (estimated)" : ""}
+                </p>
               </div>
               <button
                 type="button"
@@ -104,9 +110,18 @@ export function LogsPage() {
         <section className="panel">
           <h3>Request detail: {requestDetail.request_id}</h3>
           <p>Endpoint: {requestDetail.endpoint_id}</p>
+          <p>Model: {requestDetail.model ?? "n/a"}</p>
+          <p>Pricing profile: {requestDetail.pricing_profile_id ?? "n/a"}</p>
+          <p>
+            Usage: in={requestDetail.input_tokens}, out={requestDetail.output_tokens}, cache-read=
+            {requestDetail.cache_read_tokens}, cache-write={requestDetail.cache_write_tokens}, reasoning=
+            {requestDetail.reasoning_tokens}
+          </p>
           <p>Total tokens: {requestDetail.total_tokens}</p>
           <p>Cost provenance: {requestDetail.cost.provenance}</p>
+          <p>Cost estimated marker: {requestDetail.cost.is_estimated ? "yes" : "no"}</p>
           <p>Cost amount: {requestDetail.cost.amount ?? "n/a"}</p>
+          <RequestDetailCapabilityPanel detail={requestDetail} />
         </section>
       ) : null}
     </section>

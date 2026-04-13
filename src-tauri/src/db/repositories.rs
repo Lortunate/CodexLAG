@@ -7,10 +7,20 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::db::migrations::ensure_schema_up_to_date;
 use crate::error::{CodexLagError, Result};
+use crate::logging::usage::UsageProvenance;
 use crate::models::{
     CredentialKind, ImportedOfficialAccount, ManagedRelay, PlatformKey, PricingProfile,
     RequestAttemptLog, RequestLog, RoutingPolicy,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageCostEstimate {
+    pub amount: String,
+    pub currency: String,
+    pub provenance: UsageProvenance,
+    pub estimated: bool,
+    pub pricing_profile_id: String,
+}
 
 pub struct Repositories {
     database_path: PathBuf,
@@ -625,6 +635,39 @@ impl Repositories {
         }
     }
 
+    pub fn estimate_usage_cost_for_model_at(
+        &self,
+        model: &str,
+        at_ms: i64,
+        input_tokens: u32,
+        output_tokens: u32,
+        cache_read_tokens: u32,
+        cache_write_tokens: u32,
+        reasoning_tokens: u32,
+    ) -> Result<Option<UsageCostEstimate>> {
+        let Some(profile) = self.active_pricing_profile_by_model(model, at_ms)? else {
+            return Ok(None);
+        };
+
+        let total_micros = estimate_total_cost_micros(
+            &profile,
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+            reasoning_tokens,
+        );
+        let amount = format!("{:.4}", (total_micros as f64) / 1_000_000.0_f64);
+
+        Ok(Some(UsageCostEstimate {
+            amount,
+            currency: profile.currency.clone(),
+            provenance: UsageProvenance::Estimated,
+            estimated: true,
+            pricing_profile_id: profile.id,
+        }))
+    }
+
     fn open_connection(&self) -> Result<Connection> {
         Self::open_sqlite(&self.database_path)
     }
@@ -943,6 +986,25 @@ impl Repositories {
             })?;
         Ok(())
     }
+}
+
+fn estimate_total_cost_micros(
+    profile: &PricingProfile,
+    input_tokens: u32,
+    output_tokens: u32,
+    cache_read_tokens: u32,
+    _cache_write_tokens: u32,
+    reasoning_tokens: u32,
+) -> i128 {
+    // Reasoning tokens are charged using output-token pricing until a dedicated
+    // reasoning price dimension exists.
+    let billable_nano_micros = i128::from(input_tokens)
+        * i128::from(profile.input_price_per_1k_micros)
+        + i128::from(output_tokens) * i128::from(profile.output_price_per_1k_micros)
+        + i128::from(cache_read_tokens) * i128::from(profile.cache_read_price_per_1k_micros)
+        + i128::from(reasoning_tokens) * i128::from(profile.output_price_per_1k_micros);
+
+    billable_nano_micros / 1_000
 }
 
 fn encode_json<T: Serialize>(value: &T, field_name: &str) -> Result<String> {

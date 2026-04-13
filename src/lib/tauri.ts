@@ -323,9 +323,11 @@ export function getUsageRequestDetail(requestId: string) {
 }
 
 export function listUsageRequestHistory(limit?: number) {
-  return invokeWithContract<UsageRequestDetail[]>("list_usage_request_history", { limit });
+  const args = limit === undefined ? undefined : { limit };
+  return invokeWithContract<UsageRequestDetail[]>("list_usage_request_history", args);
 }
 
 export function queryUsageLedger(query?: UsageLedgerQuery) {
-  return invokeWithContract<UsageLedger>("query_usage_ledger", { query });
+  const args = query === undefined ? undefined : { query };
+  return invokeWithContract<UsageLedger>("query_usage_ledger", args);
 }
