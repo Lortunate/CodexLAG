@@ -104,7 +104,8 @@ fn redact_named_secret_assignments(value: &str) -> String {
             value_start += 1;
         }
 
-        if value_start < bytes.len() && (bytes[value_start] == b'"' || bytes[value_start] == b'\'') {
+        if value_start < bytes.len() && (bytes[value_start] == b'"' || bytes[value_start] == b'\'')
+        {
             let quote = bytes[value_start];
             let mut value_end = value_start + 1;
             while value_end < bytes.len() {

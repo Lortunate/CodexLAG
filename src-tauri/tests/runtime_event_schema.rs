@@ -118,12 +118,10 @@ fn runtime_redaction_masks_double_quoted_assignment_values() {
 
 #[test]
 fn runtime_redaction_masks_single_quoted_assignment_values() {
-    let redacted = redact_sensitive_value("api_key='demo-key' session_token='session-secret-token'");
+    let redacted =
+        redact_sensitive_value("api_key='demo-key' session_token='session-secret-token'");
 
-    assert_eq!(
-        redacted,
-        "api_key='[redacted]' session_token='[redacted]'"
-    );
+    assert_eq!(redacted, "api_key='[redacted]' session_token='[redacted]'");
     assert!(!redacted.contains("demo-key"));
     assert!(!redacted.contains("session-secret-token"));
 }

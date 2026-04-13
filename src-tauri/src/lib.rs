@@ -10,6 +10,7 @@ pub mod routing;
 pub mod secret_store;
 pub mod state;
 pub mod tray;
+pub mod tray_summary;
 
 use std::error::Error;
 

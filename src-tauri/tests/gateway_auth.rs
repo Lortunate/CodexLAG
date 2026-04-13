@@ -3,10 +3,8 @@ use axum::{
     http::{Request, StatusCode},
 };
 use codexlag_lib::{
-    bootstrap::bootstrap_state_for_test,
-    gateway::build_router_for_test,
-    routing::policy::RoutingMode,
-    secret_store::SecretKey,
+    bootstrap::bootstrap_state_for_test, gateway::build_router_for_test,
+    routing::policy::RoutingMode, secret_store::SecretKey,
 };
 use serde_json::Value;
 use tower::ServiceExt;

@@ -9,6 +9,8 @@ use crate::{
     state::AppState,
 };
 
+pub const LOOPBACK_GATEWAY_LISTEN_ADDRESS: &str = "http://127.0.0.1:8787";
+
 #[derive(Clone)]
 pub struct LoopbackGateway {
     state: GatewayState,

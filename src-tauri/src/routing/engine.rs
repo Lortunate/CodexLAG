@@ -1,8 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::routing::policy::RoutingMode;
 pub use crate::models::{EndpointFailure, EndpointHealthState, FailureRules};
 use crate::models::{EndpointHealth, FailureClass};
+use crate::routing::policy::RoutingMode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PoolKind {
@@ -47,7 +47,10 @@ impl CandidateEndpoint {
     }
 }
 
-pub fn choose_endpoint(mode: &str, endpoints: &[CandidateEndpoint]) -> Result<CandidateEndpoint, RoutingError> {
+pub fn choose_endpoint(
+    mode: &str,
+    endpoints: &[CandidateEndpoint],
+) -> Result<CandidateEndpoint, RoutingError> {
     choose_endpoint_at(mode, endpoints, wall_clock_now_ms())
 }
 
@@ -120,7 +123,9 @@ pub fn record_failure_for_endpoint(
     now_ms: u64,
     rules: &FailureRules,
 ) -> Option<EndpointHealthState> {
-    let endpoint = endpoints.iter_mut().find(|candidate| candidate.id == endpoint_id)?;
+    let endpoint = endpoints
+        .iter_mut()
+        .find(|candidate| candidate.id == endpoint_id)?;
     Some(record_failure(endpoint, failure, now_ms, rules))
 }
 
@@ -172,7 +177,9 @@ fn choose_from_pool(
 
     let mut candidates: Vec<_> = candidates
         .into_iter()
-        .filter(|item| item.available && item.pool == pool && item.health.state != EndpointHealthState::Open)
+        .filter(|item| {
+            item.available && item.pool == pool && item.health.state != EndpointHealthState::Open
+        })
         .collect();
 
     candidates.sort_by(|left, right| {
@@ -212,7 +219,10 @@ fn health_rank(state: EndpointHealthState) -> i32 {
     }
 }
 
-pub fn endpoint_rejection_reason(endpoint: &CandidateEndpoint, now_ms: u64) -> Option<&'static str> {
+pub fn endpoint_rejection_reason(
+    endpoint: &CandidateEndpoint,
+    now_ms: u64,
+) -> Option<&'static str> {
     let mut endpoint = endpoint.clone();
     refresh_endpoint_health(&mut endpoint, now_ms);
 
@@ -227,7 +237,10 @@ pub fn endpoint_rejection_reason(endpoint: &CandidateEndpoint, now_ms: u64) -> O
     None
 }
 
-pub fn endpoint_downgrade_reason(endpoint: &CandidateEndpoint, now_ms: u64) -> Option<&'static str> {
+pub fn endpoint_downgrade_reason(
+    endpoint: &CandidateEndpoint,
+    now_ms: u64,
+) -> Option<&'static str> {
     let mut endpoint = endpoint.clone();
     refresh_endpoint_health(&mut endpoint, now_ms);
 

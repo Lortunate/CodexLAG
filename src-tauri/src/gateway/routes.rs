@@ -1,8 +1,8 @@
 use axum::{
-    Json, Router,
     extract::State,
     http::StatusCode,
     routing::{get, post},
+    Json, Router,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -15,12 +15,12 @@ use crate::logging::runtime::{build_attempt_id, format_runtime_event_fields};
 use crate::logging::usage::{UsageProvenance, UsageRecordInput};
 use crate::logging::{log_route_downgrade, log_route_rejection};
 use crate::providers::invocation::{
-    InvocationFailure, InvocationFailureClass, models_for_endpoint,
+    models_for_endpoint, InvocationFailure, InvocationFailureClass,
 };
 use crate::providers::official::map_official_invocation_failure;
 use crate::providers::relay::map_relay_invocation_failure;
 use crate::routing::engine::{
-    PoolKind, RoutingError, endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms,
+    endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms, PoolKind, RoutingError,
 };
 use crate::routing::policy::RoutingMode;
 

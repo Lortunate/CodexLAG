@@ -93,8 +93,8 @@ pub fn set_default_key_mode(
     emit_default_key_summary_changed(&app, &summary).map_err(|error| {
         CodexLagError::new("Failed to emit default key summary update event.")
             .with_internal_context(format!(
-                "command=set_default_key_mode;event={DEFAULT_KEY_SUMMARY_CHANGED_EVENT};cause={error}"
-            ))
+            "command=set_default_key_mode;event={DEFAULT_KEY_SUMMARY_CHANGED_EVENT};cause={error}"
+        ))
     })?;
     Ok(summary)
 }
@@ -127,13 +127,12 @@ pub fn create_platform_key_from_runtime(
         )));
     }
     if app_state.get_policy_by_id(policy_id.as_str()).is_none() {
-        return Err(CodexLagError::config(
-            ConfigErrorKind::InvalidPayload,
-            "Unknown policy id.",
-        )
-        .with_internal_context(format!(
-            "command=create_platform_key;field=policy_id;value={policy_id}"
-        )));
+        return Err(
+            CodexLagError::config(ConfigErrorKind::InvalidPayload, "Unknown policy id.")
+                .with_internal_context(format!(
+                    "command=create_platform_key;field=policy_id;value={policy_id}"
+                )),
+        );
     }
 
     app_state

@@ -109,6 +109,14 @@ pub fn refresh_account_balance_from_runtime(
         refreshed_at: current_unix_timestamp_string(),
         balance,
     })
+    .inspect(|snapshot| {
+        runtime.record_balance_refresh_summary(format!(
+            "account:{} @ {} ({})",
+            snapshot.account_id,
+            snapshot.refreshed_at,
+            account_balance_status(snapshot)
+        ));
+    })
 }
 
 #[tauri::command]
@@ -317,6 +325,13 @@ fn parse_auth_mode(value: Option<&str>) -> Option<OfficialAuthMode> {
         return None;
     }
     Some(OfficialAuthMode::from(normalized.to_string()))
+}
+
+fn account_balance_status(snapshot: &AccountBalanceSnapshot) -> &'static str {
+    match snapshot.balance {
+        AccountBalanceAvailability::Queryable { .. } => "queryable",
+        AccountBalanceAvailability::NonQueryable { .. } => "non_queryable",
+    }
 }
 
 fn current_unix_timestamp_string() -> String {

@@ -7,8 +7,8 @@ use codexlag_lib::{
     gateway::build_router_for_test,
     routing::{
         engine::{
-            CandidateEndpoint, EndpointFailure, EndpointHealthState, FailureRules,
-            choose_endpoint_at, record_failure,
+            choose_endpoint_at, record_failure, CandidateEndpoint, EndpointFailure,
+            EndpointHealthState, FailureRules,
         },
         policy::RoutingMode,
     },
@@ -33,15 +33,30 @@ fn timeout_and_5xx_classification_follow_configured_thresholds() {
         EndpointHealthState::Degraded
     );
     assert_eq!(
-        record_failure(&mut endpoint, EndpointFailure::HttpStatus(502), now_ms + 1, &rules),
+        record_failure(
+            &mut endpoint,
+            EndpointFailure::HttpStatus(502),
+            now_ms + 1,
+            &rules
+        ),
         EndpointHealthState::Degraded
     );
     assert_eq!(
-        record_failure(&mut endpoint, EndpointFailure::HttpStatus(503), now_ms + 2, &rules),
+        record_failure(
+            &mut endpoint,
+            EndpointFailure::HttpStatus(503),
+            now_ms + 2,
+            &rules
+        ),
         EndpointHealthState::Degraded
     );
     assert_eq!(
-        record_failure(&mut endpoint, EndpointFailure::HttpStatus(504), now_ms + 3, &rules),
+        record_failure(
+            &mut endpoint,
+            EndpointFailure::HttpStatus(504),
+            now_ms + 3,
+            &rules
+        ),
         EndpointHealthState::Open
     );
 }
@@ -98,7 +113,10 @@ async fn production_requests_ignore_test_route_status_header_by_default() {
                 .method("POST")
                 .uri("/codex/request")
                 .header("authorization", format!("bearer {secret}"))
-                .header("x-codexlag-endpoint-status", "official-default:503,relay-default:503")
+                .header(
+                    "x-codexlag-endpoint-status",
+                    "official-default:503,relay-default:503",
+                )
                 .body(Body::empty())
                 .expect("codex request"),
         )

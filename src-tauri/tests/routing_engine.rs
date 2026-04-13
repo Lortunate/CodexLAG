@@ -1,6 +1,6 @@
 use codexlag_lib::routing::engine::{
-    CandidateEndpoint, EndpointFailure, EndpointHealthState, FailureRules, RoutingError,
-    choose_endpoint, choose_endpoint_at, mark_success, record_failure,
+    choose_endpoint, choose_endpoint_at, mark_success, record_failure, CandidateEndpoint,
+    EndpointFailure, EndpointHealthState, FailureRules, RoutingError,
 };
 
 #[test]
@@ -111,7 +111,10 @@ fn repeated_5xx_opens_circuit_until_cooldown_elapsed() {
     ));
 
     let after_recovery = choose_endpoint_at("relay_only", &[endpoint], now_ms + 600);
-    assert!(after_recovery.is_ok(), "endpoint should recover after cooldown");
+    assert!(
+        after_recovery.is_ok(),
+        "endpoint should recover after cooldown"
+    );
 }
 
 #[test]
@@ -155,7 +158,12 @@ fn timeout_and_server_error_streaks_reset_each_other() {
         EndpointHealthState::Degraded
     );
     assert_eq!(
-        record_failure(&mut endpoint, EndpointFailure::HttpStatus(500), now_ms + 1, &rules),
+        record_failure(
+            &mut endpoint,
+            EndpointFailure::HttpStatus(500),
+            now_ms + 1,
+            &rules
+        ),
         EndpointHealthState::Degraded
     );
     assert_eq!(
@@ -204,7 +212,12 @@ fn ignored_failures_do_not_reset_consecutive_failure_streaks() {
         EndpointHealthState::Degraded
     );
     assert_eq!(
-        record_failure(&mut endpoint, EndpointFailure::HttpStatus(400), now_ms + 1, &rules),
+        record_failure(
+            &mut endpoint,
+            EndpointFailure::HttpStatus(400),
+            now_ms + 1,
+            &rules
+        ),
         EndpointHealthState::Degraded
     );
     assert_eq!(
