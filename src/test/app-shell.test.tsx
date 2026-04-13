@@ -188,21 +188,7 @@ describe("App shell", () => {
       refresh_capability: true,
       balance_capability: "non_queryable",
     }));
-    listPolicies.mockResolvedValue([
-      {
-        policy_id: "default-policy",
-        name: "default",
-        status: "active",
-        selection_order: ["official-primary", "relay-newapi"],
-        cross_pool_fallback: false,
-        retry_budget: 2,
-        timeout_open_after: 3,
-        server_error_open_after: 3,
-        cooldown_ms: 1000,
-        half_open_after_ms: 1000,
-        success_close_after: 2,
-      },
-    ]);
+    listPolicies.mockResolvedValue([{ policy_id: "default-policy", name: "default", status: "active" }]);
     listRelays.mockResolvedValue([
       {
         relay_id: "relay-newapi",
@@ -590,6 +576,17 @@ describe("App shell", () => {
     fireEvent.change(screen.getByLabelText("Selection Order"), {
       target: { value: "official-primary, relay-newapi" },
     });
+    fireEvent.change(screen.getByLabelText("Cross Pool Fallback"), {
+      target: { value: "false" },
+    });
+    fireEvent.change(screen.getByLabelText("Retry Budget"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Timeout Open After"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Server Error Open After"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Cooldown (ms)"), { target: { value: "1000" } });
+    fireEvent.change(screen.getByLabelText("Half Open After (ms)"), {
+      target: { value: "1000" },
+    });
+    fireEvent.change(screen.getByLabelText("Success Close After"), { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: "Save policy" }));
 
     expect(updatePolicy).toHaveBeenCalledWith({
