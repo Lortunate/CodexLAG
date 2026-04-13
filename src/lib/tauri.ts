@@ -3,14 +3,20 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AccountBalanceSnapshot,
   AccountCapabilityDetail,
+  CreatePlatformKeyInput,
   AppErrorPayload,
   AccountSummary,
   DefaultKeyMode,
   DefaultKeySummary,
   ErrorCategory,
   LogSummary,
+  OfficialAccountImportInput,
+  PlatformKeyInventoryEntry,
+  PolicyUpdateInput,
   PolicySummary,
   RawDefaultKeySummary,
+  RelayConnectionTestResult,
+  RelayUpsertInput,
   RelayBalanceCapability,
   RelayBalanceSnapshot,
   RelayCapabilityDetail,
@@ -260,6 +266,10 @@ export function listAccounts() {
   return invokeWithContract<AccountSummary[]>("list_accounts");
 }
 
+export function importOfficialAccountLogin(input: OfficialAccountImportInput) {
+  return invokeWithContract<AccountSummary>("import_official_account_login", { input });
+}
+
 export function refreshAccountBalance(accountId: string) {
   return invokeWithContract<AccountBalanceSnapshot>("refresh_account_balance", { account_id: accountId });
 }
@@ -270,6 +280,14 @@ export function getAccountCapabilityDetail(accountId: string) {
 
 export function listRelays() {
   return invokeWithContract<RelaySummary[]>("list_relays");
+}
+
+export function addRelay(input: RelayUpsertInput) {
+  return invokeWithContract<RelaySummary>("add_relay", { input });
+}
+
+export function updateRelay(input: RelayUpsertInput) {
+  return invokeWithContract<RelaySummary>("update_relay", { input });
 }
 
 export function refreshRelayBalance(relayId: string) {
@@ -288,6 +306,10 @@ export function getRelayCapabilityDetail(relayId: string) {
   }));
 }
 
+export function testRelayConnection(relayId: string) {
+  return invokeWithContract<RelayConnectionTestResult>("test_relay_connection", { relay_id: relayId });
+}
+
 export function getDefaultKeySummary() {
   return invokeWithContract<RawDefaultKeySummary>("get_default_key_summary").then(parseDefaultKeySummary);
 }
@@ -302,8 +324,28 @@ export function listenForDefaultKeySummaryChanged(handler: (summary: DefaultKeyS
   });
 }
 
+export function createPlatformKey(input: CreatePlatformKeyInput) {
+  return invokeWithContract<PlatformKeyInventoryEntry>("create_platform_key", { input });
+}
+
+export function listPlatformKeys() {
+  return invokeWithContract<PlatformKeyInventoryEntry[]>("list_platform_keys");
+}
+
+export function disablePlatformKey(keyId: string) {
+  return invokeWithContract<PlatformKeyInventoryEntry>("disable_platform_key", { key_id: keyId });
+}
+
+export function enablePlatformKey(keyId: string) {
+  return invokeWithContract<PlatformKeyInventoryEntry>("enable_platform_key", { key_id: keyId });
+}
+
 export function listPolicies() {
   return invokeWithContract<PolicySummary[]>("list_policies");
+}
+
+export function updatePolicy(input: PolicyUpdateInput) {
+  return invokeWithContract<PolicyUpdateInput>("update_policy", { input });
 }
 
 export function getLogSummary() {

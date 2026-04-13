@@ -21,6 +21,7 @@ import type {
   UsageLedger,
 } from "../../lib/types";
 import { DefaultKeyModeToggle } from "../default-key/default-key-mode-toggle";
+import { RuntimeLogFilesTable } from "./runtime-log-files-table";
 
 const initialSummary: DefaultKeySummary = {
   name: "loading",
@@ -217,6 +218,7 @@ export function OverviewPage() {
             {runtimeLogMetadata?.log_dir ?? (runtimeLogDiagnosticsUnavailable ? "unavailable" : "loading")}
           </p>
           <p>Tracked log files: {runtimeLogMetadata?.files.length ?? 0}</p>
+          {runtimeLogMetadata ? <RuntimeLogFilesTable files={runtimeLogMetadata.files} /> : null}
           <button type="button" onClick={handleExportDiagnostics} disabled={isExportingDiagnostics}>
             Export diagnostics
           </button>

@@ -3,6 +3,10 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  addRelay,
+  createPlatformKey,
+  disablePlatformKey,
+  enablePlatformKey,
   emitDefaultKeySummaryChanged,
   exportRuntimeDiagnostics,
   getAccountCapabilityDetail,
@@ -11,15 +15,19 @@ const {
   getRuntimeLogMetadata,
   getRelayCapabilityDetail,
   getUsageRequestDetail,
+  importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listPlatformKeys,
   listPolicies,
   listRelays,
   listUsageRequestHistory,
   queryUsageLedger,
   refreshAccountBalance,
   refreshRelayBalance,
+  testRelayConnection,
   setDefaultKeyMode,
+  updatePolicy,
 } = vi.hoisted(() => {
   let listener:
     | ((summary: {
@@ -31,6 +39,10 @@ const {
     | null = null;
 
   return {
+    addRelay: vi.fn(),
+    createPlatformKey: vi.fn(),
+    disablePlatformKey: vi.fn(),
+    enablePlatformKey: vi.fn(),
     emitDefaultKeySummaryChanged(summary: {
       name: string;
       allowedMode: "account_only" | "relay_only" | "hybrid" | null;
@@ -46,6 +58,7 @@ const {
     getRuntimeLogMetadata: vi.fn(),
     getRelayCapabilityDetail: vi.fn(),
     getUsageRequestDetail: vi.fn(),
+    importOfficialAccountLogin: vi.fn(),
     listenForDefaultKeySummaryChanged: vi.fn(async (handler) => {
       listener = handler;
       return () => {
@@ -53,17 +66,24 @@ const {
       };
     }),
     listAccounts: vi.fn(),
+    listPlatformKeys: vi.fn(),
     listPolicies: vi.fn(),
     listRelays: vi.fn(),
     listUsageRequestHistory: vi.fn(),
     queryUsageLedger: vi.fn(),
     refreshAccountBalance: vi.fn(),
     refreshRelayBalance: vi.fn(),
+    testRelayConnection: vi.fn(),
     setDefaultKeyMode: vi.fn(),
+    updatePolicy: vi.fn(),
   };
 });
 
 vi.mock("../lib/tauri", () => ({
+  addRelay,
+  createPlatformKey,
+  disablePlatformKey,
+  enablePlatformKey,
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
@@ -71,21 +91,29 @@ vi.mock("../lib/tauri", () => ({
   exportRuntimeDiagnostics,
   getRelayCapabilityDetail,
   getUsageRequestDetail,
+  importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listPlatformKeys,
   listPolicies,
   listRelays,
   listUsageRequestHistory,
   queryUsageLedger,
   refreshAccountBalance,
   refreshRelayBalance,
+  testRelayConnection,
   setDefaultKeyMode,
+  updatePolicy,
 }));
 
 import App from "../App";
 
 describe("App shell", () => {
   beforeEach(() => {
+    addRelay.mockReset();
+    createPlatformKey.mockReset();
+    disablePlatformKey.mockReset();
+    enablePlatformKey.mockReset();
     exportRuntimeDiagnostics.mockReset();
     getAccountCapabilityDetail.mockReset();
     getDefaultKeySummary.mockReset();
@@ -93,15 +121,19 @@ describe("App shell", () => {
     getRuntimeLogMetadata.mockReset();
     getRelayCapabilityDetail.mockReset();
     getUsageRequestDetail.mockReset();
+    importOfficialAccountLogin.mockReset();
     listenForDefaultKeySummaryChanged.mockClear();
     listAccounts.mockReset();
+    listPlatformKeys.mockReset();
     listPolicies.mockReset();
     listRelays.mockReset();
     listUsageRequestHistory.mockReset();
     queryUsageLedger.mockReset();
     refreshAccountBalance.mockReset();
     refreshRelayBalance.mockReset();
+    testRelayConnection.mockReset();
     setDefaultKeyMode.mockReset();
+    updatePolicy.mockReset();
 
     getDefaultKeySummary.mockResolvedValue({
       name: "default",
@@ -136,22 +168,27 @@ describe("App shell", () => {
     listAccounts.mockResolvedValue([
       { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
     ]);
-    refreshAccountBalance.mockResolvedValue({
-      account_id: "official-primary",
+    importOfficialAccountLogin.mockResolvedValue({
+      account_id: "imported-openai",
+      name: "Imported OpenAI",
+      provider: "openai",
+    });
+    refreshAccountBalance.mockImplementation(async (accountId: string) => ({
+      account_id: accountId,
       provider: "openai",
       refreshed_at: "1713370000",
       balance: {
         kind: "non_queryable",
         reason: "official accounts do not expose a balance endpoint",
       },
-    });
-    getAccountCapabilityDetail.mockResolvedValue({
-      account_id: "official-primary",
+    }));
+    getAccountCapabilityDetail.mockImplementation(async (accountId: string) => ({
+      account_id: accountId,
       provider: "openai",
       refresh_capability: true,
       balance_capability: "non_queryable",
-    });
-    listPolicies.mockResolvedValue([{ name: "default", status: "active" }]);
+    }));
+    listPolicies.mockResolvedValue([{ policy_id: "default-policy", name: "default", status: "active" }]);
     listRelays.mockResolvedValue([
       {
         relay_id: "relay-newapi",
@@ -164,6 +201,11 @@ describe("App shell", () => {
         endpoint: "https://relay.example.test",
       },
     ]);
+    addRelay.mockResolvedValue({
+      relay_id: "relay-managed",
+      name: "Managed Relay",
+      endpoint: "https://managed.example.test",
+    });
     refreshRelayBalance.mockImplementation(async (relayId: string) => {
       if (relayId === "relay-newapi") {
         return {
@@ -177,9 +219,16 @@ describe("App shell", () => {
         };
       }
       return {
-        relay_id: "relay-nobalance",
-        endpoint: "https://relay.example.test",
-        balance: { kind: "unsupported", reason: "relay does not provide a balance endpoint" },
+        relay_id: relayId,
+        endpoint: relayId === "relay-managed" ? "https://managed.example.test" : "https://relay.example.test",
+        balance:
+          relayId === "relay-managed"
+            ? {
+                kind: "queryable",
+                adapter: "new_api",
+                balance: { total: "10.00", used: "0.50" },
+              }
+            : { kind: "unsupported", reason: "relay does not provide a balance endpoint" },
       };
     });
     getRelayCapabilityDetail.mockImplementation(async (relayId: string) => {
@@ -191,11 +240,51 @@ describe("App shell", () => {
         };
       }
       return {
-        relay_id: "relay-nobalance",
-        endpoint: "https://relay.example.test",
-        balance_capability: { kind: "unsupported" },
+        relay_id: relayId,
+        endpoint: relayId === "relay-managed" ? "https://managed.example.test" : "https://relay.example.test",
+        balance_capability:
+          relayId === "relay-managed"
+            ? { kind: "queryable", adapter: "new_api" }
+            : { kind: "unsupported" },
       };
     });
+    testRelayConnection.mockResolvedValue({
+      relay_id: "relay-managed",
+      endpoint: "https://managed.example.test",
+      status: "ok",
+      latency_ms: 11,
+    });
+    listPlatformKeys.mockResolvedValue([
+      {
+        id: "default-key",
+        name: "default",
+        policy_id: "default-policy",
+        allowed_mode: "hybrid",
+        enabled: true,
+      },
+    ]);
+    createPlatformKey.mockResolvedValue({
+      id: "ops-key",
+      name: "Operations Key",
+      policy_id: "default-policy",
+      allowed_mode: "hybrid",
+      enabled: true,
+    });
+    disablePlatformKey.mockResolvedValue({
+      id: "ops-key",
+      name: "Operations Key",
+      policy_id: "default-policy",
+      allowed_mode: "hybrid",
+      enabled: false,
+    });
+    enablePlatformKey.mockResolvedValue({
+      id: "ops-key",
+      name: "Operations Key",
+      policy_id: "default-policy",
+      allowed_mode: "hybrid",
+      enabled: true,
+    });
+    updatePolicy.mockImplementation(async (input: unknown) => input);
     listUsageRequestHistory.mockResolvedValue([
       {
         request_id: "req-2",
@@ -279,6 +368,8 @@ describe("App shell", () => {
     expect(screen.getByText("Usage cost provenance: unknown")).toBeInTheDocument();
     expect(screen.getByText("Log directory: <app-local-data>/logs")).toBeInTheDocument();
     expect(screen.getByText("Tracked log files: 2")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Runtime log files metadata" })).toBeInTheDocument();
+    expect(screen.getByText("gateway.log")).toBeInTheDocument();
     expect(queryUsageLedger).toHaveBeenCalledTimes(1);
   });
 
@@ -334,6 +425,45 @@ describe("App shell", () => {
     expect(getAccountCapabilityDetail).toHaveBeenCalledWith("official-primary");
   });
 
+  it("submits account import flow and reloads account cards", async () => {
+    listAccounts
+      .mockResolvedValueOnce([
+        { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
+      ])
+      .mockResolvedValueOnce([
+        { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
+        { account_id: "imported-openai", name: "Imported OpenAI", provider: "openai" },
+      ]);
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
+    });
+
+    fireEvent.change(screen.getByLabelText("Account ID"), { target: { value: "imported-openai" } });
+    fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Imported OpenAI" } });
+    fireEvent.change(screen.getByLabelText("Session Credential Ref"), {
+      target: { value: "credential://official/session/imported-openai" },
+    });
+    fireEvent.change(screen.getByLabelText("Token Credential Ref"), {
+      target: { value: "credential://official/token/imported-openai" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import account" }));
+
+    expect(importOfficialAccountLogin).toHaveBeenCalledWith({
+      account_id: "imported-openai",
+      name: "Imported OpenAI",
+      provider: "openai",
+      session_credential_ref: "credential://official/session/imported-openai",
+      token_credential_ref: "credential://official/token/imported-openai",
+      account_identity: null,
+      auth_mode: null,
+    });
+    expect(await screen.findByText("Imported account: imported-openai")).toBeInTheDocument();
+    expect(listAccounts).toHaveBeenCalled();
+  });
+
   it("loads relay balances and capability details", async () => {
     render(<App />);
 
@@ -341,16 +471,125 @@ describe("App shell", () => {
       fireEvent.click(screen.getByRole("button", { name: "Relays" }));
     });
 
-    expect(await screen.findByText("Local Gateway")).toBeInTheDocument();
+    expect(await screen.findByText("Endpoint: http://127.0.0.1:8787")).toBeInTheDocument();
     expect(screen.getByText("Balance state: queryable")).toBeInTheDocument();
     expect(screen.getByText("Adapter: new_api")).toBeInTheDocument();
     expect(screen.getByText("Total: 25.00")).toBeInTheDocument();
     expect(screen.getByText("Used: 7.50")).toBeInTheDocument();
-    expect(screen.getByText("Upstream Proxy")).toBeInTheDocument();
+    expect(screen.getByText("Endpoint: https://relay.example.test")).toBeInTheDocument();
     expect(screen.getByText("Balance state: unsupported")).toBeInTheDocument();
     expect(screen.getByText("Capability: unsupported")).toBeInTheDocument();
     expect(refreshRelayBalance).toHaveBeenCalledWith("relay-newapi");
     expect(getRelayCapabilityDetail).toHaveBeenCalledWith("relay-newapi");
+  });
+
+  it("creates a relay and runs connection test flow", async () => {
+    let listRelaysCallCount = 0;
+    listRelays.mockImplementation(async () => {
+      listRelaysCallCount += 1;
+      if (listRelaysCallCount >= 3) {
+        return [
+          {
+            relay_id: "relay-newapi",
+            name: "Local Gateway",
+            endpoint: "http://127.0.0.1:8787",
+          },
+          {
+            relay_id: "relay-managed",
+            name: "Managed Relay",
+            endpoint: "https://managed.example.test",
+          },
+        ];
+      }
+
+      return [
+        {
+          relay_id: "relay-newapi",
+          name: "Local Gateway",
+          endpoint: "http://127.0.0.1:8787",
+        },
+      ];
+    });
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Relays" }));
+    });
+
+    fireEvent.change(screen.getByLabelText("Relay ID"), { target: { value: "relay-managed" } });
+    fireEvent.change(screen.getByLabelText("Relay Name"), { target: { value: "Managed Relay" } });
+    fireEvent.change(screen.getByLabelText("Relay Endpoint"), {
+      target: { value: "https://managed.example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create relay" }));
+
+    expect(addRelay).toHaveBeenCalledWith({
+      relay_id: "relay-managed",
+      name: "Managed Relay",
+      endpoint: "https://managed.example.test",
+      adapter: "new_api",
+    });
+    expect(await screen.findByText("Created relay: relay-managed")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Test relay relay-managed" }));
+    expect(testRelayConnection).toHaveBeenCalledWith("relay-managed");
+    expect(await screen.findByText("relay-managed: ok (11ms)")).toBeInTheDocument();
+  });
+
+  it("creates and disables a platform key", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Platform Keys" }));
+    });
+
+    fireEvent.change(screen.getByLabelText("Key ID"), { target: { value: "ops-key" } });
+    fireEvent.change(screen.getByLabelText("Key Name"), { target: { value: "Operations Key" } });
+    fireEvent.change(screen.getByLabelText("Policy ID"), { target: { value: "default-policy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create key" }));
+
+    expect(createPlatformKey).toHaveBeenCalledWith({
+      key_id: "ops-key",
+      name: "Operations Key",
+      policy_id: "default-policy",
+      allowed_mode: "hybrid",
+    });
+    expect(await screen.findByText("Operations Key")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disable key ops-key" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Disable key ops-key" }));
+    expect(disablePlatformKey).toHaveBeenCalledWith("ops-key");
+    expect(await screen.findByText("Disabled")).toBeInTheDocument();
+  });
+
+  it("edits and saves policy rules", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Policies" }));
+    });
+
+    expect(await screen.findByLabelText("Policy Name")).toHaveValue("default");
+    fireEvent.change(screen.getByLabelText("Policy Name"), { target: { value: "default-updated" } });
+    fireEvent.change(screen.getByLabelText("Selection Order"), {
+      target: { value: "official-primary, relay-newapi" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save policy" }));
+
+    expect(updatePolicy).toHaveBeenCalledWith({
+      policy_id: "default-policy",
+      name: "default-updated",
+      selection_order: ["official-primary", "relay-newapi"],
+      cross_pool_fallback: false,
+      retry_budget: 2,
+      timeout_open_after: 3,
+      server_error_open_after: 3,
+      cooldown_ms: 1000,
+      half_open_after_ms: 1000,
+      success_close_after: 2,
+    });
+    expect(await screen.findByText("Policy saved: default-updated")).toBeInTheDocument();
   });
 
   it("shows request history and request-detail affordances", async () => {

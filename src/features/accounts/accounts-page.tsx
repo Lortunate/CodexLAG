@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
 import {
   getAccountCapabilityDetail,
+  importOfficialAccountLogin,
   listAccounts,
   refreshAccountBalance,
 } from "../../lib/tauri";
-import type { AccountBalanceSnapshot, AccountCapabilityDetail, AccountSummary } from "../../lib/types";
+import type {
+  AccountBalanceSnapshot,
+  AccountCapabilityDetail,
+  AccountSummary,
+  OfficialAccountImportInput,
+} from "../../lib/types";
+import { AccountImportForm } from "./account-import-form";
 
 interface AccountPanelState {
   account: AccountSummary;
@@ -17,64 +24,93 @@ interface AccountPanelState {
 export function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountPanelState[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
+  const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
+  const [isImportingAccount, setIsImportingAccount] = useState(false);
+
+  async function loadAccounts(isMounted: () => boolean = () => true) {
+    try {
+      const summaries = await listAccounts();
+      const accountPanels = await Promise.all(
+        summaries.map(async (account) => {
+          const panelState: AccountPanelState = {
+            account,
+            balanceError: null,
+            balanceSnapshot: null,
+            capabilityDetail: null,
+            capabilityError: null,
+          };
+
+          try {
+            panelState.balanceSnapshot = await refreshAccountBalance(account.account_id);
+          } catch (error) {
+            panelState.balanceError =
+              error instanceof Error ? error.message : "Failed to refresh account balance.";
+          }
+
+          try {
+            panelState.capabilityDetail = await getAccountCapabilityDetail(account.account_id);
+          } catch (error) {
+            panelState.capabilityError =
+              error instanceof Error ? error.message : "Failed to load account capability detail.";
+          }
+
+          return panelState;
+        }),
+      );
+
+      if (isMounted()) {
+        setAccounts(accountPanels);
+        setErrorMessage(null);
+      }
+    } catch {
+      if (isMounted()) {
+        setErrorMessage("Failed to load accounts.");
+      }
+    }
+  }
 
   useEffect(() => {
     let isMounted = true;
-
-    const loadAccounts = async () => {
-      try {
-        const summaries = await listAccounts();
-        const accountPanels = await Promise.all(
-          summaries.map(async (account) => {
-            const panelState: AccountPanelState = {
-              account,
-              balanceError: null,
-              balanceSnapshot: null,
-              capabilityDetail: null,
-              capabilityError: null,
-            };
-
-            try {
-              panelState.balanceSnapshot = await refreshAccountBalance(account.account_id);
-            } catch (error) {
-              panelState.balanceError =
-                error instanceof Error ? error.message : "Failed to refresh account balance.";
-            }
-
-            try {
-              panelState.capabilityDetail = await getAccountCapabilityDetail(account.account_id);
-            } catch (error) {
-              panelState.capabilityError =
-                error instanceof Error ? error.message : "Failed to load account capability detail.";
-            }
-
-            return panelState;
-          }),
-        );
-
-        if (isMounted) {
-          setAccounts(accountPanels);
-          setErrorMessage(null);
-        }
-      } catch {
-        if (isMounted) {
-          setErrorMessage("Failed to load accounts.");
-        }
-      }
-    };
-
-    loadAccounts();
+    void loadAccounts(() => isMounted);
 
     return () => {
       isMounted = false;
     };
   }, []);
 
+  async function handleImportAccount(input: OfficialAccountImportInput) {
+    if (isImportingAccount) {
+      return;
+    }
+
+    setIsImportingAccount(true);
+    setImportErrorMessage(null);
+    setImportSuccessMessage(null);
+
+    try {
+      const imported = await importOfficialAccountLogin(input);
+      await loadAccounts();
+      setImportSuccessMessage(`Imported account: ${imported.account_id}`);
+      setErrorMessage(null);
+    } catch (error) {
+      setImportErrorMessage(error instanceof Error ? error.message : "Failed to import account.");
+    } finally {
+      setIsImportingAccount(false);
+    }
+  }
+
   return (
     <section aria-labelledby="accounts-heading">
       <h2 id="accounts-heading">Account Details</h2>
       <p>View the accounts available to the local gateway and verify provider ownership.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+      <AccountImportForm
+        errorMessage={importErrorMessage}
+        isSubmitting={isImportingAccount}
+        successMessage={importSuccessMessage}
+        onSubmit={handleImportAccount}
+      />
       <div className="detail-grid">
         {accounts.map((panel) => (
           <article className="detail-card" key={panel.account.account_id}>

@@ -33,6 +33,16 @@ export interface AccountSummary {
   provider: string;
 }
 
+export interface OfficialAccountImportInput {
+  account_id: string;
+  name: string;
+  provider: string;
+  session_credential_ref: string;
+  token_credential_ref: string;
+  account_identity: string | null;
+  auth_mode: string | null;
+}
+
 export interface AccountBalanceQueryable {
   kind: "queryable";
   total: string;
@@ -64,6 +74,20 @@ export interface RelaySummary {
   relay_id: string;
   name: string;
   endpoint: string;
+}
+
+export interface RelayUpsertInput {
+  relay_id: string;
+  name: string;
+  endpoint: string;
+  adapter?: string | null;
+}
+
+export interface RelayConnectionTestResult {
+  relay_id: string;
+  endpoint: string;
+  status: string;
+  latency_ms: number;
 }
 
 export interface NormalizedBalance {
@@ -107,6 +131,21 @@ export interface RelayCapabilityDetail {
   balance_capability: RelayBalanceCapability;
 }
 
+export interface PlatformKeyInventoryEntry {
+  id: string;
+  name: string;
+  policy_id: string;
+  allowed_mode: string;
+  enabled: boolean;
+}
+
+export interface CreatePlatformKeyInput {
+  key_id: string;
+  name: string;
+  policy_id: string;
+  allowed_mode: string;
+}
+
 export type UsageProvenance = "actual" | "estimated" | "unknown";
 
 export interface UsageCost {
@@ -147,8 +186,22 @@ export interface UsageLedger {
 }
 
 export interface PolicySummary {
+  policy_id: string;
   name: string;
   status: string;
+}
+
+export interface PolicyUpdateInput {
+  policy_id: string;
+  name: string;
+  selection_order: string[];
+  cross_pool_fallback: boolean;
+  retry_budget: number;
+  timeout_open_after: number;
+  server_error_open_after: number;
+  cooldown_ms: number;
+  half_open_after_ms: number;
+  success_close_after: number;
 }
 
 export interface LogSummary {
