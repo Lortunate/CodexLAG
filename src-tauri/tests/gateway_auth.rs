@@ -3,7 +3,9 @@ use axum::{
     http::{Request, StatusCode},
 };
 use codexlag_lib::{
-    bootstrap::bootstrap_state_for_test, gateway::build_router_for_test,
+    bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test},
+    commands::keys::{create_platform_key_from_runtime, CreatePlatformKeyInput},
+    gateway::build_router_for_test,
     routing::policy::RoutingMode, secret_store::SecretKey,
 };
 use serde_json::Value;
@@ -145,4 +147,37 @@ async fn gateway_auth_codex_route_respects_relay_only_mode() {
         .expect("codex body");
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("gateway response json");
     assert_eq!(payload["endpoint_id"], "relay-default");
+}
+
+#[tokio::test]
+async fn newly_created_platform_key_can_authenticate_against_the_gateway() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let created = create_platform_key_from_runtime(
+        &runtime,
+        CreatePlatformKeyInput {
+            key_id: "key-secondary".into(),
+            name: "secondary".into(),
+            policy_id: "policy-default".into(),
+            allowed_mode: "hybrid".into(),
+        },
+    )
+    .expect("create platform key");
+
+    let router = runtime.loopback_gateway().router();
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {}", created.secret))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
 }

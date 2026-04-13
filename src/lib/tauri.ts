@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AccountBalanceSnapshot,
   AccountCapabilityDetail,
+  CreatedPlatformKey,
   CreatePlatformKeyInput,
   AppErrorPayload,
   AccountSummary,
@@ -325,7 +326,7 @@ export function listenForDefaultKeySummaryChanged(handler: (summary: DefaultKeyS
 }
 
 export function createPlatformKey(input: CreatePlatformKeyInput) {
-  return invokeWithContract<PlatformKeyInventoryEntry>("create_platform_key", { input });
+  return invokeWithContract<CreatedPlatformKey>("create_platform_key", { input });
 }
 
 export function listPlatformKeys() {

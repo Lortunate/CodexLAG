@@ -43,6 +43,21 @@ async fn bootstrap_persists_default_key_secret_in_secret_store() {
 }
 
 #[tokio::test]
+async fn bootstrap_default_key_contains_runtime_metadata_fields() {
+    let state = codexlag_lib::bootstrap::bootstrap_state_for_test()
+        .await
+        .expect("bootstrap");
+
+    let key = state
+        .get_platform_key_by_name("default")
+        .expect("default key");
+
+    assert_eq!(key.key_prefix, "ck_local_");
+    assert!(key.created_at_ms > 0);
+    assert_eq!(key.last_used_at_ms, None);
+}
+
+#[tokio::test]
 async fn bootstrap_persists_default_state_across_restarts() {
     let database_path = std::env::temp_dir().join(format!(
         "codexlag-bootstrap-persistence-{}.sqlite3",

@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, RngCore};
 
@@ -15,7 +16,7 @@ const DEFAULT_POLICY_ID: &str = "policy-default";
 const DEFAULT_POLICY_NAME: &str = "default";
 const DEFAULT_PLATFORM_KEY_ID: &str = "key-default";
 const DEFAULT_PLATFORM_KEY_NAME: &str = "default";
-const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
+pub const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
 
 fn build_default_app_state(
     database_path: impl AsRef<Path>,
@@ -45,9 +46,12 @@ fn build_default_app_state(
     let default_key = PlatformKey {
         id: DEFAULT_PLATFORM_KEY_ID.into(),
         name: DEFAULT_PLATFORM_KEY_NAME.into(),
+        key_prefix: DEFAULT_PLATFORM_KEY_SECRET_PREFIX.into(),
         allowed_mode: HYBRID.into(),
         policy_id: default_policy.id.clone(),
         enabled: true,
+        created_at_ms: now_ms(),
+        last_used_at_ms: None,
     };
 
     let default_key_secret = SecretKey::platform_key(default_key.id.clone());
@@ -60,7 +64,7 @@ fn build_default_app_state(
     }
 
     if secret_store.get_optional(&default_key_secret)?.is_none() {
-        secret_store.set(&default_key_secret, generate_default_platform_key_secret())?;
+        secret_store.set(&default_key_secret, generate_platform_key_secret())?;
     }
 
     Ok(AppState::new(repositories, secret_store))
@@ -129,7 +133,7 @@ fn test_database_path() -> PathBuf {
         .join("codexlag.sqlite3")
 }
 
-fn generate_default_platform_key_secret() -> String {
+pub fn generate_platform_key_secret() -> String {
     let mut bytes = [0_u8; 24];
     OsRng.fill_bytes(&mut bytes);
 
@@ -139,6 +143,13 @@ fn generate_default_platform_key_secret() -> String {
     }
 
     format!("{DEFAULT_PLATFORM_KEY_SECRET_PREFIX}{encoded}")
+}
+
+pub fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or_default()
 }
 
 fn random_suffix() -> String {

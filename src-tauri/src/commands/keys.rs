@@ -5,6 +5,7 @@ use crate::{
     error::{CodexLagError, ConfigErrorKind, Result},
     models::PlatformKey,
     routing::policy::RoutingMode,
+    secret_store::SecretKey,
     state::{AppState, RuntimeState},
 };
 
@@ -30,6 +31,16 @@ pub struct CreatePlatformKeyInput {
     pub name: String,
     pub policy_id: String,
     pub allowed_mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CreatedPlatformKey {
+    pub id: String,
+    pub name: String,
+    pub policy_id: String,
+    pub allowed_mode: String,
+    pub enabled: bool,
+    pub secret: String,
 }
 
 pub const DEFAULT_KEY_SUMMARY_CHANGED_EVENT: &str = "default-key-summary-changed";
@@ -103,14 +114,14 @@ pub fn set_default_key_mode(
 pub fn create_platform_key(
     state: State<'_, RuntimeState>,
     input: CreatePlatformKeyInput,
-) -> Result<PlatformKeyInventoryEntry> {
+) -> Result<CreatedPlatformKey> {
     create_platform_key_from_runtime(&state, input)
 }
 
 pub fn create_platform_key_from_runtime(
     runtime: &RuntimeState,
     input: CreatePlatformKeyInput,
-) -> Result<PlatformKeyInventoryEntry> {
+) -> Result<CreatedPlatformKey> {
     let key_id = validate_identifier(input.key_id, "key_id")?;
     let name = validate_non_empty(input.name, "name")?;
     let policy_id = validate_identifier(input.policy_id, "policy_id")?;
@@ -135,13 +146,26 @@ pub fn create_platform_key_from_runtime(
         );
     }
 
+    let secret = crate::bootstrap::generate_platform_key_secret();
+    app_state
+        .store_secret(&SecretKey::platform_key(key_id.clone()), secret.clone())
+        .map_err(|error| {
+            CodexLagError::new("Failed to persist platform key secret.").with_internal_context(
+                format!(
+                    "command=create_platform_key;operation=store_secret;key_id={key_id};cause={error}"
+                ),
+            )
+        })?;
     app_state
         .insert_platform_key(PlatformKey {
             id: key_id.clone(),
             name: name.clone(),
+            key_prefix: crate::bootstrap::DEFAULT_PLATFORM_KEY_SECRET_PREFIX.to_string(),
             policy_id: policy_id.clone(),
             allowed_mode: allowed_mode.clone(),
             enabled: true,
+            created_at_ms: crate::bootstrap::now_ms(),
+            last_used_at_ms: None,
         })
         .map_err(|error| {
             CodexLagError::new("Failed to persist platform key.")
@@ -150,12 +174,13 @@ pub fn create_platform_key_from_runtime(
                 ))
         })?;
 
-    let created = PlatformKeyInventoryEntry {
+    let created = CreatedPlatformKey {
         id: key_id,
         name,
         policy_id,
         allowed_mode,
         enabled: true,
+        secret,
     };
     Ok(created)
 }

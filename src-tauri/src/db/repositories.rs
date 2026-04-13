@@ -141,13 +141,16 @@ impl Repositories {
 
         connection
             .execute(
-                "INSERT INTO platform_keys (id, name, allowed_mode, policy_id, enabled) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO platform_keys (id, name, key_prefix, allowed_mode, policy_id, enabled, created_at_ms, last_used_at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     &key.id,
                     &key.name,
+                    &key.key_prefix,
                     &key.allowed_mode,
                     &key.policy_id,
-                    key.enabled as i64
+                    key.enabled as i64,
+                    key.created_at_ms,
+                    key.last_used_at_ms
                 ],
             )
             .map_err(|error| {
@@ -785,7 +788,9 @@ impl Repositories {
 
     fn load_platform_keys(connection: &Connection) -> Result<HashMap<String, PlatformKey>> {
         let mut statement = connection
-            .prepare("SELECT id, name, allowed_mode, policy_id, enabled FROM platform_keys")
+            .prepare(
+                "SELECT id, name, key_prefix, allowed_mode, policy_id, enabled, created_at_ms, last_used_at_ms FROM platform_keys",
+            )
             .map_err(|error| {
                 CodexLagError::new(format!("failed to prepare platform key query: {error}"))
             })?;
@@ -795,9 +800,12 @@ impl Repositories {
                 Ok(PlatformKey {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    allowed_mode: row.get(2)?,
-                    policy_id: row.get(3)?,
-                    enabled: row.get::<_, i64>(4)? != 0,
+                    key_prefix: row.get(2)?,
+                    allowed_mode: row.get(3)?,
+                    policy_id: row.get(4)?,
+                    enabled: row.get::<_, i64>(5)? != 0,
+                    created_at_ms: row.get(6)?,
+                    last_used_at_ms: row.get(7)?,
                 })
             })
             .map_err(|error| {

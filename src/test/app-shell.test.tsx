@@ -269,6 +269,7 @@ describe("App shell", () => {
       policy_id: "default-policy",
       allowed_mode: "hybrid",
       enabled: true,
+      secret: "ck_local_mocked_ops_key_secret",
     });
     disablePlatformKey.mockResolvedValue({
       id: "ops-key",
@@ -583,6 +584,8 @@ describe("App shell", () => {
       policy_id: "default-policy",
       allowed_mode: "hybrid",
     });
+    expect(await screen.findByText("Generated secret")).toBeInTheDocument();
+    expect(screen.getByText("ck_local_mocked_ops_key_secret")).toBeInTheDocument();
     expect(await screen.findByText("Operations Key")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disable key ops-key" })).toBeInTheDocument();
 

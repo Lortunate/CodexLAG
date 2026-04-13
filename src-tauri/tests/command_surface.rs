@@ -567,6 +567,12 @@ async fn key_inventory_commands_create_list_disable_and_enable() {
     )
     .expect("key create should succeed");
     assert!(created.enabled);
+    assert!(created.secret.starts_with("ck_local_"));
+    let stored_secret = first_runtime
+        .app_state()
+        .secret(&SecretKey::platform_key(key_id.clone()))
+        .expect("created key secret should be persisted");
+    assert_eq!(stored_secret, created.secret);
 
     let listed = list_platform_keys_from_runtime(&first_runtime);
     assert!(

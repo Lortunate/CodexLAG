@@ -14,9 +14,12 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
             CREATE TABLE IF NOT EXISTS platform_keys (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
+                key_prefix TEXT NOT NULL DEFAULT 'ck_local_',
                 allowed_mode TEXT NOT NULL,
                 policy_id TEXT NOT NULL,
                 enabled INTEGER NOT NULL,
+                created_at_ms INTEGER NOT NULL DEFAULT 0,
+                last_used_at_ms INTEGER,
                 FOREIGN KEY(policy_id) REFERENCES routing_policies(id)
             );
 
@@ -152,6 +155,19 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
         "recovery_rules",
         "TEXT NOT NULL DEFAULT '{\"half_open_after_ms\":15000,\"success_close_after\":1}'",
     )?;
+    add_column_if_missing(
+        connection,
+        "platform_keys",
+        "key_prefix",
+        "TEXT NOT NULL DEFAULT 'ck_local_'",
+    )?;
+    add_column_if_missing(
+        connection,
+        "platform_keys",
+        "created_at_ms",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(connection, "platform_keys", "last_used_at_ms", "INTEGER")?;
 
     connection
         .execute_batch(
@@ -165,6 +181,12 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
             UPDATE routing_policies
             SET recovery_rules = '{\"half_open_after_ms\":15000,\"success_close_after\":1}'
             WHERE recovery_rules IS NULL OR recovery_rules = '';
+            UPDATE platform_keys
+            SET key_prefix = 'ck_local_'
+            WHERE key_prefix IS NULL OR key_prefix = '';
+            UPDATE platform_keys
+            SET created_at_ms = 0
+            WHERE created_at_ms IS NULL;
             ",
         )
         .map_err(|error| {

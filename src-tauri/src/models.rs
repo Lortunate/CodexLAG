@@ -10,13 +10,16 @@ pub use crate::providers::official::{
 };
 pub use crate::providers::relay::{NormalizedBalance, RelayBalanceAdapter, RelayBalanceCapability};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlatformKey {
     pub id: String,
     pub name: String,
+    pub key_prefix: String,
     pub allowed_mode: String,
     pub policy_id: String,
     pub enabled: bool,
+    pub created_at_ms: i64,
+    pub last_used_at_ms: Option<i64>,
 }
 
 impl PlatformKey {

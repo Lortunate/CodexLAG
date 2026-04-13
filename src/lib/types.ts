@@ -139,6 +139,15 @@ export interface PlatformKeyInventoryEntry {
   enabled: boolean;
 }
 
+export interface CreatedPlatformKey {
+  id: string;
+  name: string;
+  policy_id: string;
+  allowed_mode: DefaultKeyMode;
+  enabled: boolean;
+  secret: string;
+}
+
 export interface CreatePlatformKeyInput {
   key_id: string;
   name: string;

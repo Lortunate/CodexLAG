@@ -15,6 +15,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import {
   CodexLagInvokeError,
+  createPlatformKey,
   getAccountCapabilityDetail,
   getRelayCapabilityDetail,
   listAccounts,
@@ -46,6 +47,12 @@ describe("tauri wrappers", () => {
     await getAccountCapabilityDetail("acc-2");
     await refreshRelayBalance("relay-1");
     await getUsageRequestDetail("req-7");
+    await createPlatformKey({
+      key_id: "key-new",
+      name: "new key",
+      policy_id: "default-policy",
+      allowed_mode: "hybrid",
+    });
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, "refresh_account_balance", {
       account_id: "acc-1",
@@ -58,6 +65,14 @@ describe("tauri wrappers", () => {
     });
     expect(invokeMock).toHaveBeenNthCalledWith(4, "get_usage_request_detail", {
       request_id: "req-7",
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(5, "create_platform_key", {
+      input: {
+        key_id: "key-new",
+        name: "new key",
+        policy_id: "default-policy",
+        allowed_mode: "hybrid",
+      },
     });
   });
 
