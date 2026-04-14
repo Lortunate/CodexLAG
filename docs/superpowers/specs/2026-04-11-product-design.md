@@ -1,125 +1,130 @@
-# Codex 本地网关桌面端设计
+# Codex Local Gateway Desktop Product Design
 
-- 日期: 2026-04-11
-- 状态: 已完成设计草案，待用户审阅书面 spec
-- 项目: CodexLAG
+- Date: 2026-04-11
+- Status: Design draft completed and pending written-spec review
+- Project: CodexLAG
+- Related references:
+  - `docs/superpowers/specs/foundation/codexlag-foundation.md`
+  - `E:/Projects/3rdp/agents/CLIProxyAPI`
 
-## 1. 背景
+> This document preserves the product-wide vision, domain model, and UI/tray design. Shared project rules such as document layering, `CLIProxyAPI` alignment, security/storage constraints, logging/audit boundaries, and release-gate expectations are centralized in `foundation/codexlag-foundation.md`.
 
-目标是使用 Tauri 2 开发一个 Windows 优先的本地 Codex 网关桌面软件。该软件既是一个桌面控制台，也是一个仅监听本机回环地址的本地 API 网关。它需要管理 Codex 官方账号和第三方中转站，按照可配置的优先级和降级策略为本机上的 Codex 客户端选路，并提供额度、日志、token 和费用统计视图。
+## 1. Background
 
-该产品的首版不是通用 OpenAI 代理，也不是远程多租户云平台。它的核心是本地控制面加本地数据面：
+The goal is to build a Windows-first local Codex gateway desktop application with Tauri 2. The product is both a desktop console and a local API gateway that only listens on loopback addresses. It must manage official Codex accounts and third-party relays, route local Codex client traffic using configurable priority and failover rules, and expose quota, logs, token, and cost views.
 
-- 控制面负责账号、中转、平台 key、策略、健康状态、余额刷新和日志查询
-- 数据面负责接收本机请求、校验平台 key、按策略选路、转发请求、记录请求链路和用量
+The first release is not a generic OpenAI proxy and not a remote multi-tenant cloud platform. Its core is a local control plane plus a local data plane:
 
-参考项目 `CLIProxyAPI` 可借鉴路由策略、usage 统计和管理接口的思路，但本项目不直接复刻其服务端形态。首版的交付形态是单机桌面应用。
+- the control plane manages accounts, relays, platform keys, policy, health status, balance refresh, and log queries
+- the data plane receives local requests, validates platform keys, selects upstreams according to policy, forwards requests, and records request lifecycle and usage data
 
-对于官方特性支持，本项目只跟随 `CLIProxyAPI` 中已经存在的实现，不为桌面版单独新增官方特性语义。
+`CLIProxyAPI` is a useful reference for routing strategy, usage accounting, and management-interface ideas, but this project does not copy its server-platform shape. The first release target is a single-machine desktop product.
 
-当前可明确借鉴的模式包括：
+For official-feature support, this project follows only what already exists in `CLIProxyAPI`. It does not introduce new desktop-only official feature semantics.
 
-- 基于模型注册信息的能力补齐与约束，例如最大 completion token 或上下文相关能力
-- 通过专用入口或专用参数对上游特性进行透传，例如 `compact` 类请求路径
+Relevant reusable patterns from the reference project include:
 
-## 2. 已确认范围
+- capability enrichment and constraints derived from model registration metadata, such as max completion tokens or context-related constraints
+- pass-through of upstream-specific behavior through dedicated entrypoints or parameters, such as `compact`-style request paths
 
-以下边界已经在设计阶段确认：
+## 2. Confirmed Scope
 
-- 首版范围包含平台 key 体系，不仅仅是本地代理
-- 本地网关对外协议优先服务 Codex 使用场景，而不是先做 OpenAI 兼容代理
-- 官方账号同时支持导入现有登录态和应用内登录
-- 降级策略为可配置策略，不限于简单硬失败切换
-- 平台 key 支持每个 key 自定义规则，而不是固定模式
-- 敏感凭据使用 Windows 系统级安全存储，不落地明文数据库
-- 官方账号额度展示只接受真实可查值，查不到就明确标记不可查询
-- 官方特性能力只跟随 `CLIProxyAPI` 已有实现提供，不额外为桌面版单独发明新特性
-- 本地网关只监听 `127.0.0.1` 或 `localhost`
-- 首版目标系统仅为 Windows
-- 首次启动自动创建一个 `default key`
-- 需要一个自定义托盘右键面板，用于 `default key` 模式切换和状态摘要
+The following boundaries were confirmed during design:
 
-## 3. 产品目标
+- v1 includes a platform-key system, not only a local proxy
+- the local gateway protocol is optimized for Codex usage rather than starting from generic OpenAI-compatibility
+- official accounts support both imported existing login state and in-app login
+- failover is policy-driven and not limited to hard failure switching
+- each platform key can define its own rules rather than using a fixed global mode
+- sensitive credentials must use Windows system-level secure storage and must not be stored as plaintext in the database
+- official account quota display only uses real queryable values; if unavailable, it must be explicitly marked as non-queryable
+- official feature support only follows `CLIProxyAPI` implementations and must not invent desktop-specific official behavior
+- the local gateway only listens on `127.0.0.1` or `localhost`
+- the first target OS is Windows only
+- first launch automatically creates a `default key`
+- a custom tray right-click panel is required for `default key` mode switching and status summary
 
-### 3.1 功能目标
+## 3. Product Goals
 
-V1 需要完成以下能力：
+### 3.1 Functional Goals
 
-- 管理 Codex 官方账号
-- 管理第三方中转站，首批支持 `newapi`
-- 查看官方账号真实剩余额度
-- 查看支持余额接口的第三方中转站额度
-- 为每个账号和中转设置优先级、启用状态和标签
-- 为本地客户端创建平台 key
-- 为每个平台 key 绑定允许模式和独立路由策略
-- 按策略在官方账号池和中转池之间选路与降级
-- 展示并透传 `CLIProxyAPI` 已有的官方特性能力，不额外扩展桌面版专属官方特性
-- 记录请求日志、每次尝试链路、token 统计和预估费用
-- 提供 `default key` 的首启生成与托盘快捷切换
+V1 must deliver the following capabilities:
 
-### 3.2 非目标
+- manage official Codex accounts
+- manage third-party relay endpoints, with `newapi` as the first supported relay type
+- display real remaining quota for official accounts when actually queryable
+- display real balance for relay endpoints that support a balance API
+- configure priority, enabled state, and tags for each account and relay
+- create platform keys for local clients
+- bind per-key allowed mode and independent routing policy
+- route and fail over between official-account pools and relay pools according to policy
+- discover, display, and pass through official features already supported by `CLIProxyAPI`, without inventing desktop-only official features
+- record request logs, per-attempt chains, token accounting, and estimated cost
+- provide first-launch `default key` bootstrap behavior and tray-based quick mode switching
 
-V1 明确不包含以下内容：
+### 3.2 Non-Goals
 
-- 局域网或公网共享节点能力
-- 多租户远程平台
-- 复杂负载均衡和并行竞速请求
-- 所有中转站的通用余额适配
-- 不能提供真实额度时的官方额度估算
-- 完整 UI 自动化测试体系
+V1 explicitly does not include:
 
-## 4. 推荐架构
+- LAN or public shared-node exposure
+- a remote multi-tenant platform
+- complex load balancing or parallel racing
+- universal balance adapters for every relay ecosystem
+- fake local quota estimation that pretends to be official quota
+- a full end-to-end UI automation suite
 
-推荐采用单进程桌面控制面加内嵌本地网关的结构。
+## 4. Recommended Architecture
 
-### 4.1 方案选择
+The recommended architecture is a single-process desktop control plane with an embedded local gateway.
 
-推荐方案：
+### 4.1 Option Selection
 
-- Tauri 2 应用作为唯一宿主进程
-- Rust 后端同时承载本地 HTTP 网关、控制面服务、运行时状态和持久层
-- Web 前端负责管理界面
+Recommended approach:
 
-选择理由：
+- a Tauri 2 app as the only host process
+- a Rust backend that simultaneously hosts the local HTTP gateway, control-plane services, runtime state, and persistence
+- a web frontend for the management interface
 
-- 部署简单，符合单机使用场景
-- 系统级凭据存储更容易与 Windows 集成
-- 托盘、窗口、命令调用、后台任务都可以由 Tauri 统一管理
-- 虽然是单进程，但内部模块边界按可拆分守护进程的方式设计，便于未来演进
+Why this is the recommended shape:
 
-### 4.2 模块划分
+- deployment stays simple and fits the single-machine use case
+- system-level credential storage integrates more naturally with Windows
+- tray, windows, command handling, and background tasks can all be managed by Tauri
+- although the runtime is single-process, internal boundaries can still be designed as if they could later be split into separate services
 
-系统拆分为以下模块：
+### 4.2 Module Boundaries
 
-1. `Desktop UI`
-负责账号、中转、平台 key、策略、日志、统计和状态展示。
+The system is divided into the following modules:
 
-2. `Control Plane`
-负责配置校验、配置变更、策略解析、余额刷新、连接测试、健康状态查询和对前端提供 Tauri commands。
+1. `Desktop UI`  
+   Owns account, relay, platform key, policy, log, statistics, and status presentation.
 
-3. `Loopback Gateway`
-仅监听本机回环地址，供本机 Codex 客户端调用。负责平台 key 校验、请求归一化、选路、转发和写日志。
+2. `Control Plane`  
+   Owns config validation, config mutation, policy parsing, balance refresh, connection tests, health-status queries, and Tauri commands for the frontend.
 
-4. `Routing Engine`
-根据平台 key 绑定的策略，在官方账号池和中转池中选出当前可用节点，支持优先级、熔断、恢复和跨池降级。
+3. `Loopback Gateway`  
+   Listens only on loopback addresses for local Codex clients. Owns platform-key validation, request normalization, routing, forwarding, and logging.
 
-5. `Provider Adapters`
-包括官方账号适配器与中转站适配器，统一封装认证、余额、模型能力、usage 抽取和错误归一化。
+4. `Routing Engine`  
+   Selects a currently available endpoint from the official-account pool and relay pool using the policy bound to the platform key. Supports priority, circuit breaking, recovery, and cross-pool failover.
 
-6. `Persistence`
-SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
+5. `Provider Adapters`  
+   Includes official-account adapters and relay adapters. Normalizes authentication, balance, model capability, usage extraction, and error mapping.
 
-## 5. 核心运行模型
+6. `Persistence`  
+   Uses SQLite for non-sensitive state and Windows Credential Manager for sensitive credentials.
+
+## 5. Core Runtime Model
 
 ### 5.1 ProviderEndpoint
 
-`ProviderEndpoint` 表示一个可出流量的节点，统一抽象官方账号和第三方中转。
+`ProviderEndpoint` represents a traffic-bearing upstream node. It is the common abstraction over official accounts and third-party relay endpoints.
 
-公共字段建议包括：
+Suggested shared fields:
 
 - `id`
 - `name`
-- `kind`，取值为 `official_account` 或 `relay_endpoint`
+- `kind`, with values `official_account` or `relay_endpoint`
 - `enabled`
 - `priority`
 - `pool_tags`
@@ -130,9 +135,9 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `pricing_profile_id`
 - `feature_capabilities`
 
-官方账号附加字段：
+Suggested official-account-specific fields:
 
-- `auth_mode`，取值为 `imported_session` 或 `in_app_login`
+- `auth_mode`, with values `imported_session` or `in_app_login`
 - `account_identity`
 - `quota_capability`
 - `refresh_capability`
@@ -140,18 +145,18 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `supports_context_compression`
 - `context_compression_modes`
 
-中转附加字段：
+Suggested relay-specific fields:
 
-- `relay_type`，首版至少支持 `newapi`
+- `relay_type`, with `newapi` as the minimum v1 supported value
 - `base_url`
 - `model_mapping`
 - `balance_capability`
 
 ### 5.2 CredentialRef
 
-`CredentialRef` 用于引用 Windows Credential Manager 中的敏感数据。数据库只存引用，不存 secret 明文。
+`CredentialRef` references sensitive data stored in Windows Credential Manager. The database stores only references, never plaintext secrets.
 
-字段建议包括：
+Suggested fields:
 
 - `id`
 - `target_name`
@@ -161,9 +166,9 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 
 ### 5.3 FeatureCapabilities
 
-`FeatureCapabilities` 用于描述某个节点或某个模型可提供的官方特性能力，避免把这些能力散落在 UI 文案或请求转换逻辑里。其来源以 `CLIProxyAPI` 已实现能力为准。
+`FeatureCapabilities` describes official feature support at either endpoint level or model level so that capability decisions are not scattered across UI copy and request transformation logic. The source of truth is whatever `CLIProxyAPI` already supports.
 
-字段建议包括：
+Suggested fields:
 
 - `model_id`
 - `max_context_window`
@@ -174,39 +179,39 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `supports_streaming`
 - `last_capability_check_at`
 
-设计原则：
+Design rules:
 
-- 能力优先按模型粒度维护，如果暂时拿不到模型级能力，可先回退到节点级默认能力
-- 上下文窗口大小必须作为显式能力字段展示，而不是隐含在模型名称里
-- 只有当 `CLIProxyAPI` 已实现某项官方特性时，桌面版才将其纳入能力模型
-- 桌面版不实现参考项目中不存在的自研上下文压缩或其他官方特性
+- capabilities should be maintained at model granularity whenever possible; if model-level capability data is unavailable, the system may temporarily fall back to endpoint-level defaults
+- context-window size must be surfaced as an explicit field, not hidden inside model naming
+- only capabilities already implemented in `CLIProxyAPI` should be included
+- the desktop app must not implement custom context-compression or other official-feature algorithms that do not exist in the reference project
 
 ### 5.4 PlatformKey
 
-`PlatformKey` 表示发给本机 Codex 客户端使用的网关 key。
+`PlatformKey` represents a local gateway key issued to a local Codex client.
 
-字段建议包括：
+Suggested fields:
 
 - `id`
 - `name`
 - `key_prefix`
 - `secret_ref`
 - `enabled`
-- `allowed_mode`，取值为 `account_only`、`relay_only`、`hybrid`
+- `allowed_mode`, with values `account_only`, `relay_only`, `hybrid`
 - `policy_id`
 - `created_at`
 - `last_used_at`
 
-其中：
+Where:
 
-- `allowed_mode` 代表顶层许可边界
-- 真正的选路细则由绑定的 `RoutingPolicy` 决定
+- `allowed_mode` defines the top-level permission boundary
+- detailed routing behavior is determined by the bound `RoutingPolicy`
 
 ### 5.5 RoutingPolicy
 
-`RoutingPolicy` 是系统核心配置对象，建议独立成可复用实体，而不是把复杂规则散落到平台 key 表中。
+`RoutingPolicy` is the core configuration object and should exist as an independent reusable entity instead of scattering routing logic across the platform-key table.
 
-字段建议包括：
+Suggested fields:
 
 - `id`
 - `name`
@@ -219,18 +224,18 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `circuit_breaker_config`
 - `request_feature_policy`
 
-其中：
+Where:
 
-- `selection_order` 定义池顺序、标签顺序和节点分组顺序
-- `failure_rules` 定义哪些失败会触发降级
-- `recovery_rules` 定义熔断恢复和半开探测逻辑
-- `request_feature_policy` 定义当请求声明了参考项目已支持的官方特性需求时，如何校验、降级、拒绝或改写
+- `selection_order` defines pool order, tag order, and endpoint grouping order
+- `failure_rules` defines which failures trigger failover
+- `recovery_rules` defines circuit-breaker recovery and half-open probing behavior
+- `request_feature_policy` defines how explicitly requested official feature requirements are validated, downgraded, rejected, or rewritten
 
 ### 5.6 RequestLog
 
-每次客户端请求一条主记录。
+Each client request produces one main request record.
 
-字段建议包括：
+Suggested fields:
 
 - `request_id`
 - `platform_key_id`
@@ -252,9 +257,9 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 
 ### 5.7 RequestAttemptLog
 
-为了记录降级链路，每次尝试都需要单独存一条尝试记录。
+Each failover attempt should be stored as its own record so the full downgrade chain is visible.
 
-字段建议包括：
+Suggested fields:
 
 - `attempt_id`
 - `request_id`
@@ -272,9 +277,9 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 
 ### 5.8 UsageLedger
 
-`UsageLedger` 是 token 和费用统计的事实表。
+`UsageLedger` is the fact table for token accounting and cost estimation.
 
-字段建议包括：
+Suggested fields:
 
 - `usage_id`
 - `request_id`
@@ -294,67 +299,67 @@ SQLite 保存非敏感状态，Windows Credential Manager 保存敏感凭据。
 - `price_source`
 - `recorded_at`
 
-## 6. 路由与降级规则
+## 6. Routing And Failover Rules
 
-### 6.1 模式定义
+### 6.1 Mode Definitions
 
-三种模式语义固定如下：
+The three mode semantics are fixed:
 
-- `account_only`：候选集只能来自官方账号池
-- `relay_only`：候选集只能来自第三方中转池
-- `hybrid`：候选集来自两个池，但顺序和跨池降级由策略定义
+- `account_only`: candidates may only come from the official-account pool
+- `relay_only`: candidates may only come from the relay pool
+- `hybrid`: candidates may come from both pools, with order and cross-pool failover controlled by policy
 
-### 6.2 选路流程
+### 6.2 Routing Flow
 
-每次请求的标准流程为：
+The standard per-request flow is:
 
-1. 本机客户端携带平台 key 请求本地网关
-2. 网关校验平台 key 并加载绑定策略
-3. 解析请求中的官方特性需求，仅处理 `CLIProxyAPI` 已支持的特性参数
-4. 根据 `allowed_mode`、`selection_order` 和特性需求生成候选队列
-5. 过滤禁用、认证失效、已知额度耗尽、熔断中或能力不满足的节点
-6. 按顺序尝试请求上游
-7. 当命中失败规则时记录尝试日志并切换到下一个候选
-8. 成功后写入请求主日志、尝试日志、usage 和健康状态
+1. a local client sends a request to the local gateway with a platform key
+2. the gateway validates the platform key and loads the bound policy
+3. the gateway parses requested official feature requirements and only processes features already supported by `CLIProxyAPI`
+4. candidate queues are built from `allowed_mode`, `selection_order`, and capability requirements
+5. candidates are filtered for disabled state, invalid authentication, known quota exhaustion, open-circuit state, or capability mismatch
+6. upstreams are attempted in sequence
+7. when a failure matches failover rules, the attempt is logged and the next candidate is tried
+8. on success, the system writes main request logs, attempt logs, usage data, and health updates
 
-### 6.3 可配置失败条件
+### 6.3 Configurable Failure Conditions
 
-V1 支持策略层配置以下触发项：
+V1 policy configuration must support at least:
 
-- 认证失效
-- 额度耗尽
+- authentication invalidation
+- quota exhaustion
 - `429`
-- 超时
-- 连续 `5xx`
-- 网络不可达
+- timeout
+- repeated `5xx`
+- network unreachable
 
-V1 不做并发探测，只做串行降级。每个请求都必须能解释“为什么选到当前节点”和“为什么放弃前一个节点”。
+V1 does not use parallel probing; it uses sequential failover only. Every request must remain explainable in terms of both “why this endpoint was selected” and “why the previous endpoint was abandoned.”
 
-### 6.4 官方特性处理
+### 6.4 Official Feature Handling
 
-V1 对官方特性的原则是：
+The official-feature rules for V1 are:
 
-- 仅支持 `CLIProxyAPI` 已有实现的官方特性
-- 桌面版不单独新增官方特性协议或自研特性算法
-- 已有实现的官方特性可以被发现、展示、透传、记录并参与选路
+- only official features already implemented in `CLIProxyAPI` are supported
+- the desktop app must not introduce its own official-feature protocol or custom algorithm
+- supported official features may be discovered, displayed, passed through, logged, and included in routing decisions
 
-处理原则如下：
+Handling rules:
 
-- 如果客户端请求显式声明了特性需求，路由器优先选择满足该能力的候选
-- 若策略允许降级，可退回到能力较低但仍可执行的候选，并在日志中记录能力降级
-- 若策略不允许降级，则直接返回能力不满足错误，而不是静默修改请求
-- 如果某个官方节点支持参考项目已覆盖的压缩或 compact 类能力，网关应尽量透传该参数，而不是在本地伪造行为
-- 本地网关首版不实现参考项目中不存在的上下文压缩算法或其他官方特性算法
+- if a client explicitly declares a feature requirement, the router should prefer candidates that satisfy it
+- if policy allows downgrade, the router may select a lower-capability candidate that can still execute the request, but this downgrade must be recorded
+- if policy does not allow downgrade, the gateway should return a capability mismatch error instead of silently rewriting behavior
+- if an official endpoint supports a capability already represented in the reference project, such as `compact`-style behavior, the gateway should pass that parameter through rather than simulate the feature locally
+- the local gateway must not implement context-compression algorithms or other official-feature algorithms that do not exist in the reference project
 
-实现参考优先级：
+Reference-priority rules:
 
-- 优先复用 `CLIProxyAPI` 里“模型注册能力约束”的思路来管理上下文窗口和最大 token 边界
-- 优先复用 `CLIProxyAPI` 里 `compact` 路径透传的思路来承接官方压缩类特性
-- 如果参考项目没有实现某项官方特性，则桌面版 V1 也不实现该特性
+- prefer the `CLIProxyAPI` model-registration approach for context-window and max-token constraints
+- prefer the `CLIProxyAPI` `compact` path pass-through approach for compact/compression behavior
+- if a feature is absent from the reference project, it is out of V1 scope here too
 
-### 6.5 熔断与恢复
+### 6.5 Circuit Breaking And Recovery
 
-路由器需要支持健康状态机，至少包含：
+The router health-state machine must at minimum support:
 
 - `healthy`
 - `degraded`
@@ -362,27 +367,27 @@ V1 对官方特性的原则是：
 - `half_open`
 - `disabled`
 
-恢复逻辑支持：
+Recovery logic must support:
 
-- 熔断时长
-- 半开探测
-- 探测成功恢复
-- 探测失败继续熔断
+- circuit open duration
+- half-open probing
+- successful probe recovery
+- failed probe reopening
 
-## 7. 官方账号管理
+## 7. Official Account Management
 
-### 7.1 接入方式
+### 7.1 Onboarding Modes
 
-V1 同时支持两种接入：
+V1 supports two official-account onboarding modes:
 
-- 导入现有登录态
-- 应用内登录
+- import existing login state
+- in-app login
 
-两者进入系统后统一归一化为 `OfficialSession` 运行时模型，便于复用验证、续期、余额和路由逻辑。
+Once an account enters the system, both modes are normalized into the same `OfficialSession` runtime model so that validation, refresh, balance, and routing logic can be shared.
 
-### 7.2 OfficialSession 运行时模型
+### 7.2 OfficialSession Runtime Model
 
-字段建议包括：
+Suggested fields:
 
 - `session_id`
 - `account_identity`
@@ -394,25 +399,25 @@ V1 同时支持两种接入：
 - `status`
 - `default_feature_capabilities`
 
-### 7.3 能力探测
+### 7.3 Capability Probing
 
-导入或登录成功后立即执行一次能力探测：
+Immediately after import or login, the system should perform a capability probe:
 
-- 是否可用
-- 是否可刷新
-- 是否可查询真实额度
-- 支持哪些模型或接口族
-- 参考项目已支持的特性能力，例如上下文窗口大小或 `compact` 能力
+- whether the account is usable
+- whether it can refresh
+- whether it can query real quota
+- which model families or interface families it supports
+- which `CLIProxyAPI`-backed official capabilities it supports, such as context-window size or `compact`
 
-对于不能查询真实额度的官方账号，V1 明确展示“余额不可查询”，不做虚假估算。
+If an official account cannot expose real quota, V1 must display “balance not queryable” and must not show a fake estimate.
 
-## 8. 第三方中转管理
+## 8. Third-Party Relay Management
 
-### 8.1 适配器模型
+### 8.1 Adapter Model
 
-中转站余额和调用细节不能写死在主流程中，需要定义 `RelayBalanceAdapter` 和 `RelayInvocationAdapter`。
+Relay balance and invocation details must not be hard-coded in the main flow. The system should define `RelayBalanceAdapter` and `RelayInvocationAdapter`.
 
-每种中转类型至少提供：
+Each relay type should provide at least:
 
 - `supports_balance_query()`
 - `query_balance()`
@@ -421,185 +426,185 @@ V1 同时支持两种接入：
 - `extract_usage()`
 - `normalize_error()`
 
-### 8.2 首版支持范围
+### 8.2 V1 Relay Scope
 
-V1 先支持：
+V1 should support:
 
 - `newapi`
 - `generic_openai_compatible_no_balance`
 
-第二类作为兜底类型，允许调用，但明确显示“不支持余额查询”。
+The second type acts as a fallback relay type: it may be used for invocation, but must be explicitly marked as not supporting balance queries.
 
-## 9. 余额、统计与费用口径
+## 9. Balance, Statistics, And Cost Semantics
 
-### 9.1 官方账号余额
+### 9.1 Official Account Balance
 
-口径固定为：
+The balance rule is fixed:
 
-- 只展示真实可查询值
-- 查询不到则显示“不可查询”
-- 不提供本地估算额度来冒充真实额度
+- display only real queryable values
+- if unavailable, display “not queryable”
+- do not use local estimation to imitate real official quota
 
-### 9.2 中转余额
+### 9.2 Relay Balance
 
-口径固定为：
+The balance rule is fixed:
 
-- 仅对已适配且支持余额接口的中转展示真实余额
-- 其余中转明确标记“不支持查询”
+- only relays with supported balance adapters may display real balances
+- all others must be explicitly marked as unsupported
 
-### 9.3 Token 统计
+### 9.3 Token Accounting
 
-优先记录上游真实 usage。若拿不到真实 usage，则在统计中明确标注来源为未知或局部估算。
+Prefer real upstream usage data. If real usage is unavailable, the system must explicitly label the result as unknown or partially estimated.
 
-标准统计字段包括：
+Standard usage fields include:
 
-- 输入 token
-- 输出 token
-- cache read token
-- cache write token
-- reasoning token
-- total token
+- input tokens
+- output tokens
+- cache read tokens
+- cache write tokens
+- reasoning tokens
+- total tokens
 
-如果上游返回与参考项目已支持特性相关的 usage 或裁剪信息，也应归一化写入请求尝试快照或 usage 扩展字段，供后续 UI 展示。
+If the upstream returns usage or trimming information related to supported official features, the system should normalize that data into attempt snapshots or usage extension fields so that the UI can surface it later.
 
-### 9.4 费用估算
+### 9.4 Cost Estimation
 
-费用估算通过 `PricingProfile` 完成：
+Cost estimation is handled through `PricingProfile`:
 
-- 官方账号优先使用本地价格表估算
-- 中转优先使用该中转的价格表或用户配置倍率
-- 费用记录始终标记为 `estimated`
+- official accounts should prefer local price tables
+- relays should prefer relay-specific pricing tables or user-configured multipliers
+- all cost records must be marked as `estimated`
 
-`PricingProfile` 至少包含：
+`PricingProfile` should at minimum include:
 
-- 模型匹配规则
-- 输入单价
-- 输出单价
-- 缓存命中单价
-- 币种
-- 生效时间
+- model-matching rules
+- input unit price
+- output unit price
+- cache-hit unit price
+- currency
+- effective time
 
-## 10. 凭据与存储
+## 10. Credentials And Storage
 
-### 10.1 安全存储
+### 10.1 Secure Storage
 
-敏感信息存放于 Windows Credential Manager，包括：
+Sensitive data belongs in Windows Credential Manager, including:
 
-- 官方账号 token 或 session
-- 第三方中转 API key
-- 平台 key secret
+- official account tokens or sessions
+- third-party relay API keys
+- platform key secrets
 
-SQLite 只存：
+SQLite stores only:
 
-- 配置
-- 引用关系
-- 日志
-- 统计
-- 余额快照
-- 健康状态
+- config
+- references
+- logs
+- statistics
+- balance snapshots
+- health state
 
-### 10.2 持久层原则
+### 10.2 Persistence Rules
 
-- 前端不直接读写敏感明文
-- 网关运行时通过 `CredentialRef` 读取需要的 secret
-- 所有涉及请求日志和 usage 的写入使用事务，保证请求主表、尝试表和统计表一致
+- the frontend must not read or write sensitive plaintext directly
+- the gateway runtime must load required secrets through `CredentialRef`
+- request log and usage writes must be transactional so the main request table, attempt table, and statistics stay consistent
 
-## 11. 管理接口与本地网关接口
+## 11. Management Interfaces And Local Gateway Interface
 
-### 11.1 管理接口
+### 11.1 Management Interface
 
-桌面前端通过 Tauri commands 与后端交互，执行：
+The desktop frontend talks to the backend through Tauri commands to perform:
 
-- 账号登录和导入
-- 中转新增与测试
-- 平台 key 创建与禁用
-- 策略编辑
-- 余额刷新
-- 状态查询
-- 日志聚合查询
+- account login and account import
+- relay creation and relay testing
+- platform-key creation and disable/enable actions
+- policy editing
+- balance refresh
+- status queries
+- aggregated log queries
 
-### 11.2 网关接口
+### 11.2 Gateway Interface
 
-本地 HTTP 网关只开放给本机客户端使用，建议至少包含：
+The local HTTP gateway is only exposed to local clients. It should include at least:
 
-- Codex 主请求入口
+- the main Codex request entrypoint
 - `GET /health`
-- `GET /models`，如果后续需要模型枚举映射
+- `GET /models` if model enumeration or mapping becomes necessary
 
-网关在请求入口需要具备一层轻量的特性解析与能力匹配逻辑：
+The request entrypoint should include a lightweight capability-parsing and compatibility-matching layer:
 
-- 识别客户端声明的目标模型
-- 识别客户端声明的参考项目已支持的特性需求
-- 将这些需求映射到候选节点能力矩阵
-- 在无法满足时返回明确的能力不匹配错误
+- identify the target model declared by the client
+- identify official feature requirements that are already supported by the reference project
+- map those requirements into the capability matrix for candidate endpoints
+- return explicit capability mismatch errors when the request cannot be satisfied
 
-其中，若官方特性在参考项目中已经存在稳定入口，例如 `compact` 路径或模型能力注册逻辑，桌面网关优先保持兼容；若参考项目没有实现，则 V1 不纳入范围。
+If an official feature already has a stable entrypoint in the reference project, such as a `compact` path or a model-capability registration rule, the desktop gateway should preserve that compatibility. If the reference project does not implement the feature, it is out of V1 scope.
 
-控制面动作和数据面动作必须隔离，避免在 UI 中的测试连接、余额查询等操作污染真实请求日志和用量统计。
+Control-plane actions and data-plane actions must remain isolated so that connection tests, balance refreshes, and other UI operations do not pollute real request logs or usage statistics.
 
-## 12. Desktop UI 与托盘
+## 12. Desktop UI And Tray
 
-### 12.1 主界面结构
+### 12.1 Main Interface Structure
 
-V1 主界面建议固定为六个主区：
+The V1 main interface should be organized into six primary sections:
 
-1. 概览
-2. 官方账号
-3. 第三方中转
-4. 平台 Key
-5. 策略中心
-6. 请求日志与统计
+1. Overview
+2. Official Accounts
+3. Third-Party Relays
+4. Platform Keys
+5. Policy Center
+6. Request Logs And Statistics
 
-主界面还需要有明确的能力展示区域，至少在以下位置可见：
+The main interface must also expose capability information in explicit UI surfaces, at minimum in:
 
-- 官方账号详情页展示参考项目已支持的能力情况，例如上下文窗口大小或 `compact` 能力
-- 模型或能力详情弹层展示模型级能力矩阵
-- 请求日志详情展示请求声明能力与实际生效能力
+- official account detail pages showing supported reference-project capabilities such as context-window size or `compact`
+- model/capability detail overlays showing a model-level capability matrix
+- request-log details showing declared capabilities and effective resolved capabilities
 
-### 12.2 首启默认对象
+### 12.2 Default Objects On First Launch
 
-首次启动自动创建：
+First launch automatically creates:
 
-- 一个启用中的 `default key`
-- 一个系统内置 `default policy`
+- one enabled `default key`
+- one built-in `default policy`
 
-默认行为：
+Default behavior:
 
 - `default key.allowed_mode = hybrid`
 - `default key.policy_id = default policy`
 
-如果用户删除 `default key`，系统不自动重建。若只是禁用，则托盘快捷切换功能变为只读提示。
+If the user deletes `default key`, the system does not recreate it automatically. If the user only disables it, tray quick-switch behavior becomes read-only status feedback.
 
-### 12.3 Tray 右键面板
+### 12.3 Tray Right-Click Panel
 
-Tauri v2 托盘面板定位为增强运维面板，不承载复杂编辑。
+In Tauri v2, the tray menu is an enhanced operational panel rather than a complex editing surface.
 
-建议菜单项包括：
+Suggested tray items:
 
-- 网关状态
-- 当前监听地址
-- `default key` 当前模式
-- 切换到 `account_only`
-- 切换到 `relay_only`
-- 切换到 `hybrid`
-- 当前可用官方账号数
-- 当前可用中转数
-- 最近一次余额刷新摘要
-- 打开主界面
-- 重启网关
-- 退出
+- gateway status
+- current listen address
+- current `default key` mode
+- switch to `account_only`
+- switch to `relay_only`
+- switch to `hybrid`
+- current available official-account count
+- current available relay count
+- latest balance-refresh summary
+- open main window
+- restart gateway
+- quit
 
-行为原则：
+Behavior rules:
 
-- 托盘只操作 `default key`
-- 托盘不直接编辑复杂策略
-- 左键单击托盘图标唤起主窗口
-- 右键打开菜单
-- 当当前模式下没有可用节点时，允许切换，但需明确显示该模式无可用节点
+- the tray only operates on `default key`
+- the tray does not directly edit complex routing policy
+- left click on the tray icon opens the main window
+- right click opens the menu
+- if the current mode has no available endpoints, switching is still allowed, but the tray must clearly indicate that the selected mode currently has no usable endpoint
 
-## 13. 错误模型
+## 13. Error Model
 
-V1 将错误统一收敛为以下类别：
+V1 should normalize errors into the following categories:
 
 - `CredentialError`
 - `QuotaError`
@@ -607,112 +612,112 @@ V1 将错误统一收敛为以下类别：
 - `UpstreamError`
 - `ConfigError`
 
-UI 展示面向用户的动作性错误文案，不直接展示内部堆栈。
+The UI should show user-actionable copy and must not expose internal stack traces directly.
 
-示例：
+Examples:
 
-- 该官方账号登录态已过期，请重新登录
-- 该中转类型当前不支持余额查询
-- 此平台 key 的策略未包含任何可用节点
-- 请求已降级多次，所有候选节点均失败
-- 请求要求的官方特性当前无可用节点支持，或该特性不在 V1 支持范围内
+- This official account login state has expired. Please sign in again.
+- This relay type does not currently support balance queries.
+- This platform key policy does not contain any available endpoints.
+- The request degraded multiple times and all candidates failed.
+- The requested official feature is unsupported by all available endpoints, or the feature is outside the V1 support boundary.
 
-## 14. 测试策略
+## 14. Test Strategy
 
-V1 测试重点放在后端稳定性，而不是完整 UI 自动化。
+V1 should emphasize backend stability over full UI automation completeness.
 
-### 14.1 单元测试
+### 14.1 Unit Tests
 
-- 路由器优先级和模式筛选
-- 失败规则触发
-- 熔断和恢复
-- 官方账号能力探测
-- 参考项目已支持的官方特性能力匹配
-- `compact` 或类似已实现特性的透传与拒绝逻辑
-- NewAPI 余额归一化
-- usage 抽取与价格表匹配
+- router priority and mode filtering
+- failure-rule triggering
+- circuit-breaking and recovery
+- official account capability probing
+- capability matching for official features already supported by the reference project
+- pass-through and rejection logic for `compact` or similar supported features
+- NewAPI balance normalization
+- usage extraction and price-table matching
 
-### 14.2 持久层测试
+### 14.2 Persistence Tests
 
-- 请求主表、尝试表、统计表事务一致性
-- 平台 key secret 不落库
-- 凭据引用有效性
+- transactional consistency across main request table, attempt table, and statistics table
+- platform-key secrets never written as plaintext to the database
+- credential-reference validity
 
-### 14.3 集成测试
+### 14.3 Integration Tests
 
-通过本地测试 server 模拟：
+Use local test servers to simulate:
 
-- 成功请求
+- successful requests
 - `429`
-- 超时
-- 连续 `5xx`
-- 额度耗尽
+- timeout
+- repeated `5xx`
+- quota exhaustion
 
-验证：
+Verify:
 
-- 是否正确降级
-- 是否正确写入日志
-- 是否正确更新健康状态
+- correct failover behavior
+- correct logging
+- correct health-state updates
 
-### 14.4 Tauri 后端测试
+### 14.4 Tauri Backend Tests
 
-验证 commands：
+Verify commands for:
 
-- 创建和读取平台 key
-- 登录态导入与校验
-- 中转连接测试
-- 余额刷新
-- 日志查询
+- creating and reading platform keys
+- importing and validating login state
+- testing relay connections
+- refreshing balances
+- querying logs
 
-## 15. 分阶段实施建议
+## 15. Recommended Implementation Order
 
-推荐实现顺序：
+Recommended order:
 
-1. 项目骨架与基础运行时
-2. SQLite 与凭据存储封装
-3. 平台 key 和策略模型
-4. 本地 loopback gateway
-5. 路由引擎、请求日志链路与 Tauri 运行时日志
-6. 官方账号适配器
-7. NewAPI 中转适配器
-8. 概览页和列表管理页
-9. 托盘与 `default key`
-10. 统计与余额面板
+1. project skeleton and baseline runtime
+2. SQLite and credential-storage wrapper
+3. platform-key and policy model
+4. local loopback gateway
+5. routing engine, request lifecycle logging, and Tauri runtime logging
+6. official account adapter
+7. NewAPI relay adapter
+8. overview and list-management pages
+9. tray and `default key`
+10. statistics and balance panels
 
-这样可以优先建立最关键的控制面和数据面闭环，再补充 UI 完整度。
+This order prioritizes the most critical control-plane and data-plane closure before polishing UI completeness.
 
-## 16. 成功标准
+## 16. Success Criteria
 
-当以下条件满足时，V1 设计可进入实现计划阶段：
+The V1 design is ready to move into implementation planning when the following are true:
 
-- Windows 上可启动桌面应用和本地 loopback gateway
-- 首启自动生成 `default key`
-- 本机客户端可使用平台 key 访问本地网关
-- 官方账号和 NewAPI 中转都能被纳入统一选路
-- 参考项目已支持的官方特性能力可以被发现、展示、记录并参与选路
-- 降级规则可配置且有可解释日志
-- 敏感凭据不落库明文
-- 托盘可切换 `default key` 三种模式并显示摘要状态
-- 请求日志、token 统计和费用估算可按 key 与节点维度查看
+- the desktop app and local loopback gateway can start on Windows
+- first launch auto-generates `default key`
+- a local client can access the local gateway using a platform key
+- official accounts and NewAPI relays can both participate in one unified routing layer
+- official features already supported by the reference project can be discovered, displayed, logged, and used in routing
+- failover rules are configurable and produce explainable logs
+- sensitive credentials are not stored as plaintext in the database
+- the tray can switch the three `default key` modes and show status summary
+- request logs, token accounting, and estimated cost can be viewed by key and by endpoint
 
-## 17. Tauri 运行时日志系统（文件日志 + 终端日志）
+## 17. Tauri Runtime Logging System (File Logs + Terminal Logs)
 
-`RequestLog` / `RequestAttemptLog` 用于业务审计；本节定义的运行时日志用于诊断系统行为，两者不可互相替代。
+`RequestLog` and `RequestAttemptLog` are business-audit records. The runtime logs defined in this section are for diagnosing system behavior. They are related, but one is not a replacement for the other.
 
-### 17.1 目标与边界
+### 17.1 Goals And Boundaries
 
-V1 必须同时满足：
+V1 must satisfy all of the following:
 
-- 有终端日志：开发期和本地调试可直接在终端观察行为
-- 有文件日志：线上可追溯启动、选路、调用失败和异常栈
-- 同一事件可关联到 `request_id` / `attempt_id`，便于跨表排障
-- 日志内容默认脱敏，不泄露 token、api key、session 等敏感值
+- terminal logs exist so development and local debugging behavior is visible in real time
+- file logs exist so startup, routing, upstream failure, and exception behavior can be traced after the fact
+- the same event can be correlated to `request_id` and `attempt_id`
+- log output is redacted by default and must not leak token, API key, session, or similar secrets
 
-### 17.2 落地方案（Tauri v2）
+### 17.2 Tauri v2 Integration Approach
 
-在 `src-tauri/src/lib.rs` 中接入 `tauri-plugin-log`，并同时启用 `Stdout` 与 `LogDir` target。
+Integrate `tauri-plugin-log` in `src-tauri/src/lib.rs` and enable both `Stdout` and `LogDir` targets.
 
-建议基线配置（示例）：
+Suggested baseline configuration:
 
 ```rust
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
@@ -729,22 +734,22 @@ let log_plugin = tauri_plugin_log::Builder::new()
     .build();
 ```
 
-能力授权必须包含 `log:default`（`src-tauri/capabilities/default.json`）。
+Capabilities must include `log:default` in `src-tauri/capabilities/default.json`.
 
-### 17.3 文件日志策略
+### 17.3 File Log Policy
 
-- Windows 默认路径采用 Tauri `LogDir` 约定：`%LOCALAPPDATA%/{bundleIdentifier}/logs`
-- 文件前缀建议为 `gateway`，用于和未来 UI/diagnostics 日志区分
-- 默认级别建议：`Info`；开发模式可放宽到 `Debug`
-- 单文件上限建议 10 MB，启用轮转保留历史文件
+- on Windows, the default file location should follow the Tauri `LogDir` convention: `%LOCALAPPDATA%/{bundleIdentifier}/logs`
+- the file prefix should be `gateway` so it remains distinct from future UI or diagnostics artifacts
+- the default log level should be `Info`, with `Debug` allowed in development
+- default single-file size should be 10 MB with rotation and retained history
 
-### 17.4 终端日志策略
+### 17.4 Terminal Log Policy
 
-- 终端输出与文件输出共享同一条事件，禁止两套语义不一致的消息
-- 终端日志用于实时调试，优先输出关键状态变更和失败原因
-- 终端日志必须保持英文，便于跨团队和跨地区排障
+- terminal and file output must share the same event semantics
+- terminal logs are primarily for real-time debugging and should prioritize key state transitions and failure causes
+- terminal logs must remain in English for easier cross-team and cross-region diagnostics
 
-建议日志消息模板（英文）：
+Suggested log-message templates:
 
 ```text
 [gateway.request.accepted] request_id={request_id} model={model} platform_key_id={platform_key_id}
@@ -752,13 +757,13 @@ let log_plugin = tauri_plugin_log::Builder::new()
 [provider.call.failed] request_id={request_id} attempt_id={attempt_id} endpoint_id={endpoint_id} error_code={error_code} retryable={retryable}
 ```
 
-### 17.5 字段规范与脱敏规则
+### 17.5 Field Conventions And Redaction Rules
 
-运行时日志建议统一包含以下公共字段（按场景裁剪）：
+Suggested common runtime-log fields include:
 
 - `timestamp`
 - `level`
-- `component`（如 `gateway`, `routing`, `provider`, `control_plane`, `tauri_command`）
+- `component` such as `gateway`, `routing`, `provider`, `control_plane`, `tauri_command`
 - `event`
 - `request_id`
 - `attempt_id`
@@ -767,40 +772,40 @@ let log_plugin = tauri_plugin_log::Builder::new()
 - `latency_ms`
 - `error_code`
 
-脱敏要求：
+Redaction rules:
 
-- 严禁记录 `Authorization` 原值
-- 严禁记录官方 session 原值、第三方 API key 原值、平台 key secret 原值
-- URL query 中疑似凭据字段必须先清洗再写日志
+- never record a raw `Authorization` value
+- never record raw official session values, third-party API keys, or platform-key secrets
+- likely secret-bearing URL query fields must be cleaned before being written to logs
 
-### 17.6 注释与日志语言约束
+### 17.6 Comment And Log Language Constraints
 
-- 新增代码注释必须使用英文
-- 运行时日志 message 必须使用英文
-- 错误码保持稳定机器可读，错误 message 可读且可 grep
+- new code comments must be in English
+- runtime log messages must be in English
+- error codes must remain stable and machine-readable, while error messages should remain grep-friendly
 
-## 18. Superpowers 下一步计划（增量）
+## 18. Suggested Superpowers Follow-Up Work
 
-在现有 `docs/superpowers/plans/2026-04-11-codex-local-gateway-desktop-plan.md` 基础上，建议追加以下增量任务并优先执行：
+On top of `docs/superpowers/plans/2026-04-13-v1-completion-plan.md`, the following incremental priorities should remain high:
 
 1. **P0: Runtime Log Foundation**
-- 引入 `tauri-plugin-log` 与 capability 权限
-- 在 `lib.rs` 完成 `Stdout + LogDir` 双 target 初始化
-- 定义统一日志字段 helper（request/attempt/component/event）
-- 为敏感字段清洗提供公共函数
+   - add `tauri-plugin-log` and capability permissions
+   - initialize `Stdout + LogDir` targets in `lib.rs`
+   - define common runtime-log field helpers for request/attempt/component/event
+   - provide common redaction helpers for sensitive fields
 
-2. **P1: Gateway / Routing / Provider 日志接线**
-- 在网关入口写 `gateway.request.accepted`
-- 在选路成功和降级触发点写 `routing.endpoint.selected` / `routing.fallback.triggered`
-- 在上游调用失败写 `provider.call.failed`，并补全 `error_code`、`retryable`
-- 保证运行时日志与 `RequestLog`、`RequestAttemptLog` 可通过 `request_id` / `attempt_id` 关联
+2. **P1: Gateway / Routing / Provider Runtime Log Wiring**
+   - write `gateway.request.accepted` at the gateway entrypoint
+   - write `routing.endpoint.selected` and `routing.fallback.triggered` at selection and downgrade points
+   - write `provider.call.failed` on upstream failure, including `error_code` and `retryable`
+   - guarantee correlation between runtime logs and `RequestLog` / `RequestAttemptLog` through `request_id` and `attempt_id`
 
-3. **P2: 管理面可观测性闭环**
-- 新增 Tauri command：返回日志目录、最近日志文件元信息
-- UI 增加“导出诊断日志”入口（仅导出日志文件，不导出密钥）
-- 集成测试覆盖：日志文件落盘、终端输出、脱敏正确性
+3. **P2: Control-Plane Observability Closure**
+   - add Tauri commands for log directory and recent log-file metadata
+   - add a UI action for exporting diagnostic logs without exporting secrets
+   - add integration coverage for file-log persistence, terminal output, and redaction correctness
 
-4. **P3: 发布前验收**
-- 验证 Windows 安装包与开发模式下日志路径和轮转行为一致
-- 验证异常场景（429/5xx/timeout）日志可定位根因
-- 验证所有新增注释和日志 message 均为英文
+4. **P3: Pre-Release Validation**
+   - verify Windows packaged builds and development mode use consistent log paths and rotation behavior
+   - verify `429` / `5xx` / timeout scenarios remain diagnosable through runtime logs
+   - verify all new comments and runtime log messages remain English
