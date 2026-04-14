@@ -57,7 +57,7 @@ fn timeout_and_5xx_classification_follow_configured_thresholds() {
             now_ms + 3,
             &rules
         ),
-        EndpointHealthState::Open
+        EndpointHealthState::OpenCircuit
     );
 }
 
@@ -92,7 +92,7 @@ async fn codex_request_account_only_succeeds_with_placeholder_candidates() {
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
 
     assert_eq!(payload["allowed_mode"], "account_only");
-    assert_eq!(payload["endpoint_id"], "official-default");
+    assert_eq!(payload["endpoint_id"], "official-primary");
 }
 
 #[tokio::test]
@@ -115,7 +115,7 @@ async fn production_requests_ignore_test_route_status_header_by_default() {
                 .header("authorization", format!("bearer {secret}"))
                 .header(
                     "x-codexlag-endpoint-status",
-                    "official-default:503,relay-default:503",
+                    "official-primary:503,relay-newapi:503",
                 )
                 .body(Body::empty())
                 .expect("codex request"),

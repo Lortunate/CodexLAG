@@ -4,6 +4,7 @@ use axum::{
 };
 use codexlag_lib::{
     bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test},
+    commands::policies::{update_policy_from_runtime, PolicyUpdateInput},
     gateway::build_router_for_test,
     providers::invocation::InvocationFailureClass,
     routing::policy::RoutingMode,
@@ -40,6 +41,55 @@ async fn relay_provider_path_can_be_selected_from_runtime_inventory() {
             .any(|candidate| candidate.id == "relay-newapi"),
         "relay runtime inventory should include relay-newapi"
     );
+}
+
+#[tokio::test]
+async fn policy_selection_order_controls_first_attempt_endpoint() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    update_policy_from_runtime(
+        &runtime,
+        PolicyUpdateInput {
+            policy_id: "policy-default".into(),
+            name: "default".into(),
+            selection_order: vec!["relay-newapi".into(), "official-primary".into()],
+            cross_pool_fallback: true,
+            retry_budget: 2,
+            timeout_open_after: 2,
+            server_error_open_after: 2,
+            cooldown_ms: 30_000,
+            half_open_after_ms: 15_000,
+            success_close_after: 1,
+        },
+    )
+    .expect("update policy");
+
+    let secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("default key secret");
+    let response = runtime
+        .loopback_gateway()
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/codex/request")
+                .header("authorization", format!("bearer {secret}"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("route body");
+    let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
+    assert_eq!(payload["endpoint_id"], "relay-newapi");
 }
 
 #[tokio::test]

@@ -2,11 +2,14 @@ use std::collections::HashSet;
 
 use crate::{
     logging::runtime::build_attempt_id,
+    models::RoutingPolicy,
     providers::invocation::{InvocationFailure, InvocationOutcome, InvocationSuccessMetadata},
     routing::engine::{
-        choose_endpoint_at, mark_success_for_endpoint, record_failure_for_endpoint,
-        wall_clock_now_ms, CandidateEndpoint, FailureRules, RoutingError,
+        choose_endpoint_at, choose_endpoint_at_with_recovery, mark_success_for_endpoint,
+        record_failure_for_endpoint, wall_clock_now_ms, CandidateEndpoint, FailureRules,
+        PoolKind, RoutingError,
     },
+    routing::policy::apply_selection_order,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,15 +43,13 @@ pub struct RouteSelection {
 
 pub struct RuntimeRoutingState {
     candidates: Vec<CandidateEndpoint>,
-    rules: FailureRules,
     last_debug: Option<RouteDebugSnapshot>,
 }
 
 impl RuntimeRoutingState {
-    pub fn new(candidates: Vec<CandidateEndpoint>, rules: FailureRules) -> Self {
+    pub fn new(candidates: Vec<CandidateEndpoint>, _rules: FailureRules) -> Self {
         Self {
             candidates,
-            rules,
             last_debug: None,
         }
     }
@@ -89,21 +90,42 @@ impl RuntimeRoutingState {
     pub fn choose_with_failover<F>(
         &mut self,
         request_id: &str,
+        policy: &RoutingPolicy,
         mode: &str,
         mut invoke: F,
     ) -> Result<RouteSelection, RouteSelectionError>
     where
         F: FnMut(&CandidateEndpoint, &RoutingAttemptContext) -> InvocationOutcome,
     {
-        let max_attempts = self.candidates.len().max(1);
+        let max_attempts = if policy.retry_budget == 0 {
+            self.candidates.len().max(1)
+        } else {
+            usize::min(policy.retry_budget as usize, self.candidates.len()).max(1)
+        };
         let mut attempt_count = 0usize;
-        let mut attempted_endpoint_ids = HashSet::<String>::new();
+        let mut attempted_endpoint_keys = HashSet::<(PoolKind, String)>::new();
         let mut last_selected_endpoint: Option<String> = None;
         let mut last_invocation_failure: Option<InvocationFailure> = None;
+        let mut primary_pool: Option<PoolKind> = None;
 
         while attempt_count < max_attempts {
             let now_ms = wall_clock_now_ms();
-            let selected = match choose_endpoint_at(mode, &self.candidates, now_ms) {
+            let mut ordered = apply_selection_order(&self.candidates, &policy.selection_order);
+            for candidate in &mut ordered {
+                if let Some(position) = policy
+                    .selection_order
+                    .iter()
+                    .position(|endpoint_id| endpoint_id == &candidate.id)
+                {
+                    candidate.priority = i32::try_from(position).unwrap_or(i32::MAX);
+                }
+            }
+            let selected = match choose_endpoint_at_with_recovery(
+                mode,
+                &ordered,
+                now_ms,
+                &policy.recovery_rules,
+            ) {
                 Ok(candidate) => candidate,
                 Err(error) => {
                     return Err(RouteSelectionError {
@@ -113,8 +135,20 @@ impl RuntimeRoutingState {
                     });
                 }
             };
+            if let Some(pool) = primary_pool.as_ref() {
+                if !policy.cross_pool_fallback && selected.pool != *pool {
+                    return Err(RouteSelectionError {
+                        error: RoutingError::NoAvailableEndpoint,
+                        attempt_count,
+                        last_invocation_failure,
+                    });
+                }
+            } else {
+                primary_pool = Some(selected.pool.clone());
+            }
 
-            if attempted_endpoint_ids.contains(selected.id.as_str()) {
+            let selected_key = (selected.pool.clone(), selected.id.clone());
+            if attempted_endpoint_keys.contains(&selected_key) {
                 self.last_debug = last_selected_endpoint.map(|endpoint_id| RouteDebugSnapshot {
                     request_id: request_id.to_string(),
                     selected_endpoint_id: endpoint_id,
@@ -128,7 +162,7 @@ impl RuntimeRoutingState {
             }
 
             attempt_count = attempt_count.saturating_add(1);
-            attempted_endpoint_ids.insert(selected.id.clone());
+            attempted_endpoint_keys.insert(selected_key);
             last_selected_endpoint = Some(selected.id.clone());
             let attempt_index = attempt_count.saturating_sub(1);
             let context = RoutingAttemptContext {
@@ -140,7 +174,11 @@ impl RuntimeRoutingState {
 
             match invoke(&selected, &context) {
                 Ok(success_metadata) => {
-                    let _ = mark_success_for_endpoint(&mut self.candidates, selected.id.as_str());
+                    let _ = mark_success_for_endpoint(
+                        &mut self.candidates,
+                        selected.id.as_str(),
+                        &selected.pool,
+                    );
                     self.last_debug = Some(RouteDebugSnapshot {
                         request_id: request_id.to_string(),
                         selected_endpoint_id: selected.id.clone(),
@@ -157,9 +195,10 @@ impl RuntimeRoutingState {
                     let _ = record_failure_for_endpoint(
                         &mut self.candidates,
                         selected.id.as_str(),
+                        &selected.pool,
                         failure.to_endpoint_failure(),
                         now_ms,
-                        &self.rules,
+                        &policy.failure_rules,
                     );
                 }
             }

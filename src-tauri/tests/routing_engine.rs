@@ -4,14 +4,14 @@ use codexlag_lib::routing::engine::{
 };
 
 #[test]
-fn hybrid_mode_prefers_official_then_relay() {
+fn hybrid_mode_prefers_lower_priority_candidate_when_health_is_equal() {
     let endpoints = vec![
         CandidateEndpoint::official("official-1", 50, true),
         CandidateEndpoint::relay("relay-1", 10, true),
     ];
 
     let selected = choose_endpoint("hybrid", &endpoints).expect("selected endpoint");
-    assert_eq!(selected.id, "official-1");
+    assert_eq!(selected.id, "relay-1");
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn rate_limited_endpoint_is_opened_and_demoted() {
         now_ms,
         &rules,
     );
-    assert_eq!(state, EndpointHealthState::Open);
+    assert_eq!(state, EndpointHealthState::OpenCircuit);
 
     let selected = choose_endpoint_at("hybrid", &[official.clone(), relay.clone()], now_ms + 1)
         .expect("relay should be selected when official is open");
@@ -102,7 +102,7 @@ fn repeated_5xx_opens_circuit_until_cooldown_elapsed() {
         now_ms + 1,
         &rules,
     );
-    assert_eq!(second, EndpointHealthState::Open);
+    assert_eq!(second, EndpointHealthState::OpenCircuit);
 
     let before_recovery = choose_endpoint_at("relay_only", &[endpoint.clone()], now_ms + 200);
     assert!(matches!(
@@ -133,7 +133,7 @@ fn timeout_threshold_opens_and_success_resets_health() {
     );
     assert_eq!(
         record_failure(&mut endpoint, EndpointFailure::Timeout, now_ms + 1, &rules),
-        EndpointHealthState::Open
+        EndpointHealthState::OpenCircuit
     );
 
     assert!(choose_endpoint_at("relay_only", &[endpoint.clone()], now_ms + 2).is_err());
@@ -172,7 +172,7 @@ fn timeout_and_server_error_streaks_reset_each_other() {
     );
     assert_eq!(
         record_failure(&mut endpoint, EndpointFailure::Timeout, now_ms + 3, &rules),
-        EndpointHealthState::Open
+        EndpointHealthState::OpenCircuit
     );
 }
 
@@ -192,10 +192,34 @@ fn cooldown_recovery_updates_health_state_before_selection() {
             now_ms,
             &rules
         ),
-        EndpointHealthState::Open
+        EndpointHealthState::OpenCircuit
     );
     let selected = choose_endpoint_at("relay_only", &[endpoint], now_ms + 60).expect("recovered");
-    assert_eq!(selected.health.state, EndpointHealthState::Degraded);
+    assert_eq!(selected.health.state, EndpointHealthState::HalfOpen);
+}
+
+#[test]
+fn cooldown_expiry_moves_open_circuit_endpoint_to_half_open() {
+    let rules = FailureRules {
+        cooldown_ms: 30_000,
+        timeout_open_after: 1,
+        server_error_open_after: 1,
+    };
+    let mut endpoint = CandidateEndpoint::official("official-primary", 10, true);
+
+    let opened = record_failure(&mut endpoint, EndpointFailure::Timeout, 1_000, &rules);
+    assert_eq!(opened, EndpointHealthState::OpenCircuit);
+
+    codexlag_lib::routing::engine::refresh_endpoint_health_for_test(
+        &mut endpoint,
+        31_500,
+        &codexlag_lib::models::RecoveryRules {
+            half_open_after_ms: 15_000,
+            success_close_after: 1,
+        },
+    );
+
+    assert_eq!(endpoint.health.state, EndpointHealthState::HalfOpen);
 }
 
 #[test]
@@ -222,7 +246,7 @@ fn ignored_failures_do_not_reset_consecutive_failure_streaks() {
     );
     assert_eq!(
         record_failure(&mut endpoint, EndpointFailure::Timeout, now_ms + 2, &rules),
-        EndpointHealthState::Open
+        EndpointHealthState::OpenCircuit
     );
 }
 

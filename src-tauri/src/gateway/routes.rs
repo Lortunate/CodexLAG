@@ -158,6 +158,7 @@ async fn codex_request(
     ));
     let selection = match gateway_state.choose_endpoint_with_runtime_failover(
         request_id.as_str(),
+        &policy,
         mode,
         |endpoint, context| match endpoint.pool {
             PoolKind::Official => {
@@ -284,6 +285,7 @@ async fn codex_request(
     let candidates = gateway_state.current_candidates();
     let attempt_index = attempt_count.saturating_sub(1);
     let attempt_id = build_attempt_id(request_id.as_str(), attempt_index);
+    let attempt_count_value = attempt_count.to_string();
 
     let selected_line = format_runtime_event_fields(
         "routing",
@@ -293,7 +295,11 @@ async fn codex_request(
         Some(selected.id.as_str()),
         None,
         None,
-        &[("mode", mode)],
+        &[
+            ("mode", mode),
+            ("policy_id", policy.id.as_str()),
+            ("attempt_count", attempt_count_value.as_str()),
+        ],
     );
     log::info!("{selected_line}");
 

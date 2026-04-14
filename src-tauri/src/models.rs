@@ -181,7 +181,9 @@ pub enum FailureClass {
 pub enum EndpointHealthState {
     Healthy,
     Degraded,
-    Open,
+    OpenCircuit,
+    HalfOpen,
+    Disabled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

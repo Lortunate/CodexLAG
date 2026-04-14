@@ -1,10 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use crate::models::{EndpointFailure, EndpointHealthState, FailureRules};
-use crate::models::{EndpointHealth, FailureClass};
+use crate::models::{EndpointHealth, FailureClass, RecoveryRules};
 use crate::routing::policy::RoutingMode;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PoolKind {
     Official,
     Relay,
@@ -51,7 +51,7 @@ pub fn choose_endpoint(
     mode: &str,
     endpoints: &[CandidateEndpoint],
 ) -> Result<CandidateEndpoint, RoutingError> {
-    choose_endpoint_at(mode, endpoints, wall_clock_now_ms())
+    choose_endpoint_at_with_recovery(mode, endpoints, wall_clock_now_ms(), &RecoveryRules::default())
 }
 
 pub fn choose_endpoint_at(
@@ -59,10 +59,21 @@ pub fn choose_endpoint_at(
     endpoints: &[CandidateEndpoint],
     now_ms: u64,
 ) -> Result<CandidateEndpoint, RoutingError> {
+    choose_endpoint_at_with_recovery(mode, endpoints, now_ms, &RecoveryRules::default())
+}
+
+pub fn choose_endpoint_at_with_recovery(
+    mode: &str,
+    endpoints: &[CandidateEndpoint],
+    now_ms: u64,
+    recovery_rules: &RecoveryRules,
+) -> Result<CandidateEndpoint, RoutingError> {
     match RoutingMode::parse(mode).ok_or(RoutingError::InvalidMode)? {
-        RoutingMode::AccountOnly => choose_from_pool(endpoints, PoolKind::Official, now_ms),
-        RoutingMode::RelayOnly => choose_from_pool(endpoints, PoolKind::Relay, now_ms),
-        RoutingMode::Hybrid => choose_hybrid(endpoints, now_ms),
+        RoutingMode::AccountOnly => {
+            choose_from_pool(endpoints, PoolKind::Official, now_ms, recovery_rules)
+        }
+        RoutingMode::RelayOnly => choose_from_pool(endpoints, PoolKind::Relay, now_ms, recovery_rules),
+        RoutingMode::Hybrid => choose_hybrid(endpoints, now_ms, recovery_rules),
     }
     .ok_or(RoutingError::NoAvailableEndpoint)
 }
@@ -73,7 +84,7 @@ pub fn record_failure(
     now_ms: u64,
     rules: &FailureRules,
 ) -> EndpointHealthState {
-    refresh_endpoint_health(endpoint, now_ms);
+    refresh_endpoint_health(endpoint, now_ms, &RecoveryRules::default());
 
     match rules.classify_failure(&failure) {
         FailureClass::Timeout => {
@@ -119,20 +130,25 @@ pub fn mark_success(endpoint: &mut CandidateEndpoint) {
 pub fn record_failure_for_endpoint(
     endpoints: &mut [CandidateEndpoint],
     endpoint_id: &str,
+    pool: &PoolKind,
     failure: EndpointFailure,
     now_ms: u64,
     rules: &FailureRules,
 ) -> Option<EndpointHealthState> {
     let endpoint = endpoints
         .iter_mut()
-        .find(|candidate| candidate.id == endpoint_id)?;
+        .find(|candidate| candidate.id == endpoint_id && &candidate.pool == pool)?;
     Some(record_failure(endpoint, failure, now_ms, rules))
 }
 
-pub fn mark_success_for_endpoint(endpoints: &mut [CandidateEndpoint], endpoint_id: &str) -> bool {
+pub fn mark_success_for_endpoint(
+    endpoints: &mut [CandidateEndpoint],
+    endpoint_id: &str,
+    pool: &PoolKind,
+) -> bool {
     if let Some(endpoint) = endpoints
         .iter_mut()
-        .find(|candidate| candidate.id == endpoint_id)
+        .find(|candidate| candidate.id == endpoint_id && &candidate.pool == pool)
     {
         mark_success(endpoint);
         return true;
@@ -146,12 +162,16 @@ pub fn endpoint_health_state(endpoint: &CandidateEndpoint) -> EndpointHealthStat
 }
 
 fn open_circuit(endpoint: &mut CandidateEndpoint, now_ms: u64, rules: &FailureRules) {
-    endpoint.health.state = EndpointHealthState::Open;
+    endpoint.health.state = EndpointHealthState::OpenCircuit;
     endpoint.health.open_until_ms = Some(now_ms.saturating_add(rules.cooldown_ms));
 }
 
-fn refresh_endpoint_health(endpoint: &mut CandidateEndpoint, now_ms: u64) {
-    if endpoint.health.state != EndpointHealthState::Open {
+fn refresh_endpoint_health(
+    endpoint: &mut CandidateEndpoint,
+    now_ms: u64,
+    _recovery_rules: &RecoveryRules,
+) {
+    if endpoint.health.state != EndpointHealthState::OpenCircuit {
         return;
     }
 
@@ -160,25 +180,37 @@ fn refresh_endpoint_health(endpoint: &mut CandidateEndpoint, now_ms: u64) {
         .open_until_ms
         .is_some_and(|until_ms| now_ms >= until_ms);
     if is_expired {
-        endpoint.health.state = EndpointHealthState::Degraded;
+        endpoint.health.state = EndpointHealthState::HalfOpen;
         endpoint.health.open_until_ms = None;
     }
+}
+
+pub fn refresh_endpoint_health_for_test(
+    endpoint: &mut CandidateEndpoint,
+    now_ms: u64,
+    recovery_rules: &RecoveryRules,
+) {
+    refresh_endpoint_health(endpoint, now_ms, recovery_rules);
 }
 
 fn choose_from_pool(
     endpoints: &[CandidateEndpoint],
     pool: PoolKind,
     now_ms: u64,
+    recovery_rules: &RecoveryRules,
 ) -> Option<CandidateEndpoint> {
     let mut candidates: Vec<_> = endpoints.to_vec();
     for candidate in &mut candidates {
-        refresh_endpoint_health(candidate, now_ms);
+        refresh_endpoint_health(candidate, now_ms, recovery_rules);
     }
 
     let mut candidates: Vec<_> = candidates
         .into_iter()
         .filter(|item| {
-            item.available && item.pool == pool && item.health.state != EndpointHealthState::Open
+            item.available
+                && item.pool == pool
+                && item.health.state != EndpointHealthState::OpenCircuit
+                && item.health.state != EndpointHealthState::Disabled
         })
         .collect();
 
@@ -191,15 +223,23 @@ fn choose_from_pool(
     candidates.into_iter().next()
 }
 
-fn choose_hybrid(endpoints: &[CandidateEndpoint], now_ms: u64) -> Option<CandidateEndpoint> {
-    let official = choose_from_pool(endpoints, PoolKind::Official, now_ms);
-    let relay = choose_from_pool(endpoints, PoolKind::Relay, now_ms);
+fn choose_hybrid(
+    endpoints: &[CandidateEndpoint],
+    now_ms: u64,
+    recovery_rules: &RecoveryRules,
+) -> Option<CandidateEndpoint> {
+    let official = choose_from_pool(endpoints, PoolKind::Official, now_ms, recovery_rules);
+    let relay = choose_from_pool(endpoints, PoolKind::Relay, now_ms, recovery_rules);
 
     match (official, relay) {
         (Some(official), Some(relay)) => {
             let official_rank = health_rank(official.health.state);
             let relay_rank = health_rank(relay.health.state);
-            if official_rank <= relay_rank {
+            if official_rank < relay_rank {
+                Some(official)
+            } else if relay_rank < official_rank {
+                Some(relay)
+            } else if official.priority <= relay.priority {
                 Some(official)
             } else {
                 Some(relay)
@@ -215,7 +255,9 @@ fn health_rank(state: EndpointHealthState) -> i32 {
     match state {
         EndpointHealthState::Healthy => 0,
         EndpointHealthState::Degraded => 1,
-        EndpointHealthState::Open => 2,
+        EndpointHealthState::HalfOpen => 2,
+        EndpointHealthState::OpenCircuit => 3,
+        EndpointHealthState::Disabled => 4,
     }
 }
 
@@ -224,14 +266,17 @@ pub fn endpoint_rejection_reason(
     now_ms: u64,
 ) -> Option<&'static str> {
     let mut endpoint = endpoint.clone();
-    refresh_endpoint_health(&mut endpoint, now_ms);
+    refresh_endpoint_health(&mut endpoint, now_ms, &RecoveryRules::default());
 
     if !endpoint.available {
         return Some("unavailable");
     }
 
-    if endpoint.health.state == EndpointHealthState::Open {
+    if endpoint.health.state == EndpointHealthState::OpenCircuit {
         return Some("circuit_open");
+    }
+    if endpoint.health.state == EndpointHealthState::Disabled {
+        return Some("disabled");
     }
 
     None
@@ -242,10 +287,13 @@ pub fn endpoint_downgrade_reason(
     now_ms: u64,
 ) -> Option<&'static str> {
     let mut endpoint = endpoint.clone();
-    refresh_endpoint_health(&mut endpoint, now_ms);
+    refresh_endpoint_health(&mut endpoint, now_ms, &RecoveryRules::default());
 
     if endpoint.health.state == EndpointHealthState::Degraded {
         return Some("degraded_health");
+    }
+    if endpoint.health.state == EndpointHealthState::HalfOpen {
+        return Some("half_open_probe");
     }
 
     None
