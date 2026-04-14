@@ -1,4 +1,7 @@
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+
+use crate::models::{RequestAttemptLog, RequestLog};
 
 pub const USAGE_RECORD_RETENTION_CAP: usize = 10_000;
 
@@ -240,6 +243,78 @@ pub fn request_history(records: &[UsageRecord], limit: Option<usize>) -> Vec<Usa
     }
 }
 
+pub fn usage_request_detail_from_persisted_rows(
+    request: &RequestLog,
+    attempts: &[RequestAttemptLog],
+) -> UsageRequestDetail {
+    let final_attempt = attempts.iter().max_by_key(|attempt| attempt.attempt_index);
+    let endpoint_id = final_attempt
+        .map(|attempt| attempt.endpoint_id.clone())
+        .or_else(|| request.selected_endpoint_id.clone())
+        .unwrap_or_else(|| "unrouted".to_string());
+
+    let token_snapshot = final_attempt
+        .and_then(|attempt| attempt.token_usage_snapshot.as_deref())
+        .and_then(parse_usage_dimensions_snapshot);
+    let input_tokens = token_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.input_tokens)
+        .unwrap_or(0);
+    let output_tokens = token_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.output_tokens)
+        .unwrap_or(0);
+    let cache_read_tokens = token_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.cache_read_tokens)
+        .unwrap_or(0);
+    let cache_write_tokens = token_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.cache_write_tokens)
+        .unwrap_or(0);
+    let reasoning_tokens = token_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.reasoning_tokens)
+        .unwrap_or(0);
+    let total_tokens =
+        input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens;
+
+    let amount = final_attempt
+        .and_then(|attempt| attempt.estimated_cost_snapshot.as_deref())
+        .and_then(parse_cost_amount_snapshot);
+    let cost = UsageCost {
+        amount: amount.clone(),
+        provenance: if amount.is_some() {
+            UsageProvenance::Estimated
+        } else {
+            UsageProvenance::Unknown
+        },
+        is_estimated: amount.is_some(),
+    };
+
+    UsageRequestDetail {
+        request_id: request.request_id.clone(),
+        endpoint_id,
+        model: normalize_optional_string(Some(request.model.clone())),
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+        reasoning_tokens,
+        total_tokens,
+        cost,
+        pricing_profile_id: None,
+        declared_capability_requirements: None,
+        effective_capability_result: final_attempt
+            .and_then(|attempt| attempt.feature_resolution_snapshot.clone()),
+        final_upstream_status: final_attempt
+            .and_then(|attempt| attempt.upstream_status)
+            .map(|status| status as u16),
+        final_upstream_error_code: request.error_code.clone(),
+        final_upstream_error_reason: request.error_reason.clone(),
+    }
+}
+
 pub fn query_usage_ledger(records: &[UsageRecord], query: UsageLedgerQuery) -> UsageLedger {
     let mut entries = request_history(records, None)
         .into_iter()
@@ -316,6 +391,71 @@ fn usage_cost_from_estimate(
         provenance,
         is_estimated,
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageDimensionsSnapshot {
+    input_tokens: Option<u32>,
+    output_tokens: Option<u32>,
+    cache_read_tokens: Option<u32>,
+    cache_write_tokens: Option<u32>,
+    reasoning_tokens: Option<u32>,
+}
+
+fn parse_usage_dimensions_snapshot(value: &str) -> Option<UsageDimensionsSnapshot> {
+    let snapshot = serde_json::from_str::<Value>(value).ok()?;
+    Some(UsageDimensionsSnapshot {
+        input_tokens: snapshot
+            .get("input_tokens")
+            .or_else(|| snapshot.get("input"))
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok()),
+        output_tokens: snapshot
+            .get("output_tokens")
+            .or_else(|| snapshot.get("output"))
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok()),
+        cache_read_tokens: snapshot
+            .get("cache_read_tokens")
+            .or_else(|| snapshot.get("cache_read"))
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok()),
+        cache_write_tokens: snapshot
+            .get("cache_write_tokens")
+            .or_else(|| snapshot.get("cache_write"))
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok()),
+        reasoning_tokens: snapshot
+            .get("reasoning_tokens")
+            .or_else(|| snapshot.get("reasoning"))
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok()),
+    })
+}
+
+fn parse_cost_amount_snapshot(value: &str) -> Option<String> {
+    let snapshot = match serde_json::from_str::<Value>(value) {
+        Ok(snapshot) => snapshot,
+        Err(_) => return normalize_optional_string(Some(value.to_string())),
+    };
+
+    normalize_optional_string(
+        snapshot
+            .get("amount")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    )
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|candidate| {
+        let trimmed = candidate.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
 }
 
 fn normalize_cost_string(value: &str) -> Option<String> {

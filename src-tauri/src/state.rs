@@ -171,6 +171,14 @@ impl AppState {
             .active_pricing_profile_by_model(model, at_ms)?
             .map(|profile| profile.id))
     }
+
+    pub fn repositories(&self) -> &Repositories {
+        &self.repositories
+    }
+
+    pub fn repositories_mut(&mut self) -> &mut Repositories {
+        &mut self.repositories
+    }
 }
 
 #[derive(Clone)]
@@ -363,6 +371,40 @@ impl RuntimeState {
 
     pub fn set_current_mode(&self, mode: RoutingMode) -> crate::error::Result<()> {
         self.app_state_mut().set_default_key_allowed_mode(mode)
+    }
+
+    pub fn rebuild_gateway_candidates(&self) -> crate::error::Result<()> {
+        let candidates = {
+            let state = self.app_state.read().map_err(|_| {
+                CodexLagError::new("Failed to rebuild loopback gateway candidates.")
+                    .with_internal_context(
+                        "operation=rebuild_gateway_candidates;cause=app_state_lock_poisoned",
+                    )
+            })?;
+            crate::gateway::server::build_candidates_from_state(&state)
+        };
+        let next_gateway = LoopbackGateway::new_with_runtime(
+            Arc::clone(&self.app_state),
+            Arc::clone(&self.usage_records),
+            candidates,
+        );
+        let mut gateway = self.loopback_gateway.write().map_err(|_| {
+            CodexLagError::new("Failed to rebuild loopback gateway candidates.")
+                .with_internal_context(
+                    "operation=rebuild_gateway_candidates;cause=loopback_lock_poisoned",
+                )
+        })?;
+        *gateway = next_gateway;
+        Ok(())
+    }
+
+    pub fn on_inventory_changed(&self) -> crate::error::Result<()> {
+        if self.gateway_host_status().is_running {
+            self.restart_gateway()?;
+            return Ok(());
+        }
+
+        self.rebuild_gateway_candidates()
     }
 
     pub fn record_balance_refresh_summary(&self, summary: String) {

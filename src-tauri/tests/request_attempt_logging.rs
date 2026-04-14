@@ -309,6 +309,62 @@ fn active_pricing_profile_lookup_is_model_and_time_scoped() {
 }
 
 #[test]
+fn request_detail_can_be_derived_from_persisted_request_and_attempt_rows() {
+    let request = RequestLog {
+        request_id: "req-1".into(),
+        platform_key_id: "key-default".into(),
+        request_type: "codex".into(),
+        model: "gpt-4o-mini".into(),
+        selected_endpoint_id: Some("relay-newapi".into()),
+        attempt_count: 1,
+        final_status: "success".into(),
+        http_status: Some(200),
+        started_at_ms: 1_000,
+        finished_at_ms: Some(1_120),
+        latency_ms: Some(120),
+        error_code: None,
+        error_reason: None,
+        requested_context_window: None,
+        requested_context_compression: None,
+        effective_context_window: None,
+        effective_context_compression: None,
+    };
+
+    let attempts = vec![RequestAttemptLog {
+        attempt_id: "req-1:0".into(),
+        request_id: "req-1".into(),
+        attempt_index: 0,
+        endpoint_id: "relay-newapi".into(),
+        pool_type: "relay".into(),
+        trigger_reason: "primary".into(),
+        upstream_status: Some(200),
+        timeout_ms: None,
+        latency_ms: Some(120),
+        token_usage_snapshot: Some(
+            "{\"input_tokens\":640,\"output_tokens\":128,\"cache_read_tokens\":256,\"cache_write_tokens\":0,\"reasoning_tokens\":32}"
+                .into(),
+        ),
+        estimated_cost_snapshot: Some("{\"amount\":\"0.0010\"}".into()),
+        balance_snapshot_id: None,
+        feature_resolution_snapshot: Some("{\"outcome\":\"success\"}".into()),
+    }];
+
+    let detail =
+        codexlag_lib::logging::usage::usage_request_detail_from_persisted_rows(&request, &attempts);
+    assert_eq!(detail.request_id, "req-1");
+    assert_eq!(detail.endpoint_id, "relay-newapi");
+    assert_eq!(detail.input_tokens, 640);
+    assert_eq!(detail.total_tokens, 1_056);
+    assert_eq!(detail.cost.provenance, UsageProvenance::Estimated);
+    assert_eq!(detail.cost.amount.as_deref(), Some("0.0010"));
+    assert_eq!(
+        detail.effective_capability_result.as_deref(),
+        Some("{\"outcome\":\"success\"}")
+    );
+    assert_eq!(detail.final_upstream_status, Some(200));
+}
+
+#[test]
 fn pricing_profile_cost_estimation_is_scoped_by_model_and_time_and_marks_estimated() {
     let database_path = temp_database_path("codexlag-pricing-estimate");
     let repositories = Repositories::open(&database_path).expect("open repositories");

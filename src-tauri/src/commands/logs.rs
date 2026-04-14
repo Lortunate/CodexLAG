@@ -6,8 +6,7 @@ use tauri::State;
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
 use crate::logging::redaction::redact_sensitive_value;
 use crate::logging::usage::{
-    query_usage_ledger as query_usage_ledger_model, request_detail, request_history, UsageLedger,
-    UsageLedgerQuery, UsageRecord, UsageRequestDetail,
+    UsageCost, UsageLedger, UsageLedgerQuery, UsageProvenance, UsageRequestDetail,
 };
 use crate::state::{RuntimeLogFileMetadata as RuntimeLogFileMetadataState, RuntimeState};
 
@@ -295,26 +294,112 @@ pub fn usage_request_detail_from_runtime(
     runtime: &RuntimeState,
     request_id: &str,
 ) -> Option<UsageRequestDetail> {
-    let records = usage_records(runtime);
-    request_detail(&records, request_id)
+    runtime
+        .app_state()
+        .repositories()
+        .request_detail(request_id)
+        .expect("request detail")
 }
 
 pub fn usage_request_history_from_runtime(
     runtime: &RuntimeState,
     limit: Option<usize>,
 ) -> Vec<UsageRequestDetail> {
-    let records = usage_records(runtime);
-    request_history(&records, limit)
+    runtime
+        .app_state()
+        .repositories()
+        .recent_request_details(limit)
+        .expect("request history")
 }
 
 pub fn usage_ledger_from_runtime(
     runtime: &RuntimeState,
     query: Option<UsageLedgerQuery>,
 ) -> UsageLedger {
-    let records = usage_records(runtime);
-    query_usage_ledger_model(&records, query.unwrap_or_default())
+    let query = query.unwrap_or_default();
+    let mut entries = runtime
+        .app_state()
+        .repositories()
+        .recent_request_details(None)
+        .expect("request history")
+        .into_iter()
+        .filter(|entry| {
+            query
+                .endpoint_id
+                .as_ref()
+                .map(|endpoint_id| entry.endpoint_id == *endpoint_id)
+                .unwrap_or(true)
+        })
+        .filter(|entry| {
+            query
+                .request_id_prefix
+                .as_ref()
+                .map(|prefix| entry.request_id.starts_with(prefix))
+                .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(limit) = query.limit {
+        entries.truncate(limit);
+    }
+
+    UsageLedger {
+        total_tokens: entries.iter().map(|entry| entry.total_tokens).sum(),
+        total_cost: aggregate_total_cost(&entries),
+        entries,
+    }
 }
 
-fn usage_records(runtime: &RuntimeState) -> Vec<UsageRecord> {
-    runtime.loopback_gateway().state().usage_records()
+fn aggregate_total_cost(entries: &[UsageRequestDetail]) -> UsageCost {
+    if entries.is_empty() {
+        return UsageCost {
+            amount: None,
+            provenance: UsageProvenance::Unknown,
+            is_estimated: false,
+        };
+    }
+
+    let mut running_total = 0.0_f64;
+    let mut saw_amount = false;
+    let mut saw_unknown = false;
+    let mut saw_estimated = false;
+    let mut saw_actual = false;
+
+    for entry in entries {
+        let cost = &entry.cost;
+        if let Some(amount) = cost.amount.as_deref() {
+            if let Ok(parsed) = amount.parse::<f64>() {
+                saw_amount = true;
+                running_total += parsed;
+            }
+        }
+
+        match cost.provenance {
+            UsageProvenance::Actual => saw_actual = true,
+            UsageProvenance::Estimated => saw_estimated = true,
+            UsageProvenance::Unknown => saw_unknown = true,
+        }
+    }
+
+    let provenance = if saw_unknown || (saw_actual && saw_estimated) {
+        UsageProvenance::Unknown
+    } else if saw_actual {
+        UsageProvenance::Actual
+    } else if saw_estimated {
+        UsageProvenance::Estimated
+    } else {
+        UsageProvenance::Unknown
+    };
+
+    let amount = if saw_amount && provenance != UsageProvenance::Unknown {
+        Some(format!("{running_total:.4}"))
+    } else {
+        None
+    };
+
+    UsageCost {
+        amount,
+        provenance: provenance.clone(),
+        is_estimated: provenance == UsageProvenance::Estimated,
+    }
 }

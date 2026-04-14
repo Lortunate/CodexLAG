@@ -24,7 +24,8 @@ use codexlag_lib::commands::relays::{
     RelayCapabilityDetail, RelayUpsertInput,
 };
 use codexlag_lib::error::{CodexLagError, ErrorCategory};
-use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance, UsageRecordInput};
+use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance};
+use codexlag_lib::models::{RequestAttemptLog, RequestLog};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
 use codexlag_lib::{
@@ -65,6 +66,18 @@ fn isolated_test_root(prefix: &str) -> PathBuf {
         std::process::id(),
         unique_suffix()
     ))
+}
+
+fn append_persisted_request_bundle(
+    runtime: &RuntimeState,
+    request: RequestLog,
+    attempts: Vec<RequestAttemptLog>,
+) {
+    runtime
+        .app_state()
+        .repositories()
+        .append_request_with_attempts(&request, &attempts)
+        .expect("append persisted request lifecycle bundle");
 }
 
 fn spawn_single_accept_listener() -> (String, std::thread::JoinHandle<()>) {
@@ -817,48 +830,90 @@ async fn policy_update_command_enforces_strict_validation() {
 }
 
 #[tokio::test]
-async fn usage_commands_expose_request_detail_history_and_ledger_provenance() {
+async fn usage_commands_read_from_persisted_request_lifecycle_data() {
     let runtime = bootstrap_runtime_for_test()
         .await
         .expect("bootstrap runtime");
-    runtime.record_usage_request(UsageRecordInput {
-        request_id: "req-1".to_string(),
-        endpoint_id: "official-default".to_string(),
-        model: None,
-        input_tokens: 120,
-        output_tokens: 30,
-        cache_read_tokens: 10,
-        cache_write_tokens: 0,
-        reasoning_tokens: 0,
-        estimated_cost: "0.0123".to_string(),
-        cost_provenance: UsageProvenance::Unknown,
-        cost_is_estimated: false,
-        pricing_profile_id: None,
-        declared_capability_requirements: None,
-        effective_capability_result: None,
-        final_upstream_status: None,
-        final_upstream_error_code: None,
-        final_upstream_error_reason: None,
-    });
-    runtime.record_usage_request(UsageRecordInput {
-        request_id: "req-2".to_string(),
-        endpoint_id: "relay-default".to_string(),
-        model: None,
-        input_tokens: 40,
-        output_tokens: 15,
-        cache_read_tokens: 5,
-        cache_write_tokens: 2,
-        reasoning_tokens: 0,
-        estimated_cost: String::new(),
-        cost_provenance: UsageProvenance::Unknown,
-        cost_is_estimated: false,
-        pricing_profile_id: None,
-        declared_capability_requirements: None,
-        effective_capability_result: None,
-        final_upstream_status: None,
-        final_upstream_error_code: None,
-        final_upstream_error_reason: None,
-    });
+    append_persisted_request_bundle(
+        &runtime,
+        RequestLog {
+            request_id: "req-1".to_string(),
+            platform_key_id: "key-default".to_string(),
+            request_type: "codex".to_string(),
+            model: "gpt-5".to_string(),
+            selected_endpoint_id: Some("official-default".to_string()),
+            attempt_count: 1,
+            final_status: "success".to_string(),
+            http_status: Some(200),
+            started_at_ms: 1_000,
+            finished_at_ms: Some(1_120),
+            latency_ms: Some(120),
+            error_code: None,
+            error_reason: None,
+            requested_context_window: None,
+            requested_context_compression: None,
+            effective_context_window: None,
+            effective_context_compression: None,
+        },
+        vec![RequestAttemptLog {
+            attempt_id: "req-1:0".to_string(),
+            request_id: "req-1".to_string(),
+            attempt_index: 0,
+            endpoint_id: "official-default".to_string(),
+            pool_type: "official".to_string(),
+            trigger_reason: "primary".to_string(),
+            upstream_status: Some(200),
+            timeout_ms: None,
+            latency_ms: Some(120),
+            token_usage_snapshot: Some(
+                "{\"input_tokens\":120,\"output_tokens\":30,\"cache_read_tokens\":10,\"cache_write_tokens\":0,\"reasoning_tokens\":0}"
+                    .to_string(),
+            ),
+            estimated_cost_snapshot: Some("{\"amount\":\"0.0123\"}".to_string()),
+            balance_snapshot_id: None,
+            feature_resolution_snapshot: None,
+        }],
+    );
+    append_persisted_request_bundle(
+        &runtime,
+        RequestLog {
+            request_id: "req-2".to_string(),
+            platform_key_id: "key-default".to_string(),
+            request_type: "codex".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            selected_endpoint_id: Some("relay-newapi".to_string()),
+            attempt_count: 1,
+            final_status: "success".to_string(),
+            http_status: Some(200),
+            started_at_ms: 2_000,
+            finished_at_ms: Some(2_040),
+            latency_ms: Some(40),
+            error_code: None,
+            error_reason: None,
+            requested_context_window: None,
+            requested_context_compression: None,
+            effective_context_window: None,
+            effective_context_compression: None,
+        },
+        vec![RequestAttemptLog {
+            attempt_id: "req-2:0".to_string(),
+            request_id: "req-2".to_string(),
+            attempt_index: 0,
+            endpoint_id: "relay-newapi".to_string(),
+            pool_type: "relay".to_string(),
+            trigger_reason: "primary".to_string(),
+            upstream_status: Some(200),
+            timeout_ms: None,
+            latency_ms: Some(40),
+            token_usage_snapshot: Some(
+                "{\"input_tokens\":40,\"output_tokens\":15,\"cache_read_tokens\":5,\"cache_write_tokens\":2,\"reasoning_tokens\":0}"
+                    .to_string(),
+            ),
+            estimated_cost_snapshot: None,
+            balance_snapshot_id: None,
+            feature_resolution_snapshot: None,
+        }],
+    );
 
     let detail = usage_request_detail_from_runtime(&runtime, "req-1").expect("existing request");
     assert_eq!(detail.request_id, "req-1");
@@ -876,7 +931,7 @@ async fn usage_commands_expose_request_detail_history_and_ledger_provenance() {
     let ledger = usage_ledger_from_runtime(
         &runtime,
         Some(UsageLedgerQuery {
-            endpoint_id: Some("relay-default".to_string()),
+            endpoint_id: Some("relay-newapi".to_string()),
             request_id_prefix: None,
             limit: None,
         }),
@@ -938,7 +993,7 @@ async fn usage_commands_reflect_runtime_gateway_requests_only() {
     let relay_entries = usage_ledger_from_runtime(
         &runtime,
         Some(UsageLedgerQuery {
-            endpoint_id: Some("relay-default".to_string()),
+            endpoint_id: Some(history[0].endpoint_id.clone()),
             request_id_prefix: None,
             limit: None,
         }),

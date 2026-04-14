@@ -7,7 +7,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::db::migrations::ensure_schema_up_to_date;
 use crate::error::{CodexLagError, Result};
-use crate::logging::usage::UsageProvenance;
+use crate::logging::usage::{UsageProvenance, UsageRequestDetail};
 use crate::models::{
     CredentialKind, ImportedOfficialAccount, ManagedRelay, PlatformKey, PricingProfile,
     RequestAttemptLog, RequestLog, RoutingPolicy,
@@ -541,6 +541,279 @@ impl Repositories {
         })?;
 
         Ok(())
+    }
+
+    pub fn append_runtime_request_lifecycle(
+        &self,
+        request: &RequestLog,
+        attempts: &[RequestAttemptLog],
+    ) -> Result<()> {
+        self.append_request_with_attempts(request, attempts)
+    }
+
+    pub fn recent_request_details(&self, limit: Option<usize>) -> Result<Vec<UsageRequestDetail>> {
+        let bundles = self.load_recent_request_bundles(limit)?;
+        Ok(bundles
+            .into_iter()
+            .map(|(request, attempts)| {
+                crate::logging::usage::usage_request_detail_from_persisted_rows(&request, &attempts)
+            })
+            .collect())
+    }
+
+    pub fn request_detail(&self, request_id: &str) -> Result<Option<UsageRequestDetail>> {
+        let bundle = self.load_request_bundle(request_id)?;
+        Ok(bundle.map(|(request, attempts)| {
+            crate::logging::usage::usage_request_detail_from_persisted_rows(&request, &attempts)
+        }))
+    }
+
+    fn load_recent_request_bundles(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<(RequestLog, Vec<RequestAttemptLog>)>> {
+        let connection = self.open_connection()?;
+        let request_logs = if let Some(limit) = limit {
+            let mut statement = connection
+                .prepare(
+                    "
+                    SELECT
+                        request_id,
+                        platform_key_id,
+                        request_type,
+                        model,
+                        selected_endpoint_id,
+                        attempt_count,
+                        final_status,
+                        http_status,
+                        started_at_ms,
+                        finished_at_ms,
+                        latency_ms,
+                        error_code,
+                        error_reason,
+                        requested_context_window,
+                        requested_context_compression,
+                        effective_context_window,
+                        effective_context_compression
+                    FROM request_logs
+                    ORDER BY started_at_ms DESC
+                    LIMIT ?1
+                    ",
+                )
+                .map_err(|error| {
+                    CodexLagError::new(format!(
+                        "failed to prepare recent request query: {error}"
+                    ))
+                })?;
+            let rows = statement
+                .query_map(params![i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
+                    Ok(Self::request_log_from_row(row))
+                })
+                .map_err(|error| {
+                    CodexLagError::new(format!("failed to query recent request logs: {error}"))
+                })?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|error| {
+                    CodexLagError::new(format!(
+                        "failed to decode recent request log row: {error}"
+                    ))
+                })?
+        } else {
+            let mut statement = connection
+                .prepare(
+                    "
+                    SELECT
+                        request_id,
+                        platform_key_id,
+                        request_type,
+                        model,
+                        selected_endpoint_id,
+                        attempt_count,
+                        final_status,
+                        http_status,
+                        started_at_ms,
+                        finished_at_ms,
+                        latency_ms,
+                        error_code,
+                        error_reason,
+                        requested_context_window,
+                        requested_context_compression,
+                        effective_context_window,
+                        effective_context_compression
+                    FROM request_logs
+                    ORDER BY started_at_ms DESC
+                    ",
+                )
+                .map_err(|error| {
+                    CodexLagError::new(format!(
+                        "failed to prepare recent request query: {error}"
+                    ))
+                })?;
+            let rows = statement.query_map([], |row| Ok(Self::request_log_from_row(row))).map_err(
+                |error| CodexLagError::new(format!("failed to query recent request logs: {error}")),
+            )?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|error| {
+                    CodexLagError::new(format!(
+                        "failed to decode recent request log row: {error}"
+                    ))
+                })?
+        };
+
+        let mut bundles = Vec::with_capacity(request_logs.len());
+        for request in request_logs {
+            let attempts =
+                Self::load_request_attempts_for_request(&connection, request.request_id.as_str())?;
+            bundles.push((request, attempts));
+        }
+        Ok(bundles)
+    }
+
+    fn load_request_bundle(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<(RequestLog, Vec<RequestAttemptLog>)>> {
+        let connection = self.open_connection()?;
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT
+                    request_id,
+                    platform_key_id,
+                    request_type,
+                    model,
+                    selected_endpoint_id,
+                    attempt_count,
+                    final_status,
+                    http_status,
+                    started_at_ms,
+                    finished_at_ms,
+                    latency_ms,
+                    error_code,
+                    error_reason,
+                    requested_context_window,
+                    requested_context_compression,
+                    effective_context_window,
+                    effective_context_compression
+                FROM request_logs
+                WHERE request_id = ?1
+                ",
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!("failed to prepare request detail query: {error}"))
+            })?;
+
+        let request = match statement.query_row(params![request_id], |row| {
+            Ok(Self::request_log_from_row(row))
+        }) {
+            Ok(request) => request,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(error) => {
+                return Err(CodexLagError::new(format!(
+                    "failed to query request detail '{request_id}': {error}"
+                )));
+            }
+        };
+        let attempts =
+            Self::load_request_attempts_for_request(&connection, request.request_id.as_str())?;
+        Ok(Some((request, attempts)))
+    }
+
+    fn load_request_attempts_for_request(
+        connection: &Connection,
+        request_id: &str,
+    ) -> Result<Vec<RequestAttemptLog>> {
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT
+                    attempt_id,
+                    request_id,
+                    attempt_index,
+                    endpoint_id,
+                    pool_type,
+                    trigger_reason,
+                    upstream_status,
+                    timeout_ms,
+                    latency_ms,
+                    token_usage_snapshot,
+                    estimated_cost_snapshot,
+                    balance_snapshot_id,
+                    feature_resolution_snapshot
+                FROM request_attempt_logs
+                WHERE request_id = ?1
+                ORDER BY attempt_index ASC
+                ",
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to prepare request-attempt query for '{request_id}': {error}"
+                ))
+            })?;
+        let rows = statement
+            .query_map(params![request_id], |row| {
+                Ok(Self::request_attempt_from_row(row))
+            })
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to query request attempts for '{request_id}': {error}"
+                ))
+            })?;
+
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode request attempt row for '{request_id}': {error}"
+                ))
+            })
+    }
+
+    fn request_log_from_row(row: &rusqlite::Row<'_>) -> RequestLog {
+        RequestLog {
+            request_id: row.get(0).expect("request_id"),
+            platform_key_id: row.get(1).expect("platform_key_id"),
+            request_type: row.get(2).expect("request_type"),
+            model: row.get(3).expect("model"),
+            selected_endpoint_id: row.get(4).expect("selected_endpoint_id"),
+            attempt_count: row
+                .get::<_, i64>(5)
+                .ok()
+                .and_then(|value| u32::try_from(value).ok())
+                .unwrap_or(0),
+            final_status: row.get(6).expect("final_status"),
+            http_status: row.get(7).expect("http_status"),
+            started_at_ms: row.get(8).expect("started_at_ms"),
+            finished_at_ms: row.get(9).expect("finished_at_ms"),
+            latency_ms: row.get(10).expect("latency_ms"),
+            error_code: row.get(11).expect("error_code"),
+            error_reason: row.get(12).expect("error_reason"),
+            requested_context_window: row.get(13).expect("requested_context_window"),
+            requested_context_compression: row.get(14).expect("requested_context_compression"),
+            effective_context_window: row.get(15).expect("effective_context_window"),
+            effective_context_compression: row.get(16).expect("effective_context_compression"),
+        }
+    }
+
+    fn request_attempt_from_row(row: &rusqlite::Row<'_>) -> RequestAttemptLog {
+        RequestAttemptLog {
+            attempt_id: row.get(0).expect("attempt_id"),
+            request_id: row.get(1).expect("request_id"),
+            attempt_index: row
+                .get::<_, i64>(2)
+                .ok()
+                .and_then(|value| u32::try_from(value).ok())
+                .unwrap_or(0),
+            endpoint_id: row.get(3).expect("endpoint_id"),
+            pool_type: row.get(4).expect("pool_type"),
+            trigger_reason: row.get(5).expect("trigger_reason"),
+            upstream_status: row.get(6).expect("upstream_status"),
+            timeout_ms: row.get(7).expect("timeout_ms"),
+            latency_ms: row.get(8).expect("latency_ms"),
+            token_usage_snapshot: row.get(9).expect("token_usage_snapshot"),
+            estimated_cost_snapshot: row.get(10).expect("estimated_cost_snapshot"),
+            balance_snapshot_id: row.get(11).expect("balance_snapshot_id"),
+            feature_resolution_snapshot: row.get(12).expect("feature_resolution_snapshot"),
+        }
     }
 
     pub fn upsert_pricing_profile(&self, profile: &PricingProfile) -> Result<()> {

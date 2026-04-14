@@ -14,6 +14,7 @@ use crate::gateway::auth::{AuthenticatedPlatformKey, GatewayState};
 use crate::logging::runtime::{build_attempt_id, format_runtime_event_fields};
 use crate::logging::usage::{UsageProvenance, UsageRecordInput};
 use crate::logging::{log_route_downgrade, log_route_rejection};
+use crate::models::{RequestAttemptLog, RequestLog};
 use crate::providers::invocation::{
     models_for_endpoint, InvocationFailure, InvocationFailureClass,
 };
@@ -115,6 +116,16 @@ async fn codex_request(
             );
             let error_code = error_payload.0.error.clone();
             let error_reason = error_payload.0.message.clone();
+            let capability_result = capability_result_snapshot(
+                mode,
+                0,
+                None,
+                None,
+                "error",
+                None,
+                Some(error_code.as_str()),
+                Some(error_reason.as_str()),
+            );
             gateway_state.record_usage_request(UsageRecordInput {
                 request_id: request_id.clone(),
                 endpoint_id: "unrouted".to_string(),
@@ -133,20 +144,28 @@ async fn codex_request(
                     platform_key.policy_id.as_str(),
                     None,
                 )),
-                effective_capability_result: Some(capability_result_snapshot(
-                    mode,
-                    0,
-                    None,
-                    None,
-                    "error",
-                    None,
-                    Some(error_code.as_str()),
-                    Some(error_reason.as_str()),
-                )),
+                effective_capability_result: Some(capability_result.clone()),
                 final_upstream_status: None,
-                final_upstream_error_code: Some(error_code),
-                final_upstream_error_reason: Some(error_reason),
+                final_upstream_error_code: Some(error_code.clone()),
+                final_upstream_error_reason: Some(error_reason.clone()),
             });
+            persist_request_lifecycle_snapshot(
+                &gateway_state,
+                request_id.as_str(),
+                platform_key.id.as_str(),
+                None,
+                None,
+                0,
+                "error",
+                Some(StatusCode::INTERNAL_SERVER_ERROR.as_u16()),
+                now_ms,
+                Some(error_code.as_str()),
+                Some(error_reason.as_str()),
+                None,
+                None,
+                Some(capability_result),
+                None,
+            );
             return Err((status, error_payload));
         }
     };
@@ -247,7 +266,7 @@ async fn codex_request(
             gateway_state.record_usage_request(UsageRecordInput {
                 request_id: request_id.clone(),
                 endpoint_id: failure_endpoint_id.unwrap_or("unrouted").to_string(),
-                model,
+                model: model.clone(),
                 input_tokens: 0,
                 output_tokens: 0,
                 cache_read_tokens: 0,
@@ -273,9 +292,39 @@ async fn codex_request(
                 final_upstream_status: last_invocation_failure
                     .as_ref()
                     .and_then(|failure| failure.upstream_status),
-                final_upstream_error_code: Some(error_code),
-                final_upstream_error_reason: Some(error_reason),
+                final_upstream_error_code: Some(error_code.clone()),
+                final_upstream_error_reason: Some(error_reason.clone()),
             });
+            persist_request_lifecycle_snapshot(
+                &gateway_state,
+                request_id.as_str(),
+                platform_key.id.as_str(),
+                model.as_deref(),
+                failure_endpoint_id,
+                attempt_count,
+                "error",
+                Some(status.as_u16()),
+                now_ms,
+                Some(error_code.as_str()),
+                Some(error_reason.as_str()),
+                None,
+                None,
+                Some(capability_result_snapshot(
+                    mode,
+                    attempt_count,
+                    failure_endpoint_id,
+                    last_invocation_failure
+                        .as_ref()
+                        .map(|failure| &failure.pool),
+                    "error",
+                    None,
+                    Some(error_code.as_str()),
+                    Some(error_reason.as_str()),
+                )),
+                last_invocation_failure
+                    .as_ref()
+                    .and_then(|failure| failure.upstream_status),
+            );
             return Err((status, error_payload));
         }
     };
@@ -406,13 +455,13 @@ async fn codex_request(
     gateway_state.record_usage_request(UsageRecordInput {
         request_id: request_id.clone(),
         endpoint_id: endpoint_id.clone(),
-        model,
+        model: model.clone(),
         input_tokens,
         output_tokens,
         cache_read_tokens,
         cache_write_tokens,
         reasoning_tokens,
-        estimated_cost,
+        estimated_cost: estimated_cost.clone(),
         cost_provenance,
         cost_is_estimated,
         pricing_profile_id,
@@ -431,6 +480,41 @@ async fn codex_request(
         final_upstream_error_code: None,
         final_upstream_error_reason: None,
     });
+    persist_request_lifecycle_snapshot(
+        &gateway_state,
+        request_id.as_str(),
+        platform_key.id.as_str(),
+        model.as_deref(),
+        Some(endpoint_id.as_str()),
+        attempt_count,
+        "success",
+        Some(StatusCode::OK.as_u16()),
+        now_ms,
+        None,
+        None,
+        Some(
+            json!({
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_read_tokens": cache_read_tokens,
+                "cache_write_tokens": cache_write_tokens,
+                "reasoning_tokens": reasoning_tokens
+            })
+            .to_string(),
+        ),
+        Some(json!({"amount": estimated_cost}).to_string()),
+        Some(capability_result_snapshot(
+            mode,
+            attempt_count,
+            Some(endpoint_id.as_str()),
+            Some(&selected.pool),
+            "success",
+            Some(pricing_estimation_status),
+            None,
+            None,
+        )),
+        Some(success_metadata.upstream_status),
+    );
 
     Ok(Json(CodexRequestSummary {
         platform_key: platform_key.name.clone(),
@@ -547,6 +631,123 @@ fn model_for_endpoint_id(
         .find(|candidate| candidate.id == endpoint_id)
         .and_then(|candidate| models_for_endpoint(candidate).first())
         .map(|model| (*model).to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn persist_request_lifecycle_snapshot(
+    gateway_state: &GatewayState,
+    request_id: &str,
+    platform_key_id: &str,
+    model: Option<&str>,
+    selected_endpoint_id: Option<&str>,
+    attempt_count: usize,
+    final_status: &str,
+    http_status: Option<u16>,
+    started_at_ms: u64,
+    error_code: Option<&str>,
+    error_reason: Option<&str>,
+    token_usage_snapshot: Option<String>,
+    estimated_cost_snapshot: Option<String>,
+    feature_resolution_snapshot: Option<String>,
+    final_upstream_status: Option<u16>,
+) {
+    let started_at_ms = i64::try_from(started_at_ms).unwrap_or(i64::MAX);
+    let current_candidates = gateway_state.current_candidates();
+    let recorded_attempts = gateway_state
+        .invocation_attempts_for_test()
+        .into_iter()
+        .filter(|attempt| attempt.request_id == request_id)
+        .collect::<Vec<_>>();
+
+    let attempts = recorded_attempts
+        .into_iter()
+        .enumerate()
+        .map(|(idx, attempt)| {
+            let is_final_attempt = idx + 1 == attempt_count;
+            let pool_type = current_candidates
+                .iter()
+                .find(|candidate| candidate.id == attempt.endpoint_id)
+                .map(|candidate| pool_kind_label(&candidate.pool).to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            RequestAttemptLog {
+                attempt_id: attempt.attempt_id,
+                request_id: attempt.request_id,
+                attempt_index: u32::try_from(idx).unwrap_or(u32::MAX),
+                endpoint_id: attempt.endpoint_id,
+                pool_type,
+                trigger_reason: if idx == 0 {
+                    "primary".to_string()
+                } else {
+                    "fallback".to_string()
+                },
+                upstream_status: if is_final_attempt {
+                    final_upstream_status.map(i64::from)
+                } else {
+                    None
+                },
+                timeout_ms: None,
+                latency_ms: if is_final_attempt { Some(0) } else { None },
+                token_usage_snapshot: if is_final_attempt {
+                    token_usage_snapshot.clone()
+                } else {
+                    None
+                },
+                estimated_cost_snapshot: if is_final_attempt {
+                    estimated_cost_snapshot.clone()
+                } else {
+                    None
+                },
+                balance_snapshot_id: None,
+                feature_resolution_snapshot: if is_final_attempt {
+                    feature_resolution_snapshot.clone()
+                } else {
+                    None
+                },
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let request = RequestLog {
+        request_id: request_id.to_string(),
+        platform_key_id: platform_key_id.to_string(),
+        request_type: "codex".to_string(),
+        model: model.unwrap_or_default().to_string(),
+        selected_endpoint_id: selected_endpoint_id.map(str::to_string),
+        attempt_count: u32::try_from(attempt_count).unwrap_or(u32::MAX),
+        final_status: final_status.to_string(),
+        http_status: http_status.map(i64::from),
+        started_at_ms,
+        finished_at_ms: Some(started_at_ms),
+        latency_ms: Some(0),
+        error_code: error_code.map(str::to_string),
+        error_reason: error_reason.map(str::to_string),
+        requested_context_window: None,
+        requested_context_compression: None,
+        effective_context_window: None,
+        effective_context_compression: None,
+    };
+
+    if let Err(error) = gateway_state
+        .app_state()
+        .repositories()
+        .append_runtime_request_lifecycle(&request, &attempts)
+    {
+        let cause = error.to_string();
+        log::error!(
+            "{}",
+            format_runtime_event_fields(
+                "gateway",
+                "gateway.request.persistence_failed",
+                request_id,
+                None,
+                selected_endpoint_id,
+                None,
+                Some("request_lifecycle_write_failed"),
+                &[("cause", cause.as_str())],
+            )
+        );
+    }
 }
 
 fn map_routing_error(
