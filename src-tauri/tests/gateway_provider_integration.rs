@@ -13,13 +13,28 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn official_provider_path_can_be_selected_from_runtime_inventory() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let candidates = runtime.loopback_gateway().state().current_candidates();
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.id == "official-primary"),
+        "official runtime inventory should include official-primary"
+    );
+}
+
+#[tokio::test]
 async fn request_and_attempt_ids_are_carried_across_failover_attempts() {
     let runtime = bootstrap_runtime_for_test()
         .await
         .expect("bootstrap runtime");
     let gateway_state = runtime.loopback_gateway().state();
     gateway_state
-        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Http5xx);
+        .plan_provider_failure_for_test("official-primary", InvocationFailureClass::Http5xx);
 
     let secret = runtime
         .app_state()
@@ -44,12 +59,12 @@ async fn request_and_attempt_ids_are_carried_across_failover_attempts() {
         .await
         .expect("route body");
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("route json");
-    assert_eq!(payload["endpoint_id"], "relay-default");
+    assert_eq!(payload["endpoint_id"], "relay-newapi");
 
     let attempts = gateway_state.invocation_attempts_for_test();
     assert_eq!(attempts.len(), 2);
-    assert_eq!(attempts[0].endpoint_id, "official-default");
-    assert_eq!(attempts[1].endpoint_id, "relay-default");
+    assert_eq!(attempts[0].endpoint_id, "official-primary");
+    assert_eq!(attempts[1].endpoint_id, "relay-newapi");
     assert_eq!(attempts[0].request_id, attempts[1].request_id);
     assert_eq!(
         attempts[0].attempt_id,
@@ -68,7 +83,7 @@ async fn rate_limited_failover_opens_endpoint_and_models_only_show_routable_pool
         .expect("bootstrap runtime");
     let gateway_state = runtime.loopback_gateway().state();
     gateway_state
-        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Http429);
+        .plan_provider_failure_for_test("official-primary", InvocationFailureClass::Http429);
 
     let secret = runtime
         .app_state()
@@ -93,7 +108,7 @@ async fn rate_limited_failover_opens_endpoint_and_models_only_show_routable_pool
         .await
         .expect("route body");
     let first_payload: Value = serde_json::from_slice(first_body.as_ref()).expect("route json");
-    assert_eq!(first_payload["endpoint_id"], "relay-default");
+    assert_eq!(first_payload["endpoint_id"], "relay-newapi");
 
     let models_response = runtime
         .loopback_gateway()
@@ -138,7 +153,7 @@ async fn rate_limited_failover_opens_endpoint_and_models_only_show_routable_pool
         .await
         .expect("route body");
     let second_payload: Value = serde_json::from_slice(second_body.as_ref()).expect("route json");
-    assert_eq!(second_payload["endpoint_id"], "relay-default");
+    assert_eq!(second_payload["endpoint_id"], "relay-newapi");
 }
 
 #[tokio::test]
@@ -147,7 +162,7 @@ async fn auth_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
         .await
         .expect("bootstrap runtime");
     let gateway_state = runtime.loopback_gateway().state();
-    gateway_state.plan_provider_failure_for_test("official-default", InvocationFailureClass::Auth);
+    gateway_state.plan_provider_failure_for_test("official-primary", InvocationFailureClass::Auth);
 
     let secret = runtime
         .app_state()
@@ -178,7 +193,7 @@ async fn auth_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
 
     let attempts = gateway_state.invocation_attempts_for_test();
     assert_eq!(attempts.len(), 1);
-    assert_eq!(attempts[0].endpoint_id, "official-default");
+    assert_eq!(attempts[0].endpoint_id, "official-primary");
 }
 
 #[tokio::test]
@@ -188,7 +203,7 @@ async fn config_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
         .expect("bootstrap runtime");
     let gateway_state = runtime.loopback_gateway().state();
     gateway_state
-        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Config);
+        .plan_provider_failure_for_test("official-primary", InvocationFailureClass::Config);
 
     let secret = runtime
         .app_state()
@@ -219,7 +234,7 @@ async fn config_failure_does_not_cross_pool_failover_and_reports_no_endpoint() {
 
     let attempts = gateway_state.invocation_attempts_for_test();
     assert_eq!(attempts.len(), 1);
-    assert_eq!(attempts[0].endpoint_id, "official-default");
+    assert_eq!(attempts[0].endpoint_id, "official-primary");
 }
 
 #[tokio::test]
@@ -233,7 +248,7 @@ async fn quota_failure_without_fallback_emits_typed_quota_error_contract() {
     runtime
         .loopback_gateway()
         .state()
-        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Http429);
+        .plan_provider_failure_for_test("official-primary", InvocationFailureClass::Http429);
 
     let secret = runtime
         .app_state()
@@ -275,7 +290,7 @@ async fn timeout_failure_without_fallback_emits_typed_upstream_error_contract() 
     runtime
         .loopback_gateway()
         .state()
-        .plan_provider_failure_for_test("official-default", InvocationFailureClass::Timeout);
+        .plan_provider_failure_for_test("official-primary", InvocationFailureClass::Timeout);
 
     let secret = runtime
         .app_state()

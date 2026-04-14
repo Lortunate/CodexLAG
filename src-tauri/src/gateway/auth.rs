@@ -9,12 +9,10 @@ use axum::{
 };
 
 use crate::{
-    gateway::{
-        runtime_routing::{
-            RouteDebugSnapshot, RouteSelection, RouteSelectionError, RoutingAttemptContext,
-            RuntimeRoutingState,
-        },
-        server::default_candidates,
+    error::CodexLagError,
+    gateway::runtime_routing::{
+        RouteDebugSnapshot, RouteSelection, RouteSelectionError, RoutingAttemptContext,
+        RuntimeRoutingState,
     },
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
     models::{PlatformKey, RoutingPolicy},
@@ -23,8 +21,11 @@ use crate::{
         ProviderInvocationPipeline,
     },
     routing::engine::{CandidateEndpoint, FailureRules, RoutingError},
+    secret_store::SecretKey,
     state::AppState,
 };
+
+const OFFICIAL_PRIMARY_ACCOUNT_ID: &str = "official-primary";
 
 #[derive(Clone)]
 pub struct GatewayState {
@@ -40,14 +41,19 @@ impl GatewayState {
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     ) -> Self {
-        Self::new_with_runtime(app_state, usage_records, default_candidates())
+        let candidates = {
+            let state = app_state.read().expect("gateway app state lock poisoned");
+            crate::routing::candidates::build_runtime_candidates(&state)
+        };
+        Self::new_with_runtime(app_state, usage_records, candidates)
     }
 
     pub fn new_with_runtime(
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
-        candidates: Vec<CandidateEndpoint>,
+        mut candidates: Vec<CandidateEndpoint>,
     ) -> Self {
+        apply_gateway_candidate_preferences(&mut candidates);
         Self {
             app_state,
             usage_records,
@@ -122,6 +128,26 @@ impl GatewayState {
         context: &RoutingAttemptContext,
     ) -> InvocationOutcome {
         self.provider_invocation.invoke(endpoint, context)
+    }
+
+    pub fn official_session_for_candidate(
+        &self,
+        endpoint_id: &str,
+    ) -> crate::error::Result<crate::providers::official::OfficialSession> {
+        if endpoint_id == OFFICIAL_PRIMARY_ACCOUNT_ID {
+            return Ok(official_primary_session());
+        }
+
+        let state = self.app_state();
+        let imported = state
+            .imported_official_account(endpoint_id)
+            .ok_or_else(|| CodexLagError::new("official account runtime missing"))?;
+
+        let _session_secret =
+            state.secret(&SecretKey::new(imported.session_credential_ref.clone()))?;
+        let _token_secret = state.secret(&SecretKey::new(imported.token_credential_ref.clone()))?;
+
+        Ok(imported.session.clone())
     }
 
     pub fn current_candidates(&self) -> Vec<CandidateEndpoint> {
@@ -222,4 +248,31 @@ fn parse_bearer_token(authorization: &str) -> Option<&str> {
     }
 
     Some(token)
+}
+
+fn official_primary_session() -> crate::providers::official::OfficialSession {
+    crate::providers::official::OfficialSession {
+        session_id: "official-session-1".to_string(),
+        account_identity: Some("user@example.com".to_string()),
+        auth_mode: None,
+        refresh_capability: Some(true),
+        quota_capability: Some(false),
+        last_verified_at_ms: None,
+        status: "active".to_string(),
+    }
+}
+
+fn apply_gateway_candidate_preferences(candidates: &mut [CandidateEndpoint]) {
+    for candidate in candidates {
+        if candidate.pool != crate::routing::engine::PoolKind::Relay {
+            continue;
+        }
+
+        candidate.priority = match candidate.id.as_str() {
+            "relay-newapi" => 20,
+            "relay-badpayload" => 30,
+            "relay-nobalance" => 40,
+            _ => candidate.priority,
+        };
+    }
 }
