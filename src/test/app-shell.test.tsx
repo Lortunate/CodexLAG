@@ -703,6 +703,21 @@ describe("App shell", () => {
     );
   });
 
+  it("shows validation feedback before saving an invalid policy", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /policies/i }));
+    });
+
+    const retryBudget = await screen.findByLabelText(/retry budget/i);
+    fireEvent.change(retryBudget, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save policy/i }));
+
+    expect(await screen.findByText("Retry budget must be a positive integer.")).toBeInTheDocument();
+    expect(updatePolicy).not.toHaveBeenCalled();
+  });
+
   it("shows request history and request-detail affordances", async () => {
     render(<App />);
 
