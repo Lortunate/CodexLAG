@@ -9,6 +9,7 @@ use rand::{rngs::OsRng, RngCore};
 use tokio::net::TcpListener;
 
 use crate::{
+    auth::openai::{OpenAiAuthRuntime, OpenAiSessionRefresher},
     commands::{accounts::default_primary_account, relays::default_relays},
     db::repositories::Repositories,
     error::{CodexLagError, Result},
@@ -144,6 +145,27 @@ pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
     };
 
     RuntimeState::start(app_state, runtime_log)
+}
+
+pub async fn bootstrap_openai_auth_runtime_for_test_at<R: OpenAiSessionRefresher>(
+    database_path: impl AsRef<Path>,
+    now_ms: i64,
+    refresher: &R,
+) -> Result<OpenAiAuthRuntime> {
+    let app_state = bootstrap_state_for_test_at(&database_path).await?;
+    let mut runtime = OpenAiAuthRuntime::new(app_state);
+    let refreshable_accounts = runtime
+        .list_sessions()
+        .into_iter()
+        .filter(|session| session.refreshable)
+        .map(|session| session.account_id)
+        .collect::<Vec<_>>();
+
+    for account_id in refreshable_accounts {
+        let _ = runtime.refresh_session_if_needed(account_id.as_str(), now_ms, refresher)?;
+    }
+
+    Ok(runtime)
 }
 
 fn test_database_path() -> PathBuf {

@@ -370,14 +370,16 @@ impl Repositories {
                     account_id,
                     display_name,
                     auth_state,
+                    refreshable,
                     expires_at_ms,
                     last_refresh_at_ms,
                     last_refresh_error
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 ON CONFLICT(provider_id, account_id) DO UPDATE SET
                     display_name = excluded.display_name,
                     auth_state = excluded.auth_state,
+                    refreshable = excluded.refreshable,
                     expires_at_ms = excluded.expires_at_ms,
                     last_refresh_at_ms = excluded.last_refresh_at_ms,
                     last_refresh_error = excluded.last_refresh_error
@@ -387,6 +389,7 @@ impl Repositories {
                     &session.account_id,
                     &session.display_name,
                     &session.auth_state,
+                    session.refreshable as i64,
                     session.expires_at_ms,
                     session.last_refresh_at_ms,
                     &session.last_refresh_error,
@@ -402,6 +405,32 @@ impl Repositories {
         self.provider_sessions
             .insert(provider_session_key(&session.provider_id, &session.account_id), session);
         Ok(())
+    }
+
+    pub fn delete_provider_session(&mut self, provider_id: &str, account_id: &str) -> Result<bool> {
+        let key = provider_session_key(provider_id, account_id);
+        if !self.provider_sessions.contains_key(&key) {
+            return Ok(false);
+        }
+
+        let connection = self.open_connection()?;
+        connection
+            .execute(
+                "
+                DELETE FROM provider_sessions
+                WHERE provider_id = ?1 AND account_id = ?2
+                ",
+                params![provider_id, account_id],
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to delete provider session '{}:{}': {error}",
+                    provider_id, account_id
+                ))
+            })?;
+
+        self.provider_sessions.remove(&key);
+        Ok(true)
     }
 
     pub fn iter_provider_sessions(&self) -> impl Iterator<Item = &ProviderSessionSummary> {
@@ -1261,6 +1290,7 @@ impl Repositories {
                     account_id,
                     display_name,
                     auth_state,
+                    refreshable,
                     expires_at_ms,
                     last_refresh_at_ms,
                     last_refresh_error
@@ -1294,13 +1324,16 @@ impl Repositories {
                 auth_state: row.get(3).map_err(|error| {
                     CodexLagError::new(format!("failed to decode provider session auth state: {error}"))
                 })?,
-                expires_at_ms: row.get(4).map_err(|error| {
+                refreshable: row.get::<_, i64>(4).map_err(|error| {
+                    CodexLagError::new(format!("failed to decode provider session refreshable: {error}"))
+                })? != 0,
+                expires_at_ms: row.get(5).map_err(|error| {
                     CodexLagError::new(format!("failed to decode provider session expiry: {error}"))
                 })?,
-                last_refresh_at_ms: row.get(5).map_err(|error| {
+                last_refresh_at_ms: row.get(6).map_err(|error| {
                     CodexLagError::new(format!("failed to decode provider session refresh time: {error}"))
                 })?,
-                last_refresh_error: row.get(6).map_err(|error| {
+                last_refresh_error: row.get(7).map_err(|error| {
                     CodexLagError::new(format!("failed to decode provider session refresh error: {error}"))
                 })?,
             };

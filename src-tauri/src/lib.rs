@@ -21,6 +21,7 @@ use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -56,6 +57,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::accounts::list_accounts,
             commands::accounts::import_official_account_login,
+            commands::accounts::start_openai_browser_login,
             commands::accounts::refresh_account_balance,
             commands::accounts::get_account_capability_detail,
             commands::relays::list_relays,
