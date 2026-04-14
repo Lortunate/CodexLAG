@@ -4,10 +4,8 @@ use axum::{
 };
 use codexlag_lib::providers::invocation::InvocationFailureClass;
 use codexlag_lib::{
-    bootstrap::bootstrap_runtime_for_test,
-    routing::engine::choose_endpoint,
-    secret_store::SecretKey,
-    state::RuntimeState,
+    bootstrap::bootstrap_runtime_for_test, routing::engine::choose_endpoint,
+    secret_store::SecretKey, state::RuntimeState,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -75,10 +73,13 @@ async fn no_available_endpoint_returns_structured_error_with_attempt_context() {
         .state()
         .plan_provider_failure_for_test(official_id.as_str(), InvocationFailureClass::Http5xx);
     for fallback_relay_id in relay_candidate_ids(&runtime) {
-        runtime.loopback_gateway().state().plan_provider_failure_for_test(
-            fallback_relay_id.as_str(),
-            InvocationFailureClass::Timeout,
-        );
+        runtime
+            .loopback_gateway()
+            .state()
+            .plan_provider_failure_for_test(
+                fallback_relay_id.as_str(),
+                InvocationFailureClass::Timeout,
+            );
     }
 
     let secret = runtime
@@ -110,7 +111,10 @@ async fn no_available_endpoint_returns_structured_error_with_attempt_context() {
     let public_request_id = payload["request_id"].as_str().expect("request id");
     assert!(public_request_id.starts_with("req_"));
     assert!(!public_request_id.contains(":unrouted:"));
-    let attempts = runtime.loopback_gateway().state().invocation_attempts_for_test();
+    let attempts = runtime
+        .loopback_gateway()
+        .state()
+        .invocation_attempts_for_test();
     let last_attempt = attempts.last().expect("last invocation attempt");
     assert_eq!(payload["attempt_count"], attempts.len());
 
@@ -124,9 +128,12 @@ async fn no_available_endpoint_returns_structured_error_with_attempt_context() {
 }
 
 fn selected_endpoint_id(runtime: &RuntimeState, mode: &str) -> String {
-    choose_endpoint(mode, &runtime.loopback_gateway().state().current_candidates())
-        .expect("endpoint selected for mode")
-        .id
+    choose_endpoint(
+        mode,
+        &runtime.loopback_gateway().state().current_candidates(),
+    )
+    .expect("endpoint selected for mode")
+    .id
 }
 
 fn relay_candidate_ids(runtime: &RuntimeState) -> Vec<String> {

@@ -1,4 +1,6 @@
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::error::{
     CodexLagError, ConfigErrorKind, CredentialErrorKind, QuotaErrorKind, UpstreamErrorKind,
@@ -95,11 +97,16 @@ fn normalize_newapi_balance_response(body: &str) -> Result<NormalizedBalance, se
     })
 }
 
-pub fn query_newapi_balance(endpoint: &str, api_key: &str) -> Result<NormalizedBalance, CodexLagError> {
+pub fn query_newapi_balance(
+    endpoint: &str,
+    api_key: &str,
+) -> Result<NormalizedBalance, CodexLagError> {
     if api_key.trim().is_empty() {
-        return Err(CodexLagError::new("relay api key cannot be empty").with_internal_context(
-            format!("provider=relay;operation=query_newapi_balance;endpoint={endpoint}"),
-        ));
+        return Err(
+            CodexLagError::new("relay api key cannot be empty").with_internal_context(format!(
+                "provider=relay;operation=query_newapi_balance;endpoint={endpoint}"
+            )),
+        );
     }
 
     let payload = newapi_balance_payload_for_endpoint(endpoint);
@@ -109,7 +116,38 @@ pub fn query_newapi_balance(endpoint: &str, api_key: &str) -> Result<NormalizedB
     Ok(normalized)
 }
 
-pub fn invoke_newapi_relay(
+#[derive(Debug, Deserialize)]
+struct ChatCompletionResponse {
+    model: Option<String>,
+    #[serde(default)]
+    usage: Option<ChatCompletionUsage>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ChatCompletionUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
+    #[serde(default)]
+    prompt_tokens_details: PromptTokenDetails,
+    #[serde(default)]
+    completion_tokens_details: CompletionTokenDetails,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PromptTokenDetails {
+    #[serde(default)]
+    cached_tokens: u32,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CompletionTokenDetails {
+    #[serde(default)]
+    reasoning_tokens: u32,
+}
+
+pub async fn invoke_newapi_relay(
     endpoint: &str,
     api_key: &str,
     request_id: &str,
@@ -117,29 +155,67 @@ pub fn invoke_newapi_relay(
     endpoint_id: &str,
 ) -> InvocationOutcome {
     if api_key.trim().is_empty() {
-        return Err(InvocationFailure {
-            request_id: request_id.to_string(),
-            attempt_id: attempt_id.to_string(),
-            endpoint_id: endpoint_id.to_string(),
-            pool: crate::routing::engine::PoolKind::Relay,
-            class: InvocationFailureClass::Config,
-            upstream_status: None,
-        });
+        return Err(config_failure(request_id, attempt_id, endpoint_id, None));
     }
 
-    let _ = endpoint;
+    let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let response = match client
+        .post(url)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "codexlag request"
+                }
+            ],
+            "max_tokens": 1
+        }))
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            return Err(if error.is_timeout() {
+                timeout_failure(request_id, attempt_id, endpoint_id)
+            } else {
+                http_failure(request_id, attempt_id, endpoint_id, None)
+            });
+        }
+    };
+    let status = response.status();
+    let body = match response.bytes().await {
+        Ok(body) => body,
+        Err(_) => return Err(http_failure(request_id, attempt_id, endpoint_id, Some(status))),
+    };
+    if !status.is_success() {
+        return Err(map_http_status_to_failure(
+            request_id,
+            attempt_id,
+            endpoint_id,
+            status,
+        ));
+    }
+
+    let payload: ChatCompletionResponse = match serde_json::from_slice(&body) {
+        Ok(payload) => payload,
+        Err(_) => return Err(config_failure(request_id, attempt_id, endpoint_id, Some(status))),
+    };
+    let usage = payload.usage.unwrap_or_default();
     Ok(InvocationSuccessMetadata {
         request_id: request_id.to_string(),
         attempt_id: attempt_id.to_string(),
         endpoint_id: endpoint_id.to_string(),
-        model: Some("gpt-4o-mini".to_string()),
-        upstream_status: 200,
+        model: payload.model.or_else(|| Some("gpt-4o-mini".to_string())),
+        upstream_status: status.as_u16(),
         usage_dimensions: Some(InvocationUsageDimensions {
-            input_tokens: 640,
-            output_tokens: 128,
-            cache_read_tokens: 256,
+            input_tokens: usage.prompt_tokens,
+            output_tokens: usage.completion_tokens,
+            cache_read_tokens: usage.prompt_tokens_details.cached_tokens,
             cache_write_tokens: 0,
-            reasoning_tokens: 32,
+            reasoning_tokens: usage.completion_tokens_details.reasoning_tokens,
         }),
     })
 }
@@ -148,11 +224,102 @@ fn newapi_balance_payload_for_endpoint(endpoint: &str) -> &'static str {
     if endpoint.contains("badpayload") {
         return r#"{"data":{"total_balance":"25.00"}}"#;
     }
-    if endpoint.contains("relay.newapi.example") || endpoint.contains("127.0.0.1:8787") {
+    if endpoint.contains("relay.newapi.example") || endpoint.contains("127.0.0.1:") {
         return r#"{"data":{"total_balance":"25.00","used_balance":"7.50"}}"#;
     }
 
     r#"{"data":{"total_balance":"50.00","used_balance":"10.00"}}"#
+}
+
+fn map_http_status_to_failure(
+    request_id: &str,
+    attempt_id: &str,
+    endpoint_id: &str,
+    status: StatusCode,
+) -> InvocationFailure {
+    match status.as_u16() {
+        401 | 403 => auth_failure(request_id, attempt_id, endpoint_id, status),
+        429 => rate_limit_failure(request_id, attempt_id, endpoint_id, status),
+        code if (500..=599).contains(&code) => {
+            http_failure(request_id, attempt_id, endpoint_id, Some(status))
+        }
+        _ => config_failure(request_id, attempt_id, endpoint_id, Some(status)),
+    }
+}
+
+fn auth_failure(
+    request_id: &str,
+    attempt_id: &str,
+    endpoint_id: &str,
+    status: StatusCode,
+) -> InvocationFailure {
+    InvocationFailure {
+        request_id: request_id.to_string(),
+        attempt_id: attempt_id.to_string(),
+        endpoint_id: endpoint_id.to_string(),
+        pool: crate::routing::engine::PoolKind::Relay,
+        class: InvocationFailureClass::Auth,
+        upstream_status: Some(status.as_u16()),
+    }
+}
+
+fn rate_limit_failure(
+    request_id: &str,
+    attempt_id: &str,
+    endpoint_id: &str,
+    status: StatusCode,
+) -> InvocationFailure {
+    InvocationFailure {
+        request_id: request_id.to_string(),
+        attempt_id: attempt_id.to_string(),
+        endpoint_id: endpoint_id.to_string(),
+        pool: crate::routing::engine::PoolKind::Relay,
+        class: InvocationFailureClass::Http429,
+        upstream_status: Some(status.as_u16()),
+    }
+}
+
+fn http_failure(
+    request_id: &str,
+    attempt_id: &str,
+    endpoint_id: &str,
+    status: Option<StatusCode>,
+) -> InvocationFailure {
+    InvocationFailure {
+        request_id: request_id.to_string(),
+        attempt_id: attempt_id.to_string(),
+        endpoint_id: endpoint_id.to_string(),
+        pool: crate::routing::engine::PoolKind::Relay,
+        class: InvocationFailureClass::Http5xx,
+        upstream_status: status.map(|value| value.as_u16()),
+    }
+}
+
+fn timeout_failure(request_id: &str, attempt_id: &str, endpoint_id: &str) -> InvocationFailure {
+    InvocationFailure {
+        request_id: request_id.to_string(),
+        attempt_id: attempt_id.to_string(),
+        endpoint_id: endpoint_id.to_string(),
+        pool: crate::routing::engine::PoolKind::Relay,
+        class: InvocationFailureClass::Timeout,
+        upstream_status: None,
+    }
+}
+
+fn config_failure(
+    request_id: &str,
+    attempt_id: &str,
+    endpoint_id: &str,
+    status: Option<StatusCode>,
+) -> InvocationFailure {
+    InvocationFailure {
+        request_id: request_id.to_string(),
+        attempt_id: attempt_id.to_string(),
+        endpoint_id: endpoint_id.to_string(),
+        pool: crate::routing::engine::PoolKind::Relay,
+        class: InvocationFailureClass::Config,
+        upstream_status: status.map(|value| value.as_u16()),
+    }
 }
 
 pub(crate) fn map_relay_invocation_failure(failure: &InvocationFailure) -> CodexLagError {

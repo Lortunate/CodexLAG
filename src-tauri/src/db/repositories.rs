@@ -328,6 +328,28 @@ impl Repositories {
         self.imported_official_accounts.get(account_id)
     }
 
+    pub fn delete_imported_official_account(&mut self, account_id: &str) -> Result<bool> {
+        if !self.imported_official_accounts.contains_key(account_id) {
+            return Ok(false);
+        }
+
+        let connection = self.open_connection()?;
+        connection
+            .execute(
+                "DELETE FROM imported_official_accounts WHERE account_id = ?1",
+                params![account_id],
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to delete imported official account '{}': {error}",
+                    account_id
+                ))
+            })?;
+
+        self.imported_official_accounts.remove(account_id);
+        Ok(true)
+    }
+
     pub fn iter_imported_official_accounts(
         &self,
     ) -> impl Iterator<Item = &ImportedOfficialAccount> {
@@ -601,9 +623,7 @@ impl Repositories {
                     ",
                 )
                 .map_err(|error| {
-                    CodexLagError::new(format!(
-                        "failed to prepare recent request query: {error}"
-                    ))
+                    CodexLagError::new(format!("failed to prepare recent request query: {error}"))
                 })?;
             let rows = statement
                 .query_map(params![i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
@@ -614,9 +634,7 @@ impl Repositories {
                 })?;
             rows.collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(|error| {
-                    CodexLagError::new(format!(
-                        "failed to decode recent request log row: {error}"
-                    ))
+                    CodexLagError::new(format!("failed to decode recent request log row: {error}"))
                 })?
         } else {
             let mut statement = connection
@@ -645,18 +663,16 @@ impl Repositories {
                     ",
                 )
                 .map_err(|error| {
-                    CodexLagError::new(format!(
-                        "failed to prepare recent request query: {error}"
-                    ))
+                    CodexLagError::new(format!("failed to prepare recent request query: {error}"))
                 })?;
-            let rows = statement.query_map([], |row| Ok(Self::request_log_from_row(row))).map_err(
-                |error| CodexLagError::new(format!("failed to query recent request logs: {error}")),
-            )?;
+            let rows = statement
+                .query_map([], |row| Ok(Self::request_log_from_row(row)))
+                .map_err(|error| {
+                    CodexLagError::new(format!("failed to query recent request logs: {error}"))
+                })?;
             rows.collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(|error| {
-                    CodexLagError::new(format!(
-                        "failed to decode recent request log row: {error}"
-                    ))
+                    CodexLagError::new(format!("failed to decode recent request log row: {error}"))
                 })?
         };
 

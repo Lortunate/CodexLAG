@@ -29,7 +29,9 @@ use codexlag_lib::models::{RequestAttemptLog, RequestLog};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
 use codexlag_lib::{
-    bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test_at},
+    bootstrap::{
+        bootstrap_runtime_for_test, bootstrap_state_with_provider_inventory_for_test_at,
+    },
     routing::policy::RoutingMode,
     secret_store::SecretKey,
     state::{RuntimeLogConfig, RuntimeState},
@@ -49,7 +51,7 @@ fn unique_suffix() -> String {
 }
 
 async fn runtime_for_paths(database_path: &Path, log_dir: &Path) -> RuntimeState {
-    let app_state = bootstrap_state_for_test_at(database_path)
+    let app_state = bootstrap_state_with_provider_inventory_for_test_at(database_path)
         .await
         .expect("bootstrap isolated app state");
     RuntimeState::new(

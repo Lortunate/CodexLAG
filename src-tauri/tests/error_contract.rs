@@ -3,7 +3,8 @@ use axum::{
     http::{Request, StatusCode},
 };
 use codexlag_lib::{
-    bootstrap::bootstrap_runtime_for_test, providers::invocation::InvocationFailureClass,
+    bootstrap::bootstrap_runtime_for_test,
+    providers::invocation::InvocationFailureClass,
     routing::{
         engine::{choose_endpoint, PoolKind},
         policy::RoutingMode,
@@ -206,7 +207,10 @@ fn candidate_id_for_pool(runtime: &RuntimeState, pool: PoolKind) -> String {
 }
 
 fn selected_endpoint_id(runtime: &RuntimeState, mode: &str) -> String {
-    choose_endpoint(mode, &runtime.loopback_gateway().state().current_candidates())
-        .expect("endpoint selected for mode")
-        .id
+    choose_endpoint(
+        mode,
+        &runtime.loopback_gateway().state().current_candidates(),
+    )
+    .expect("endpoint selected for mode")
+    .id
 }

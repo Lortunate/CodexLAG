@@ -54,21 +54,14 @@ pub struct OfficialAccountImportInput {
 }
 
 pub(crate) fn list_accounts_from_state(state: &AppState) -> Vec<AccountSummary> {
-    let mut accounts = vec![AccountSummary {
-        account_id: OFFICIAL_PRIMARY_ACCOUNT_ID.into(),
-        name: "Primary Publisher".into(),
-        provider: "openai".into(),
-    }];
-
-    accounts.extend(
-        state
-            .iter_imported_official_accounts()
-            .map(|account| AccountSummary {
-                account_id: account.account_id.clone(),
-                name: account.name.clone(),
-                provider: account.provider.clone(),
-            }),
-    );
+    let mut accounts = state
+        .iter_imported_official_accounts()
+        .map(|account| AccountSummary {
+            account_id: account.account_id.clone(),
+            name: account.name.clone(),
+            provider: account.provider.clone(),
+        })
+        .collect::<Vec<_>>();
     accounts.sort_by(|left, right| left.account_id.cmp(&right.account_id));
     accounts
 }
@@ -262,11 +255,18 @@ fn official_primary_session() -> OfficialSession {
     }
 }
 
-fn official_session_for(state: &AppState, account_id: &str) -> Result<OfficialSession> {
-    if account_id == OFFICIAL_PRIMARY_ACCOUNT_ID {
-        return Ok(official_primary_session());
+pub(crate) fn default_primary_account() -> ImportedOfficialAccount {
+    ImportedOfficialAccount {
+        account_id: OFFICIAL_PRIMARY_ACCOUNT_ID.into(),
+        name: "Primary Publisher".into(),
+        provider: "openai".into(),
+        session: official_primary_session(),
+        session_credential_ref: "credential://official/session/official-primary".into(),
+        token_credential_ref: "credential://official/token/official-primary".into(),
     }
+}
 
+fn official_session_for(state: &AppState, account_id: &str) -> Result<OfficialSession> {
     let entry = state.imported_official_account(account_id).ok_or_else(|| {
         invalid_payload_error(
             "Unknown account id.",

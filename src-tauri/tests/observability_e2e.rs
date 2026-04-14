@@ -381,6 +381,12 @@ async fn codex_request_preserves_request_and_attempt_id_lineage_across_observabi
             .collect()
     };
     assert_eq!(attempt_rows.len(), 2);
-    assert_eq!(attempt_rows[0], (format!("{request_id}:0"), 0, "official-primary".to_string()));
-    assert_eq!(attempt_rows[1], (format!("{request_id}:1"), 1, "relay-newapi".to_string()));
+    assert_eq!(
+        attempt_rows[0],
+        (format!("{request_id}:0"), 0, "official-primary".to_string())
+    );
+    assert_eq!(
+        attempt_rows[1],
+        (format!("{request_id}:1"), 1, "relay-newapi".to_string())
+    );
 }

@@ -58,6 +58,14 @@ async fn bootstrap_default_key_contains_runtime_metadata_fields() {
 }
 
 #[tokio::test]
+async fn bootstrap_state_for_test_does_not_seed_provider_inventory() {
+    let state = bootstrap_state_for_test().await.expect("bootstrap");
+
+    assert_eq!(state.iter_imported_official_accounts().count(), 0);
+    assert_eq!(state.iter_managed_relays().count(), 0);
+}
+
+#[tokio::test]
 async fn bootstrap_persists_default_state_across_restarts() {
     let database_path = std::env::temp_dir().join(format!(
         "codexlag-bootstrap-persistence-{}.sqlite3",

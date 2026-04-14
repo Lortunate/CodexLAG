@@ -7,8 +7,8 @@ use tauri::State;
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
 use crate::models::{relay_api_key_credential_ref, ManagedRelay};
 use crate::providers::relay::{
-    query_newapi_balance, relay_balance_capability, NormalizedBalance,
-    RelayBalanceAdapter, RelayBalanceCapability,
+    query_newapi_balance, relay_balance_capability, NormalizedBalance, RelayBalanceAdapter,
+    RelayBalanceCapability,
 };
 use crate::secret_store::SecretKey;
 use crate::state::{AppState, RuntimeState};
@@ -87,8 +87,8 @@ pub fn refresh_relay_balance_from_runtime(
     let balance = match relay.adapter {
         RelayBalanceAdapter::NewApi => {
             let api_key = state.secret(&SecretKey::new(relay.api_key_credential_ref.clone()))?;
-            let normalized =
-                query_newapi_balance(relay.endpoint.as_str(), api_key.as_str()).map_err(|error| {
+            let normalized = query_newapi_balance(relay.endpoint.as_str(), api_key.as_str())
+                .map_err(|error| {
                     with_command_context(
                         error,
                         format!("command=refresh_relay_balance;relay_id={}", relay.relay_id),
@@ -317,21 +317,15 @@ pub fn test_relay_connection(
 }
 
 pub(crate) fn list_relays_from_state(state: &AppState) -> Vec<RelaySummary> {
-    let mut relays = default_relays()
-        .into_iter()
-        .map(|relay| relay_summary(&relay))
+    let mut relays = state
+        .iter_managed_relays()
+        .map(relay_summary)
         .collect::<Vec<_>>();
-    relays.extend(
-        state
-            .iter_managed_relays()
-            .map(relay_summary)
-            .collect::<Vec<_>>(),
-    );
     relays.sort_by(|left, right| left.relay_id.cmp(&right.relay_id));
     relays
 }
 
-fn default_relays() -> Vec<ManagedRelay> {
+pub(crate) fn default_relays() -> Vec<ManagedRelay> {
     vec![
         ManagedRelay {
             relay_id: "relay-newapi".into(),
@@ -357,18 +351,8 @@ fn default_relays() -> Vec<ManagedRelay> {
     ]
 }
 
-fn default_relay_by_id(relay_id: &str) -> Option<ManagedRelay> {
-    default_relays()
-        .into_iter()
-        .find(|relay| relay.relay_id == relay_id)
-}
-
 fn relay_by_id_from_state(state: &AppState, relay_id: &str) -> Option<ManagedRelay> {
-    if let Some(managed) = state.managed_relay(relay_id) {
-        return Some(managed.clone());
-    }
-
-    default_relay_by_id(relay_id)
+    state.managed_relay(relay_id).cloned()
 }
 
 fn relay_summary_by_id_from_state(state: &AppState, relay_id: &str) -> Result<RelaySummary> {
@@ -430,10 +414,7 @@ fn build_managed_relay(relay_id: String, input: RelayUpsertInput) -> Result<Mana
     })
 }
 
-fn resolve_api_key_credential_ref(
-    raw: Option<String>,
-    relay_id: &str,
-) -> Result<String> {
+fn resolve_api_key_credential_ref(raw: Option<String>, relay_id: &str) -> Result<String> {
     let value = raw
         .map(|candidate| candidate.trim().to_string())
         .filter(|candidate| !candidate.is_empty())

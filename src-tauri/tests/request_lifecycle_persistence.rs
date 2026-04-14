@@ -101,4 +101,48 @@ async fn runtime_gateway_requests_are_persisted_to_request_logs_and_attempt_logs
         attempts[1],
         (format!("{request_id}:1"), 1, "relay-newapi".to_string())
     );
+
+    let timing: (i64, i64, i64) = sqlite
+        .query_row(
+            "
+            SELECT started_at_ms, finished_at_ms, latency_ms
+            FROM request_logs
+            WHERE request_id = ?1
+            ",
+            [request_id.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("load request timing");
+    assert!(
+        timing.1 > timing.0,
+        "persisted request timing should reflect a real request duration"
+    );
+    assert!(
+        timing.2 > 0,
+        "persisted request latency should be derived from the runtime execution path"
+    );
+
+    let persisted_attempt_statuses: Vec<(i64, Option<i64>)> = {
+        let mut statement = sqlite
+            .prepare(
+                "
+                SELECT attempt_index, upstream_status
+                FROM request_attempt_logs
+                WHERE request_id = ?1
+                ORDER BY attempt_index ASC
+                ",
+            )
+            .expect("prepare upstream status query");
+        statement
+            .query_map([request_id.as_str()], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query upstream status rows")
+            .map(|row| row.expect("decode attempt status row"))
+            .collect()
+    };
+    assert_eq!(persisted_attempt_statuses.len(), 2);
+    assert_eq!(
+        persisted_attempt_statuses[0],
+        (0, Some(503)),
+        "failed attempts should persist their upstream status instead of only the final attempt"
+    );
 }

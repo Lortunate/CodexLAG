@@ -51,7 +51,12 @@ pub fn choose_endpoint(
     mode: &str,
     endpoints: &[CandidateEndpoint],
 ) -> Result<CandidateEndpoint, RoutingError> {
-    choose_endpoint_at_with_recovery(mode, endpoints, wall_clock_now_ms(), &RecoveryRules::default())
+    choose_endpoint_at_with_recovery(
+        mode,
+        endpoints,
+        wall_clock_now_ms(),
+        &RecoveryRules::default(),
+    )
 }
 
 pub fn choose_endpoint_at(
@@ -72,7 +77,9 @@ pub fn choose_endpoint_at_with_recovery(
         RoutingMode::AccountOnly => {
             choose_from_pool(endpoints, PoolKind::Official, now_ms, recovery_rules)
         }
-        RoutingMode::RelayOnly => choose_from_pool(endpoints, PoolKind::Relay, now_ms, recovery_rules),
+        RoutingMode::RelayOnly => {
+            choose_from_pool(endpoints, PoolKind::Relay, now_ms, recovery_rules)
+        }
         RoutingMode::Hybrid => choose_hybrid(endpoints, now_ms, recovery_rules),
     }
     .ok_or(RoutingError::NoAvailableEndpoint)

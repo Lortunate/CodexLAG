@@ -200,7 +200,10 @@ async fn newly_created_platform_key_can_authenticate_against_the_gateway() {
 }
 
 fn selected_endpoint_id(runtime: &RuntimeState, mode: &str) -> String {
-    choose_endpoint(mode, &runtime.loopback_gateway().state().current_candidates())
-        .expect("endpoint selected for mode")
-        .id
+    choose_endpoint(
+        mode,
+        &runtime.loopback_gateway().state().current_candidates(),
+    )
+    .expect("endpoint selected for mode")
+    .id
 }

@@ -213,6 +213,33 @@ impl GatewayState {
             .set_endpoint_availability(endpoint_id, available)
     }
 
+    pub fn record_runtime_failure(
+        &self,
+        endpoint: &CandidateEndpoint,
+        failure: &crate::providers::invocation::InvocationFailure,
+        now_ms: u64,
+        failure_rules: &FailureRules,
+    ) -> bool {
+        self.routing
+            .write()
+            .expect("gateway routing lock poisoned")
+            .record_provider_failure(endpoint, failure, now_ms, failure_rules)
+    }
+
+    pub fn record_runtime_success(&self, endpoint: &CandidateEndpoint) -> bool {
+        self.routing
+            .write()
+            .expect("gateway routing lock poisoned")
+            .record_provider_success(endpoint)
+    }
+
+    pub fn set_last_route_debug_snapshot(&self, snapshot: Option<RouteDebugSnapshot>) {
+        self.routing
+            .write()
+            .expect("gateway routing lock poisoned")
+            .set_last_debug_snapshot(snapshot);
+    }
+
     pub fn plan_provider_failure_for_test(&self, endpoint_id: &str, class: InvocationFailureClass) {
         self.provider_invocation
             .plan_failure_for_test(endpoint_id, class);

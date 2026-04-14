@@ -1,7 +1,6 @@
 use codexlag_lib::providers::relay::{
     normalize_relay_balance_response, query_newapi_balance, relay_balance_capability,
-    RelayBalanceAdapter,
-    RelayBalanceCapability,
+    RelayBalanceAdapter, RelayBalanceCapability,
 };
 
 #[test]
@@ -53,9 +52,8 @@ fn relay_balance_capability_tracks_supported_adapter_and_no_balance_cases() {
 
 #[test]
 fn query_newapi_balance_parses_supported_payload_shape() {
-    let normalized =
-        query_newapi_balance("http://127.0.0.1:8787", "rk_local_relay-newapi")
-            .expect("query newapi balance");
+    let normalized = query_newapi_balance("http://127.0.0.1:8787", "rk_local_relay-newapi")
+        .expect("query newapi balance");
     assert_eq!(normalized.total, "25.00");
     assert_eq!(normalized.used, "7.50");
 }

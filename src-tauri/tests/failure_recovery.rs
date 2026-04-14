@@ -3,7 +3,9 @@ use axum::{
     http::{Request, StatusCode},
 };
 use codexlag_lib::{
-    bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test},
+    bootstrap::{
+        bootstrap_runtime_for_test, bootstrap_state_with_provider_inventory_for_test,
+    },
     gateway::build_router_for_test,
     routing::{
         engine::{
@@ -62,8 +64,10 @@ fn timeout_and_5xx_classification_follow_configured_thresholds() {
 }
 
 #[tokio::test]
-async fn codex_request_account_only_succeeds_with_placeholder_candidates() {
-    let mut state = bootstrap_state_for_test().await.expect("bootstrap");
+async fn codex_request_account_only_succeeds_with_imported_provider_inventory() {
+    let mut state = bootstrap_state_with_provider_inventory_for_test()
+        .await
+        .expect("bootstrap");
     state
         .set_default_key_allowed_mode(RoutingMode::AccountOnly)
         .expect("set account_only mode");

@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::hash::{Hash, Hasher};
 
 use crate::error::{CodexLagError, ConfigErrorKind, ErrorCategory, RoutingErrorKind};
@@ -21,8 +21,10 @@ use crate::providers::invocation::{
 use crate::providers::official::map_official_invocation_failure;
 use crate::providers::relay::map_relay_invocation_failure;
 use crate::routing::engine::{
-    endpoint_downgrade_reason, endpoint_rejection_reason, wall_clock_now_ms, PoolKind, RoutingError,
+    choose_endpoint_at_with_recovery, endpoint_downgrade_reason, endpoint_rejection_reason,
+    wall_clock_now_ms, PoolKind, RoutingError,
 };
+use crate::routing::policy::apply_selection_order;
 use crate::routing::policy::RoutingMode;
 
 #[derive(Debug, Serialize)]
@@ -53,6 +55,21 @@ struct ModelsResponse {
     models: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct AttemptLifecycleSnapshot {
+    attempt_id: String,
+    request_id: String,
+    attempt_index: usize,
+    endpoint_id: String,
+    pool: PoolKind,
+    trigger_reason: String,
+    upstream_status: Option<u16>,
+    latency_ms: i64,
+    token_usage_snapshot: Option<String>,
+    estimated_cost_snapshot: Option<String>,
+    feature_resolution_snapshot: Option<String>,
+}
+
 pub fn build_routes() -> Router<GatewayState> {
     Router::new()
         .route("/health", get(health))
@@ -69,10 +86,14 @@ async fn codex_request(
     auth: AuthenticatedPlatformKey,
 ) -> Result<Json<CodexRequestSummary>, (StatusCode, Json<RoutingErrorResponse>)> {
     let platform_key = auth.platform_key();
-    let now_ms = wall_clock_now_ms();
+    let request_started_at_ms = wall_clock_now_ms();
     let mode_value = platform_key.allowed_mode.clone();
     let mode = mode_value.as_str();
-    let request_id = gateway_state.next_request_id(&platform_key.name, now_ms, "unrouted");
+    let request_id = gateway_state.next_request_id(
+        &platform_key.name,
+        request_started_at_ms,
+        "unrouted",
+    );
 
     let accepted_line = format_runtime_event_fields(
         "gateway",
@@ -149,22 +170,20 @@ async fn codex_request(
                 final_upstream_error_code: Some(error_code.clone()),
                 final_upstream_error_reason: Some(error_reason.clone()),
             });
+            let request_finished_at_ms = wall_clock_now_ms();
             persist_request_lifecycle_snapshot(
                 &gateway_state,
                 request_id.as_str(),
                 platform_key.id.as_str(),
                 None,
                 None,
-                0,
                 "error",
                 Some(StatusCode::INTERNAL_SERVER_ERROR.as_u16()),
-                now_ms,
+                request_started_at_ms,
+                request_finished_at_ms,
                 Some(error_code.as_str()),
                 Some(error_reason.as_str()),
-                None,
-                None,
-                Some(capability_result),
-                None,
+                vec![].as_slice(),
             );
             return Err((status, error_payload));
         }
@@ -175,80 +194,287 @@ async fn codex_request(
         policy.id.as_str(),
         Some(policy_name.as_str()),
     ));
-    let selection = match gateway_state.choose_endpoint_with_runtime_failover(
-        request_id.as_str(),
-        &policy,
-        mode,
-        |endpoint, context| match endpoint.pool {
-            PoolKind::Official => {
-                if let Err(failure) = gateway_state.invoke_provider(endpoint, context) {
-                    return Err(failure);
-                }
-                let session =
-                    match gateway_state.official_session_for_candidate(endpoint.id.as_str()) {
-                        Ok(session) => session,
-                        Err(_) => {
-                            return Err(InvocationFailure {
-                                request_id: context.request_id.clone(),
-                                attempt_id: context.attempt_id.clone(),
-                                endpoint_id: endpoint.id.clone(),
-                                pool: endpoint.pool.clone(),
-                                class: InvocationFailureClass::Config,
-                                upstream_status: None,
-                            });
-                        }
-                    };
-                crate::providers::official::invoke_official_session(
-                    &session,
-                    context.request_id.as_str(),
-                    context.attempt_id.as_str(),
-                    endpoint.id.as_str(),
-                )
+    let max_attempts = {
+        let candidate_count = gateway_state.current_candidates().len().max(1);
+        if policy.retry_budget == 0 {
+            candidate_count
+        } else {
+            usize::min(policy.retry_budget as usize, candidate_count).max(1)
+        }
+    };
+    let mut attempt_count = 0usize;
+    let mut attempted_endpoint_keys = HashSet::<(PoolKind, String)>::new();
+    let mut last_selected_endpoint: Option<String> = None;
+    let mut last_invocation_failure: Option<InvocationFailure> = None;
+    let mut primary_pool: Option<PoolKind> = None;
+    let mut attempt_snapshots = Vec::<AttemptLifecycleSnapshot>::new();
+    let mut selected_endpoint: Option<crate::routing::engine::CandidateEndpoint> = None;
+    let mut success_metadata: Option<crate::providers::invocation::InvocationSuccessMetadata> =
+        None;
+    let mut terminal_routing_error = RoutingError::NoAvailableEndpoint;
+
+    while attempt_count < max_attempts {
+        let now_ms = wall_clock_now_ms();
+        let mut ordered =
+            apply_selection_order(&gateway_state.current_candidates(), &policy.selection_order);
+        for candidate in &mut ordered {
+            if let Some(position) = policy
+                .selection_order
+                .iter()
+                .position(|endpoint_id| endpoint_id == &candidate.id)
+            {
+                candidate.priority = i32::try_from(position).unwrap_or(i32::MAX);
             }
-            PoolKind::Relay => {
-                if let Err(failure) = gateway_state.invoke_provider(endpoint, context) {
-                    return Err(failure);
-                }
-                let api_key = match gateway_state.relay_api_key_for_candidate(endpoint.id.as_str())
-                {
-                    Ok(api_key) => api_key,
-                    Err(_) => {
-                        return Err(InvocationFailure {
+        }
+        let selected = match choose_endpoint_at_with_recovery(
+            mode,
+            &ordered,
+            now_ms,
+            &policy.recovery_rules,
+        ) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                terminal_routing_error = error;
+                break;
+            }
+        };
+        if let Some(pool) = primary_pool.as_ref() {
+            if !policy.cross_pool_fallback && selected.pool != *pool {
+                terminal_routing_error = RoutingError::NoAvailableEndpoint;
+                break;
+            }
+        } else {
+            primary_pool = Some(selected.pool.clone());
+        }
+
+        let selected_key = (selected.pool.clone(), selected.id.clone());
+        if attempted_endpoint_keys.contains(&selected_key) {
+            terminal_routing_error = RoutingError::NoAvailableEndpoint;
+            break;
+        }
+
+        attempt_count = attempt_count.saturating_add(1);
+        attempted_endpoint_keys.insert(selected_key);
+        last_selected_endpoint = Some(selected.id.clone());
+        let attempt_index = attempt_count.saturating_sub(1);
+        let context = crate::gateway::runtime_routing::RoutingAttemptContext {
+            request_id: request_id.clone(),
+            attempt_id: build_attempt_id(request_id.as_str(), attempt_index),
+            attempt_index,
+            mode: mode.to_string(),
+        };
+        let attempt_started_at_ms = wall_clock_now_ms();
+        let invocation = match gateway_state.invoke_provider(&selected, &context) {
+            Err(failure) => Err(failure),
+            Ok(_) => match selected.pool {
+                PoolKind::Official => {
+                    let imported = {
+                        let state = gateway_state.app_state();
+                        state
+                            .imported_official_account(selected.id.as_str())
+                            .cloned()
+                    };
+
+                    match imported {
+                        Some(imported) => {
+                            let secrets: Result<(String, String), InvocationFailure> = {
+                                let state = gateway_state.app_state();
+                                match (
+                                    state.secret(&crate::secret_store::SecretKey::new(
+                                        imported.session_credential_ref.clone(),
+                                    )),
+                                    state.secret(&crate::secret_store::SecretKey::new(
+                                        imported.token_credential_ref.clone(),
+                                    )),
+                                ) {
+                                    (Ok(session_secret), Ok(token_secret)) => {
+                                        Ok((session_secret, token_secret))
+                                    }
+                                    _ => Err(InvocationFailure {
+                                        request_id: context.request_id.clone(),
+                                        attempt_id: context.attempt_id.clone(),
+                                        endpoint_id: selected.id.clone(),
+                                        pool: selected.pool.clone(),
+                                        class: InvocationFailureClass::Config,
+                                        upstream_status: None,
+                                    }),
+                                }
+                            };
+                            match secrets {
+                                Ok((session_secret, token_secret)) => {
+                                    crate::providers::official::invoke_official_session(
+                                        &imported.session,
+                                        session_secret.as_str(),
+                                        token_secret.as_str(),
+                                        context.request_id.as_str(),
+                                        context.attempt_id.as_str(),
+                                        selected.id.as_str(),
+                                    )
+                                    .await
+                                }
+                                Err(failure) => Err(failure),
+                            }
+                        }
+                        None => Err(InvocationFailure {
                             request_id: context.request_id.clone(),
                             attempt_id: context.attempt_id.clone(),
-                            endpoint_id: endpoint.id.clone(),
-                            pool: endpoint.pool.clone(),
+                            endpoint_id: selected.id.clone(),
+                            pool: selected.pool.clone(),
                             class: InvocationFailureClass::Config,
                             upstream_status: None,
-                        });
+                        }),
                     }
-                };
-                crate::providers::relay::invoke_newapi_relay(
-                    endpoint.id.as_str(),
-                    api_key.as_str(),
-                    context.request_id.as_str(),
-                    context.attempt_id.as_str(),
-                    endpoint.id.as_str(),
-                )
+                }
+                PoolKind::Relay => {
+                    let relay = {
+                        let state = gateway_state.app_state();
+                        state.managed_relay(selected.id.as_str()).cloned()
+                    };
+
+                    match relay {
+                        Some(relay) => {
+                            let api_key = {
+                                let state = gateway_state.app_state();
+                                match state.secret(&crate::secret_store::SecretKey::new(
+                                    relay.api_key_credential_ref.clone(),
+                                )) {
+                                    Ok(api_key) => Ok(api_key),
+                                    Err(_) => Err(InvocationFailure {
+                                        request_id: context.request_id.clone(),
+                                        attempt_id: context.attempt_id.clone(),
+                                        endpoint_id: selected.id.clone(),
+                                        pool: selected.pool.clone(),
+                                        class: InvocationFailureClass::Config,
+                                        upstream_status: None,
+                                    }),
+                                }
+                            };
+                            match api_key {
+                                Ok(api_key) => {
+                                    crate::providers::relay::invoke_newapi_relay(
+                                        relay.endpoint.as_str(),
+                                        api_key.as_str(),
+                                        context.request_id.as_str(),
+                                        context.attempt_id.as_str(),
+                                        selected.id.as_str(),
+                                    )
+                                    .await
+                                }
+                                Err(failure) => Err(failure),
+                            }
+                        }
+                        None => Err(InvocationFailure {
+                            request_id: context.request_id.clone(),
+                            attempt_id: context.attempt_id.clone(),
+                            endpoint_id: selected.id.clone(),
+                            pool: selected.pool.clone(),
+                            class: InvocationFailureClass::Config,
+                            upstream_status: None,
+                        }),
+                    }
+                }
+            },
+        };
+        let attempt_finished_at_ms = wall_clock_now_ms();
+        let attempt_latency_ms = non_zero_latency_ms(attempt_started_at_ms, attempt_finished_at_ms);
+        let trigger_reason = if attempt_index == 0 {
+            "primary".to_string()
+        } else {
+            "fallback".to_string()
+        };
+
+        match invocation {
+            Ok(metadata) => {
+                let _ = gateway_state.record_runtime_success(&selected);
+                gateway_state.set_last_route_debug_snapshot(Some(
+                    crate::gateway::runtime_routing::RouteDebugSnapshot {
+                        request_id: request_id.clone(),
+                        selected_endpoint_id: selected.id.clone(),
+                        attempt_count,
+                    },
+                ));
+                attempt_snapshots.push(AttemptLifecycleSnapshot {
+                    attempt_id: context.attempt_id,
+                    request_id: context.request_id,
+                    attempt_index,
+                    endpoint_id: selected.id.clone(),
+                    pool: selected.pool.clone(),
+                    trigger_reason,
+                    upstream_status: Some(metadata.upstream_status),
+                    latency_ms: attempt_latency_ms,
+                    token_usage_snapshot: metadata.usage_dimensions.as_ref().map(|dimensions| {
+                        json!({
+                            "input_tokens": dimensions.input_tokens,
+                            "output_tokens": dimensions.output_tokens,
+                            "cache_read_tokens": dimensions.cache_read_tokens,
+                            "cache_write_tokens": dimensions.cache_write_tokens,
+                            "reasoning_tokens": dimensions.reasoning_tokens,
+                        })
+                        .to_string()
+                    }),
+                    estimated_cost_snapshot: None,
+                    feature_resolution_snapshot: None,
+                });
+                selected_endpoint = Some(selected);
+                success_metadata = Some(metadata);
+                break;
             }
-        },
-    ) {
-        Ok(selection) => selection,
-        Err(route_error) => {
+            Err(failure) => {
+                last_invocation_failure = Some(failure.clone());
+                let _ = gateway_state.record_runtime_failure(
+                    &selected,
+                    &failure,
+                    now_ms,
+                    &policy.failure_rules,
+                );
+                let mapped_error = map_provider_failure(&failure);
+                attempt_snapshots.push(AttemptLifecycleSnapshot {
+                    attempt_id: context.attempt_id,
+                    request_id: context.request_id,
+                    attempt_index,
+                    endpoint_id: selected.id.clone(),
+                    pool: selected.pool.clone(),
+                    trigger_reason,
+                    upstream_status: failure.upstream_status,
+                    latency_ms: attempt_latency_ms,
+                    token_usage_snapshot: None,
+                    estimated_cost_snapshot: None,
+                    feature_resolution_snapshot: Some(capability_result_snapshot(
+                        mode,
+                        attempt_count,
+                        Some(selected.id.as_str()),
+                        Some(&selected.pool),
+                        "error",
+                        None,
+                        Some(mapped_error.code()),
+                        Some(mapped_error.message()),
+                    )),
+                });
+            }
+        }
+    }
+
+    let selected = match selected_endpoint {
+        Some(selected) => selected,
+        None => {
+            if let Some(endpoint_id) = last_selected_endpoint {
+                gateway_state.set_last_route_debug_snapshot(Some(
+                    crate::gateway::runtime_routing::RouteDebugSnapshot {
+                        request_id: request_id.clone(),
+                        selected_endpoint_id: endpoint_id,
+                        attempt_count,
+                    },
+                ));
+            }
             let candidates = gateway_state.current_candidates();
             log_route_rejection(
                 request_id.as_str(),
-                route_error.attempt_count,
-                mode,
-                &route_error.error,
-                &candidates,
-                now_ms,
-            );
-            let crate::gateway::runtime_routing::RouteSelectionError {
-                error,
                 attempt_count,
-                last_invocation_failure,
-            } = route_error;
+                mode,
+                &terminal_routing_error,
+                &candidates,
+                wall_clock_now_ms(),
+            );
             let failure_endpoint_id = last_invocation_failure
                 .as_ref()
                 .map(|failure| failure.endpoint_id.as_str());
@@ -258,7 +484,7 @@ async fn codex_request(
                 request_id.as_str(),
                 attempt_count,
                 mode,
-                error,
+                terminal_routing_error,
                 last_invocation_failure.as_ref(),
             );
             let error_code = error_payload.0.error.clone();
@@ -295,46 +521,31 @@ async fn codex_request(
                 final_upstream_error_code: Some(error_code.clone()),
                 final_upstream_error_reason: Some(error_reason.clone()),
             });
+            let request_finished_at_ms = wall_clock_now_ms();
             persist_request_lifecycle_snapshot(
                 &gateway_state,
                 request_id.as_str(),
                 platform_key.id.as_str(),
                 model.as_deref(),
                 failure_endpoint_id,
-                attempt_count,
                 "error",
                 Some(status.as_u16()),
-                now_ms,
+                request_started_at_ms,
+                request_finished_at_ms,
                 Some(error_code.as_str()),
                 Some(error_reason.as_str()),
-                None,
-                None,
-                Some(capability_result_snapshot(
-                    mode,
-                    attempt_count,
-                    failure_endpoint_id,
-                    last_invocation_failure
-                        .as_ref()
-                        .map(|failure| &failure.pool),
-                    "error",
-                    None,
-                    Some(error_code.as_str()),
-                    Some(error_reason.as_str()),
-                )),
-                last_invocation_failure
-                    .as_ref()
-                    .and_then(|failure| failure.upstream_status),
+                attempt_snapshots.as_slice(),
             );
             return Err((status, error_payload));
         }
     };
-    let selected = selection.endpoint;
-    let success_metadata = selection.success_metadata;
-    let attempt_count = selection.attempt_count;
+    let success_metadata =
+        success_metadata.expect("success metadata must exist for selected endpoint");
     let candidates = gateway_state.current_candidates();
     let attempt_index = attempt_count.saturating_sub(1);
     let attempt_id = build_attempt_id(request_id.as_str(), attempt_index);
     let attempt_count_value = attempt_count.to_string();
+    let now_ms = wall_clock_now_ms();
 
     let selected_line = format_runtime_event_fields(
         "routing",
@@ -480,40 +691,34 @@ async fn codex_request(
         final_upstream_error_code: None,
         final_upstream_error_reason: None,
     });
+    let capability_result = capability_result_snapshot(
+        mode,
+        attempt_count,
+        Some(endpoint_id.as_str()),
+        Some(&selected.pool),
+        "success",
+        Some(pricing_estimation_status),
+        None,
+        None,
+    );
+    if let Some(final_attempt) = attempt_snapshots.last_mut() {
+        final_attempt.estimated_cost_snapshot = Some(json!({"amount": estimated_cost}).to_string());
+        final_attempt.feature_resolution_snapshot = Some(capability_result.clone());
+    }
+    let request_finished_at_ms = wall_clock_now_ms();
     persist_request_lifecycle_snapshot(
         &gateway_state,
         request_id.as_str(),
         platform_key.id.as_str(),
         model.as_deref(),
         Some(endpoint_id.as_str()),
-        attempt_count,
         "success",
         Some(StatusCode::OK.as_u16()),
-        now_ms,
+        request_started_at_ms,
+        request_finished_at_ms,
         None,
         None,
-        Some(
-            json!({
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cache_read_tokens": cache_read_tokens,
-                "cache_write_tokens": cache_write_tokens,
-                "reasoning_tokens": reasoning_tokens
-            })
-            .to_string(),
-        ),
-        Some(json!({"amount": estimated_cost}).to_string()),
-        Some(capability_result_snapshot(
-            mode,
-            attempt_count,
-            Some(endpoint_id.as_str()),
-            Some(&selected.pool),
-            "success",
-            Some(pricing_estimation_status),
-            None,
-            None,
-        )),
-        Some(success_metadata.upstream_status),
+        attempt_snapshots.as_slice(),
     );
 
     Ok(Json(CodexRequestSummary {
@@ -522,6 +727,11 @@ async fn codex_request(
         allowed_mode: platform_key.allowed_mode.clone(),
         endpoint_id,
     }))
+}
+
+fn non_zero_latency_ms(started_at_ms: u64, finished_at_ms: u64) -> i64 {
+    let elapsed = finished_at_ms.saturating_sub(started_at_ms).max(1);
+    i64::try_from(elapsed).unwrap_or(i64::MAX)
 }
 
 async fn models(
@@ -640,71 +850,37 @@ fn persist_request_lifecycle_snapshot(
     platform_key_id: &str,
     model: Option<&str>,
     selected_endpoint_id: Option<&str>,
-    attempt_count: usize,
     final_status: &str,
     http_status: Option<u16>,
     started_at_ms: u64,
+    finished_at_ms: u64,
     error_code: Option<&str>,
     error_reason: Option<&str>,
-    token_usage_snapshot: Option<String>,
-    estimated_cost_snapshot: Option<String>,
-    feature_resolution_snapshot: Option<String>,
-    final_upstream_status: Option<u16>,
+    attempts: &[AttemptLifecycleSnapshot],
 ) {
     let started_at_ms = i64::try_from(started_at_ms).unwrap_or(i64::MAX);
-    let current_candidates = gateway_state.current_candidates();
-    let recorded_attempts = gateway_state
-        .invocation_attempts_for_test()
-        .into_iter()
-        .filter(|attempt| attempt.request_id == request_id)
-        .collect::<Vec<_>>();
+    let finished_at_ms = i64::try_from(finished_at_ms).unwrap_or(i64::MAX);
+    let latency_ms = Some(non_zero_latency_ms(
+        u64::try_from(started_at_ms).unwrap_or_default(),
+        u64::try_from(finished_at_ms).unwrap_or_default(),
+    ));
 
-    let attempts = recorded_attempts
-        .into_iter()
-        .enumerate()
-        .map(|(idx, attempt)| {
-            let is_final_attempt = idx + 1 == attempt_count;
-            let pool_type = current_candidates
-                .iter()
-                .find(|candidate| candidate.id == attempt.endpoint_id)
-                .map(|candidate| pool_kind_label(&candidate.pool).to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-
-            RequestAttemptLog {
-                attempt_id: attempt.attempt_id,
-                request_id: attempt.request_id,
-                attempt_index: u32::try_from(idx).unwrap_or(u32::MAX),
-                endpoint_id: attempt.endpoint_id,
-                pool_type,
-                trigger_reason: if idx == 0 {
-                    "primary".to_string()
-                } else {
-                    "fallback".to_string()
-                },
-                upstream_status: if is_final_attempt {
-                    final_upstream_status.map(i64::from)
-                } else {
-                    None
-                },
-                timeout_ms: None,
-                latency_ms: if is_final_attempt { Some(0) } else { None },
-                token_usage_snapshot: if is_final_attempt {
-                    token_usage_snapshot.clone()
-                } else {
-                    None
-                },
-                estimated_cost_snapshot: if is_final_attempt {
-                    estimated_cost_snapshot.clone()
-                } else {
-                    None
-                },
-                balance_snapshot_id: None,
-                feature_resolution_snapshot: if is_final_attempt {
-                    feature_resolution_snapshot.clone()
-                } else {
-                    None
-                },
-            }
+    let attempts = attempts
+        .iter()
+        .map(|attempt| RequestAttemptLog {
+            attempt_id: attempt.attempt_id.clone(),
+            request_id: attempt.request_id.clone(),
+            attempt_index: u32::try_from(attempt.attempt_index).unwrap_or(u32::MAX),
+            endpoint_id: attempt.endpoint_id.clone(),
+            pool_type: pool_kind_label(&attempt.pool).to_string(),
+            trigger_reason: attempt.trigger_reason.clone(),
+            upstream_status: attempt.upstream_status.map(i64::from),
+            timeout_ms: None,
+            latency_ms: Some(attempt.latency_ms),
+            token_usage_snapshot: attempt.token_usage_snapshot.clone(),
+            estimated_cost_snapshot: attempt.estimated_cost_snapshot.clone(),
+            balance_snapshot_id: None,
+            feature_resolution_snapshot: attempt.feature_resolution_snapshot.clone(),
         })
         .collect::<Vec<_>>();
 
@@ -714,12 +890,12 @@ fn persist_request_lifecycle_snapshot(
         request_type: "codex".to_string(),
         model: model.unwrap_or_default().to_string(),
         selected_endpoint_id: selected_endpoint_id.map(str::to_string),
-        attempt_count: u32::try_from(attempt_count).unwrap_or(u32::MAX),
+        attempt_count: u32::try_from(attempts.len()).unwrap_or(u32::MAX),
         final_status: final_status.to_string(),
         http_status: http_status.map(i64::from),
         started_at_ms,
-        finished_at_ms: Some(started_at_ms),
-        latency_ms: Some(0),
+        finished_at_ms: Some(finished_at_ms),
+        latency_ms,
         error_code: error_code.map(str::to_string),
         error_reason: error_reason.map(str::to_string),
         requested_context_window: None,

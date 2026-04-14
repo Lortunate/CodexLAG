@@ -1,12 +1,18 @@
+use axum::{
+    routing::{get, post},
+    Json, Router,
+};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, RngCore};
+use tokio::net::TcpListener;
 
 use crate::{
+    commands::{accounts::default_primary_account, relays::default_relays},
     db::repositories::Repositories,
     error::{CodexLagError, Result},
-    models::{relay_api_key_credential_ref, FailureRules, PlatformKey, RecoveryRules, RoutingPolicy},
+    models::{FailureRules, PlatformKey, RecoveryRules, RoutingPolicy},
     routing::policy::HYBRID,
     secret_store::{SecretKey, SecretStore},
     state::{AppState, RuntimeLogConfig, RuntimeState},
@@ -17,6 +23,8 @@ const DEFAULT_POLICY_NAME: &str = "default";
 const DEFAULT_PLATFORM_KEY_ID: &str = "key-default";
 const DEFAULT_PLATFORM_KEY_NAME: &str = "default";
 pub const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
+const DEFAULT_OFFICIAL_SESSION_REF: &str = "credential://official/session/official-primary";
+const DEFAULT_OFFICIAL_TOKEN_REF: &str = "credential://official/token/official-primary";
 
 fn build_default_app_state(
     database_path: impl AsRef<Path>,
@@ -66,8 +74,6 @@ fn build_default_app_state(
     if secret_store.get_optional(&default_key_secret)?.is_none() {
         secret_store.set(&default_key_secret, generate_platform_key_secret())?;
     }
-    ensure_default_relay_secrets(&secret_store)?;
-
     Ok(AppState::new(repositories, secret_store))
 }
 
@@ -114,9 +120,22 @@ pub async fn bootstrap_state_for_test_at(database_path: impl AsRef<Path>) -> Res
     build_default_app_state(database_path, SecretStore::in_memory(secret_namespace))
 }
 
+pub async fn bootstrap_state_with_provider_inventory_for_test() -> Result<AppState> {
+    bootstrap_state_with_provider_inventory_for_test_at(test_database_path()).await
+}
+
+pub async fn bootstrap_state_with_provider_inventory_for_test_at(
+    database_path: impl AsRef<Path>,
+) -> Result<AppState> {
+    let mut app_state = bootstrap_state_for_test_at(&database_path).await?;
+    let upstream_base_url = spawn_test_provider_upstream().await?;
+    seed_runtime_provider_inventory_for_test(&mut app_state, upstream_base_url.as_str())?;
+    Ok(app_state)
+}
+
 pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
     let database_path = test_database_path();
-    let app_state = bootstrap_state_for_test_at(&database_path).await?;
+    let app_state = bootstrap_state_with_provider_inventory_for_test_at(&database_path).await?;
     let app_local_data_dir = database_path
         .parent()
         .ok_or_else(|| CodexLagError::new("runtime database path has no parent directory"))?;
@@ -164,12 +183,107 @@ fn random_suffix() -> String {
     encoded
 }
 
-fn ensure_default_relay_secrets(secret_store: &SecretStore) -> Result<()> {
-    for relay_id in ["relay-newapi", "relay-badpayload", "relay-nobalance"] {
-        let key = SecretKey::new(relay_api_key_credential_ref(relay_id));
-        if secret_store.get_optional(&key)?.is_none() {
-            secret_store.set(&key, format!("rk_local_{relay_id}"))?;
-        }
+async fn spawn_test_provider_upstream() -> Result<String> {
+    async fn official_response() -> Json<serde_json::Value> {
+        Json(serde_json::json!({
+            "id": "resp_official_fixture",
+            "model": "gpt-5-mini",
+            "usage": {
+                "input_tokens": 11,
+                "output_tokens": 7,
+                "input_tokens_details": {
+                    "cached_tokens": 2
+                },
+                "output_tokens_details": {
+                    "reasoning_tokens": 3
+                }
+            }
+        }))
     }
+
+    async fn relay_response() -> Json<serde_json::Value> {
+        Json(serde_json::json!({
+            "id": "chatcmpl_fixture",
+            "model": "gpt-4o-mini",
+            "usage": {
+                "prompt_tokens": 640,
+                "completion_tokens": 128,
+                "prompt_tokens_details": {
+                    "cached_tokens": 256
+                },
+                "completion_tokens_details": {
+                    "reasoning_tokens": 32
+                }
+            }
+        }))
+    }
+
+    async fn relay_balance_response() -> Json<serde_json::Value> {
+        Json(serde_json::json!({
+            "data": {
+                "total_balance": "25.00",
+                "used_balance": "7.50"
+            }
+        }))
+    }
+
+    async fn badpayload_balance_response() -> &'static str {
+        r#"{"data":{"total_balance":"25.00"}}"#
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|error| CodexLagError::new(format!("failed to bind test provider upstream: {error}")))?;
+    let address = listener
+        .local_addr()
+        .map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to read test provider upstream address: {error}"
+            ))
+        })?;
+    let router = Router::new()
+        .route("/responses", post(official_response))
+        .route("/v1/chat/completions", post(relay_response))
+        .route("/v1/api/user/self", get(relay_balance_response))
+        .route("/badpayload/v1/api/user/self", get(badpayload_balance_response));
+    tokio::spawn(async move {
+        axum::serve(listener, router)
+            .await
+            .expect("serve test provider upstream");
+    });
+
+    Ok(format!("http://{address}"))
+}
+
+fn seed_runtime_provider_inventory_for_test(
+    state: &mut AppState,
+    upstream_base_url: &str,
+) -> Result<()> {
+    state.save_imported_official_account(default_primary_account())?;
+    state.store_secret(
+        &SecretKey::new(DEFAULT_OFFICIAL_SESSION_REF),
+        "session-secret".to_string(),
+    )?;
+    state.store_secret(
+        &SecretKey::new(DEFAULT_OFFICIAL_TOKEN_REF),
+        serde_json::json!({
+            "api_key": "official-live-key",
+            "base_url": upstream_base_url,
+        })
+        .to_string(),
+    )?;
+
+    for mut relay in default_relays() {
+        relay.endpoint = match relay.relay_id.as_str() {
+            "relay-newapi" => format!("{upstream_base_url}/v1"),
+            "relay-badpayload" => format!("{upstream_base_url}/badpayload/v1"),
+            _ => relay.endpoint,
+        };
+        let relay_id = relay.relay_id.clone();
+        let credential_ref = relay.api_key_credential_ref.clone();
+        state.save_managed_relay(relay)?;
+        state.store_secret(&SecretKey::new(credential_ref), format!("rk_local_{relay_id}"))?;
+    }
+
     Ok(())
 }

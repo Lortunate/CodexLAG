@@ -21,7 +21,7 @@ use codexlag_lib::{
     state::{RuntimeLogConfig, RuntimeState},
     tray::{build_tray_model_for_runtime, TrayItemId},
 };
-use std::io::{Read, Write};
+use std::time::Duration;
 
 fn tray_label(model: &codexlag_lib::tray::TrayModel, id: TrayItemId) -> String {
     model
@@ -47,6 +47,36 @@ fn available_endpoints_label(runtime: &RuntimeState) -> String {
     }
 
     format!("Available endpoints | official: {available_official}, relay: {available_relay}")
+}
+
+async fn post_loopback_request_with_retry(platform_key_secret: &str) -> reqwest::Response {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("build loopback request client");
+
+    for attempt in 0..10 {
+        match client
+            .post("http://127.0.0.1:8787/codex/request")
+            .bearer_auth(platform_key_secret)
+            .body("")
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => return response,
+            Ok(response) if attempt < 9 => {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                drop(response);
+            }
+            Ok(response) => {
+                panic!("gateway request should return 200, got: {}", response.status())
+            }
+            Err(_) if attempt < 9 => tokio::time::sleep(Duration::from_millis(200)).await,
+            Err(error) => panic!("send gateway request: {error}"),
+        }
+    }
+
+    unreachable!("loopback gateway request should return within retry budget")
 }
 
 #[tokio::test]
@@ -154,23 +184,9 @@ async fn inventory_changes_restart_gateway_host_with_latest_runtime_state() {
         .secret(&SecretKey::default_platform_key())
         .expect("default platform key secret");
 
-    let mut stream =
-        std::net::TcpStream::connect("127.0.0.1:8787").expect("connect to loopback gateway");
-    let request = format!(
-        "POST /codex/request HTTP/1.1\r\nHost: 127.0.0.1:8787\r\nAuthorization: Bearer {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-        default_secret
-    );
-    stream
-        .write_all(request.as_bytes())
-        .expect("write gateway request");
-    let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .expect("read gateway response");
-    assert!(
-        response.starts_with("HTTP/1.1 200"),
-        "gateway request should return 200, got: {response}"
-    );
+    let response = post_loopback_request_with_retry(default_secret.as_str()).await;
+
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
     assert!(
         runtime
             .loopback_gateway()

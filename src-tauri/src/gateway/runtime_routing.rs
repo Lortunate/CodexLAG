@@ -6,8 +6,8 @@ use crate::{
     providers::invocation::{InvocationFailure, InvocationOutcome, InvocationSuccessMetadata},
     routing::engine::{
         choose_endpoint_at, choose_endpoint_at_with_recovery, mark_success_for_endpoint,
-        record_failure_for_endpoint, wall_clock_now_ms, CandidateEndpoint, FailureRules,
-        PoolKind, RoutingError,
+        record_failure_for_endpoint, wall_clock_now_ms, CandidateEndpoint, FailureRules, PoolKind,
+        RoutingError,
     },
     routing::policy::apply_selection_order,
 };
@@ -85,6 +85,32 @@ impl RuntimeRoutingState {
         }
 
         false
+    }
+
+    pub fn record_provider_failure(
+        &mut self,
+        endpoint: &CandidateEndpoint,
+        failure: &InvocationFailure,
+        now_ms: u64,
+        failure_rules: &FailureRules,
+    ) -> bool {
+        record_failure_for_endpoint(
+            &mut self.candidates,
+            endpoint.id.as_str(),
+            &endpoint.pool,
+            failure.to_endpoint_failure(),
+            now_ms,
+            failure_rules,
+        )
+        .is_some()
+    }
+
+    pub fn record_provider_success(&mut self, endpoint: &CandidateEndpoint) -> bool {
+        mark_success_for_endpoint(&mut self.candidates, endpoint.id.as_str(), &endpoint.pool)
+    }
+
+    pub fn set_last_debug_snapshot(&mut self, snapshot: Option<RouteDebugSnapshot>) {
+        self.last_debug = snapshot;
     }
 
     pub fn choose_with_failover<F>(
