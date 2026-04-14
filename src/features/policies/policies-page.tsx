@@ -69,8 +69,8 @@ export function PoliciesPage() {
 
   return (
     <section aria-labelledby="policies-heading">
-      <h2 id="policies-heading">Policy Status</h2>
-      <p>Inspect the policy layer that decides how requests flow between accounts and relays.</p>
+      <h2 id="policies-heading">Policies</h2>
+      <p>Edit runtime endpoint order, retry budget, and recovery thresholds.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <PolicyEditor
         endpointIds={endpointIds}

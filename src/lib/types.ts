@@ -198,14 +198,14 @@ export interface PolicySummary {
   policy_id: string;
   name: string;
   status: string;
-  selection_order?: string[];
-  cross_pool_fallback?: boolean;
-  retry_budget?: number;
-  timeout_open_after?: number;
-  server_error_open_after?: number;
-  cooldown_ms?: number;
-  half_open_after_ms?: number;
-  success_close_after?: number;
+  selection_order: string[];
+  cross_pool_fallback: boolean;
+  retry_budget: number;
+  timeout_open_after: number;
+  server_error_open_after: number;
+  cooldown_ms: number;
+  half_open_after_ms: number;
+  success_close_after: number;
 }
 
 export interface PolicyUpdateInput {

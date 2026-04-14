@@ -19,6 +19,7 @@ import {
   getAccountCapabilityDetail,
   getRelayCapabilityDetail,
   listAccounts,
+  listPolicies,
   getUsageRequestDetail,
   refreshAccountBalance,
   refreshRelayBalance,
@@ -96,6 +97,58 @@ describe("tauri wrappers", () => {
       kind: "queryable",
       adapter: "new_api",
     });
+  });
+
+  it("preserves generated secrets and hydrated policy fields from backend contracts", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        id: "ops-key",
+        name: "Operations Key",
+        policy_id: "default-policy",
+        allowed_mode: "hybrid",
+        enabled: true,
+        secret: "ck_local_mocked_ops_key_secret",
+      })
+      .mockResolvedValueOnce([
+        {
+          policy_id: "default-policy",
+          name: "default",
+          status: "active",
+          selection_order: ["official-primary", "relay-newapi"],
+          cross_pool_fallback: false,
+          retry_budget: 2,
+          timeout_open_after: 3,
+          server_error_open_after: 4,
+          cooldown_ms: 1000,
+          half_open_after_ms: 1000,
+          success_close_after: 2,
+        },
+      ]);
+
+    const created = await createPlatformKey({
+      key_id: "ops-key",
+      name: "Operations Key",
+      policy_id: "default-policy",
+      allowed_mode: "hybrid",
+    });
+    const policies = await listPolicies();
+
+    expect(created.secret).toBe("ck_local_mocked_ops_key_secret");
+    expect(policies).toEqual([
+      {
+        policy_id: "default-policy",
+        name: "default",
+        status: "active",
+        selection_order: ["official-primary", "relay-newapi"],
+        cross_pool_fallback: false,
+        retry_budget: 2,
+        timeout_open_after: 3,
+        server_error_open_after: 4,
+        cooldown_ms: 1000,
+        half_open_after_ms: 1000,
+        success_close_after: 2,
+      },
+    ]);
   });
 
   it("parses structured object payloads from invoke failures", async () => {

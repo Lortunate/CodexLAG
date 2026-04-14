@@ -129,8 +129,8 @@ export function RelaysPage() {
 
   return (
     <section aria-labelledby="relays-heading">
-      <h2 id="relays-heading">Relay Status</h2>
-      <p>Review upstream relay targets and the local endpoint used by the desktop shell.</p>
+      <h2 id="relays-heading">Relays</h2>
+      <p>Manage NewAPI relay endpoints, validate connectivity, and inspect balance support.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <RelayEditor
         connectionResults={relayConnectionResults}

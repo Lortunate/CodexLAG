@@ -188,7 +188,21 @@ describe("App shell", () => {
       refresh_capability: true,
       balance_capability: "non_queryable",
     }));
-    listPolicies.mockResolvedValue([{ policy_id: "default-policy", name: "default", status: "active" }]);
+    listPolicies.mockResolvedValue([
+      {
+        policy_id: "default-policy",
+        name: "default",
+        status: "active",
+        selection_order: ["official-primary", "relay-newapi"],
+        cross_pool_fallback: false,
+        retry_budget: 1,
+        timeout_open_after: 2,
+        server_error_open_after: 3,
+        cooldown_ms: 1000,
+        half_open_after_ms: 1000,
+        success_close_after: 2,
+      },
+    ]);
     listRelays.mockResolvedValue([
       {
         relay_id: "relay-newapi",
@@ -352,24 +366,27 @@ describe("App shell", () => {
     });
   });
 
-  it("renders the production desktop shell with persistent navigation and header chrome", () => {
+  it("renders the production desktop shell with persistent navigation and header chrome", async () => {
     render(<App />);
+    await screen.findByText("Runtime status");
 
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
     expect(screen.getByText("CodexLAG")).toBeInTheDocument();
     expect(screen.getByText("Gateway Overview")).toBeInTheDocument();
   });
 
-  it("renders the shared desktop shell and highlights the active page", () => {
+  it("renders the shared desktop shell and highlights the active page", async () => {
     render(<App />);
+    await screen.findByText("Runtime status");
 
     const overviewButton = screen.getByRole("button", { name: /overview/i });
     expect(overviewButton).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("main")).toBeInTheDocument();
   });
 
-  it("keeps the six primary navigation targets available from the new shell", () => {
+  it("keeps the six primary navigation targets available from the new shell", async () => {
     render(<App />);
+    await screen.findByText("Runtime status");
 
     expect(screen.getByRole("button", { name: /overview/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /accounts/i })).toBeInTheDocument();
@@ -399,6 +416,13 @@ describe("App shell", () => {
     expect(screen.getByRole("table", { name: "Runtime log files metadata" })).toBeInTheDocument();
     expect(screen.getByText("gateway.log")).toBeInTheDocument();
     expect(queryUsageLedger).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the overview diagnostics panel and default key operations in the rebuilt pages", async () => {
+    render(<App />);
+
+    expect(await screen.findByText(/runtime diagnostics/i)).toBeInTheDocument();
+    expect(screen.getByText(/default key mode/i)).toBeInTheDocument();
   });
 
   it("exports runtime diagnostics and renders manifest path fallback", async () => {
@@ -490,6 +514,22 @@ describe("App shell", () => {
     });
     expect(await screen.findByText("Imported account: imported-openai")).toBeInTheDocument();
     expect(listAccounts).toHaveBeenCalled();
+  });
+
+  it("renders account import and relay creation as structured operations panels", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /accounts/i }));
+    });
+    expect(
+      await screen.findByRole("heading", { name: /import official account/i }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /relays/i }));
+    });
+    expect(await screen.findByRole("heading", { name: /manage relays/i })).toBeInTheDocument();
   });
 
   it("loads relay balances and capability details", async () => {
@@ -594,6 +634,22 @@ describe("App shell", () => {
     expect(await screen.findByText("Disabled")).toBeInTheDocument();
   });
 
+  it("shows the generated platform key secret after key creation", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /platform keys/i }));
+    });
+
+    fireEvent.change(screen.getByLabelText("Key ID"), { target: { value: "ops-key" } });
+    fireEvent.change(screen.getByLabelText("Key Name"), { target: { value: "Operations Key" } });
+    fireEvent.change(screen.getByLabelText("Policy ID"), { target: { value: "default-policy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create key" }));
+
+    expect(await screen.findByText(/generated secret/i)).toBeInTheDocument();
+    expect(screen.getByText("ck_local_mocked_ops_key_secret")).toBeInTheDocument();
+  });
+
   it("edits and saves policy rules", async () => {
     render(<App />);
 
@@ -634,6 +690,19 @@ describe("App shell", () => {
     expect(await screen.findByText("Policy saved: default-updated")).toBeInTheDocument();
   });
 
+  it("renders policy fields from hydrated backend data", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /policies/i }));
+    });
+
+    expect(await screen.findByLabelText(/retry budget/i)).toHaveValue("1");
+    expect(screen.getByLabelText(/selection order/i)).toHaveValue(
+      "official-primary, relay-newapi",
+    );
+  });
+
   it("shows request history and request-detail affordances", async () => {
     render(<App />);
 
@@ -649,6 +718,17 @@ describe("App shell", () => {
     expect(getUsageRequestDetail).toHaveBeenCalledWith("req-1");
     expect(await screen.findByText("Request detail: req-1")).toBeInTheDocument();
     expect(screen.getByText("Cost provenance: estimated")).toBeInTheDocument();
+  });
+
+  it("renders logs as a request history with detail and capability panels", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /logs/i }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /request history/i })).toBeInTheDocument();
+    expect(screen.getByText(/usage provenance/i)).toBeInTheDocument();
   });
 
   it("clears stale request detail when detail loading fails", async () => {

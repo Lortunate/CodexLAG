@@ -27,33 +27,20 @@ function policyToDraft(policy: PolicySummary): PolicyDraft {
   return {
     policy_id: policy.policy_id,
     name: policy.name,
-    selection_order: policy.selection_order?.join(", ") ?? "",
-    cross_pool_fallback: policy.cross_pool_fallback ?? null,
-    retry_budget: policy.retry_budget?.toString() ?? "",
-    timeout_open_after: policy.timeout_open_after?.toString() ?? "",
-    server_error_open_after: policy.server_error_open_after?.toString() ?? "",
-    cooldown_ms: policy.cooldown_ms?.toString() ?? "",
-    half_open_after_ms: policy.half_open_after_ms?.toString() ?? "",
-    success_close_after: policy.success_close_after?.toString() ?? "",
+    selection_order: policy.selection_order.join(", "),
+    cross_pool_fallback: policy.cross_pool_fallback,
+    retry_budget: policy.retry_budget.toString(),
+    timeout_open_after: policy.timeout_open_after.toString(),
+    server_error_open_after: policy.server_error_open_after.toString(),
+    cooldown_ms: policy.cooldown_ms.toString(),
+    half_open_after_ms: policy.half_open_after_ms.toString(),
+    success_close_after: policy.success_close_after.toString(),
   };
 }
 
 function parsePositiveInteger(raw: string): number | null {
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function hasHydratedPolicySnapshot(policy: PolicySummary) {
-  return (
-    policy.selection_order !== undefined &&
-    policy.cross_pool_fallback !== undefined &&
-    policy.retry_budget !== undefined &&
-    policy.timeout_open_after !== undefined &&
-    policy.server_error_open_after !== undefined &&
-    policy.cooldown_ms !== undefined &&
-    policy.half_open_after_ms !== undefined &&
-    policy.success_close_after !== undefined
-  );
 }
 
 export function PolicyEditor({
@@ -371,12 +358,6 @@ export function PolicyEditor({
           Save policy
         </button>
       </form>
-      {!activePolicy || hasHydratedPolicySnapshot(activePolicy) ? null : (
-        <p>
-          Policy snapshot details are not available from runtime. Enter all policy fields before
-          saving.
-        </p>
-      )}
       {endpointIds.length > 0 ? (
         <p>Known endpoint ids: {endpointIds.join(", ")}</p>
       ) : null}

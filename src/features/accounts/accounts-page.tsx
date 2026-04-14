@@ -104,8 +104,8 @@ export function AccountsPage() {
 
   return (
     <section aria-labelledby="accounts-heading">
-      <h2 id="accounts-heading">Account Details</h2>
-      <p>View the accounts available to the local gateway and verify provider ownership.</p>
+      <h2 id="accounts-heading">Official Accounts</h2>
+      <p>Import existing login state, review provider identity, and inspect capability status.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <AccountImportForm
         errorMessage={importErrorMessage}
