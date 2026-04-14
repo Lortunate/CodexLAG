@@ -8,6 +8,8 @@
 
 **Tech Stack:** Rust, Tauri v2, Serde, Rusqlite, existing secret-store abstraction, React/TypeScript contract types, Vitest, Tokio integration tests.
 
+**Status:** Completed locally on 2026-04-14. Historical implementation steps are retained for traceability; checkbox state below reflects the completed repository state.
+
 ---
 
 ## File Structure
@@ -49,7 +51,7 @@
 - Modify: `src-tauri/src/db/repositories.rs`
 - Test: `src-tauri/tests/bootstrap_default_key.rs`
 
-- [ ] **Step 1: Write the failing metadata test**
+- [x] **Step 1: Write the failing metadata test**
 
 ```rust
 // src-tauri/tests/bootstrap_default_key.rs
@@ -69,12 +71,12 @@ async fn bootstrap_default_key_contains_runtime_metadata_fields() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [x] **Step 2: Run the targeted test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml bootstrap_default_key_contains_runtime_metadata_fields -- --exact`
 Expected: FAIL because `PlatformKey` does not yet carry issuance metadata.
 
-- [ ] **Step 3: Expand the platform-key model**
+- [x] **Step 3: Expand the platform-key model**
 
 ```rust
 // src-tauri/src/models.rs
@@ -91,7 +93,7 @@ pub struct PlatformKey {
 }
 ```
 
-- [ ] **Step 4: Update bootstrap and persistence to store the expanded metadata**
+- [x] **Step 4: Update bootstrap and persistence to store the expanded metadata**
 
 ```rust
 // src-tauri/src/bootstrap.rs
@@ -114,12 +116,12 @@ ALTER TABLE platform_keys ADD COLUMN created_at_ms INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE platform_keys ADD COLUMN last_used_at_ms INTEGER NULL;
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml bootstrap_default_key -- --nocapture`
 Expected: PASS with expanded default-key metadata.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/models.rs src-tauri/src/bootstrap.rs src-tauri/src/db/migrations.rs src-tauri/src/db/repositories.rs src-tauri/tests/bootstrap_default_key.rs
@@ -137,7 +139,7 @@ git commit -m "feat: persist platform key issuance metadata"
 - Modify: `src-tauri/tests/secret_store_persistence.rs`
 - Modify: `src-tauri/tests/command_surface.rs`
 
-- [ ] **Step 1: Write the failing issuance test**
+- [x] **Step 1: Write the failing issuance test**
 
 ```rust
 // src-tauri/tests/platform_key_issuance.rs
@@ -169,12 +171,12 @@ async fn create_platform_key_issues_a_real_secret_and_stores_it() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [x] **Step 2: Run the targeted test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml create_platform_key_issues_a_real_secret_and_stores_it -- --exact`
 Expected: FAIL because key creation still only inserts metadata.
 
-- [ ] **Step 3: Add a reusable platform-key secret generator**
+- [x] **Step 3: Add a reusable platform-key secret generator**
 
 ```rust
 // src-tauri/src/bootstrap.rs
@@ -191,7 +193,7 @@ pub fn generate_platform_key_secret() -> String {
 }
 ```
 
-- [ ] **Step 4: Return a secret-bearing result from the create-key command and persist the secret**
+- [x] **Step 4: Return a secret-bearing result from the create-key command and persist the secret**
 
 ```rust
 // src-tauri/src/commands/keys.rs
@@ -221,7 +223,7 @@ Ok(CreatedPlatformKey {
 })
 ```
 
-- [ ] **Step 5: Run focused secret issuance tests**
+- [x] **Step 5: Run focused secret issuance tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml platform_key_issuance -- --nocapture`
 Expected: PASS with stored secret and returned one-time secret.
@@ -229,7 +231,7 @@ Expected: PASS with stored secret and returned one-time secret.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml secret_store_persistence -- --nocapture`
 Expected: PASS with secret-store contract unchanged.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/bootstrap.rs src-tauri/src/secret_store.rs src-tauri/src/state.rs src-tauri/src/commands/keys.rs src-tauri/tests/platform_key_issuance.rs src-tauri/tests/secret_store_persistence.rs src-tauri/tests/command_surface.rs
@@ -248,7 +250,7 @@ git commit -m "feat: issue and store new platform key secrets"
 - Modify: `src/test/tauri.test.ts`
 - Modify: `src/test/app-shell.test.tsx`
 
-- [ ] **Step 1: Write the failing auth-path test for a newly created key**
+- [x] **Step 1: Write the failing auth-path test for a newly created key**
 
 ```rust
 // src-tauri/tests/gateway_auth.rs
@@ -285,12 +287,12 @@ async fn newly_created_platform_key_can_authenticate_against_the_gateway() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted auth test to verify it fails**
+- [x] **Step 2: Run the targeted auth test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml newly_created_platform_key_can_authenticate_against_the_gateway -- --exact`
 Expected: FAIL because newly created keys are not yet fully wired into the auth path.
 
-- [ ] **Step 3: Keep auth lookup aligned with the secret-store-backed key inventory**
+- [x] **Step 3: Keep auth lookup aligned with the secret-store-backed key inventory**
 
 ```rust
 // src-tauri/src/gateway/auth.rs
@@ -299,7 +301,7 @@ fn authenticate_platform_key(&self, provided_secret: &str) -> Option<PlatformKey
 }
 ```
 
-- [ ] **Step 4: Update frontend contracts and show the secret once after creation**
+- [x] **Step 4: Update frontend contracts and show the secret once after creation**
 
 ```ts
 // src/lib/types.ts
@@ -323,7 +325,7 @@ export interface CreatedPlatformKey {
 ) : null}
 ```
 
-- [ ] **Step 5: Run focused backend and frontend tests**
+- [x] **Step 5: Run focused backend and frontend tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_auth -- --nocapture`
 Expected: PASS with newly created key authentication covered.
@@ -331,7 +333,7 @@ Expected: PASS with newly created key authentication covered.
 Run: `bun run test -- src/test/tauri.test.ts src/test/app-shell.test.tsx`
 Expected: PASS with UI contract updated to expose the one-time secret.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/gateway/auth.rs src-tauri/tests/gateway_auth.rs src/lib/types.ts src/lib/tauri.ts src/features/keys/keys-page.tsx src/features/keys/key-management-panel.tsx src/test/tauri.test.ts src/test/app-shell.test.tsx

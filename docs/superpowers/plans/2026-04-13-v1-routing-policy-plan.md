@@ -8,6 +8,8 @@
 
 **Tech Stack:** Rust, Tauri v2, Tokio, Serde, current routing engine/runtime routing modules, gateway route layer, tray summary, Tokio integration tests.
 
+**Status:** Completed locally on 2026-04-14. Historical implementation steps are retained for traceability; checkbox state below reflects the completed repository state.
+
 ---
 
 ## File Structure
@@ -37,7 +39,7 @@
 - Modify: `src-tauri/tests/routing_engine.rs`
 - Modify: `src-tauri/tests/failure_recovery.rs`
 
-- [ ] **Step 1: Write the failing half-open recovery test**
+- [x] **Step 1: Write the failing half-open recovery test**
 
 ```rust
 // src-tauri/tests/routing_engine.rs
@@ -72,12 +74,12 @@ fn cooldown_expiry_moves_open_circuit_endpoint_to_half_open() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted routing test to verify it fails**
+- [x] **Step 2: Run the targeted routing test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml cooldown_expiry_moves_open_circuit_endpoint_to_half_open -- --exact`
 Expected: FAIL because the current state model only supports `Healthy`, `Degraded`, and `Open`.
 
-- [ ] **Step 3: Expand the endpoint health-state enum**
+- [x] **Step 3: Expand the endpoint health-state enum**
 
 ```rust
 // src-tauri/src/models.rs
@@ -91,7 +93,7 @@ pub enum EndpointHealthState {
 }
 ```
 
-- [ ] **Step 4: Make cooldown and success transitions use the richer state machine**
+- [x] **Step 4: Make cooldown and success transitions use the richer state machine**
 
 ```rust
 // src-tauri/src/routing/engine.rs
@@ -121,7 +123,7 @@ fn refresh_endpoint_health(
 }
 ```
 
-- [ ] **Step 5: Run focused health-state tests**
+- [x] **Step 5: Run focused health-state tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml routing_engine -- --nocapture`
 Expected: PASS with explicit `OpenCircuit` and `HalfOpen` transitions.
@@ -129,7 +131,7 @@ Expected: PASS with explicit `OpenCircuit` and `HalfOpen` transitions.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml failure_recovery -- --nocapture`
 Expected: PASS with updated state naming and recovery semantics.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/models.rs src-tauri/src/routing/engine.rs src-tauri/tests/routing_engine.rs src-tauri/tests/failure_recovery.rs
@@ -145,7 +147,7 @@ git commit -m "feat: expand routing health states for policy runtime"
 - Modify: `src-tauri/src/commands/policies.rs`
 - Modify: `src-tauri/tests/gateway_provider_integration.rs`
 
-- [ ] **Step 1: Write the failing policy-order selection test**
+- [x] **Step 1: Write the failing policy-order selection test**
 
 ```rust
 // src-tauri/tests/gateway_provider_integration.rs
@@ -182,12 +184,12 @@ async fn policy_selection_order_controls_first_attempt_endpoint() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted policy-order test to verify it fails**
+- [x] **Step 2: Run the targeted policy-order test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml policy_selection_order_controls_first_attempt_endpoint -- --exact`
 Expected: FAIL because runtime candidate selection still ignores persisted policy order.
 
-- [ ] **Step 3: Introduce ordered candidate application from persisted policy**
+- [x] **Step 3: Introduce ordered candidate application from persisted policy**
 
 ```rust
 // src-tauri/src/routing/policy.rs
@@ -212,7 +214,7 @@ pub fn apply_selection_order(
 }
 ```
 
-- [ ] **Step 4: Make runtime routing consume policy order, retry budget, and fallback rules**
+- [x] **Step 4: Make runtime routing consume policy order, retry budget, and fallback rules**
 
 ```rust
 // src-tauri/src/gateway/runtime_routing.rs
@@ -232,7 +234,7 @@ where
 }
 ```
 
-- [ ] **Step 5: Thread the full policy object into gateway runtime selection**
+- [x] **Step 5: Thread the full policy object into gateway runtime selection**
 
 ```rust
 // src-tauri/src/gateway/routes.rs
@@ -244,7 +246,7 @@ let selection = gateway_state.choose_endpoint_with_runtime_failover(
 )?;
 ```
 
-- [ ] **Step 6: Run focused policy-routing tests**
+- [x] **Step 6: Run focused policy-routing tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_provider_integration -- --nocapture`
 Expected: PASS with persisted selection order and retry budget affecting runtime behavior.
@@ -252,7 +254,7 @@ Expected: PASS with persisted selection order and retry budget affecting runtime
 Run: `cargo test --manifest-path src-tauri/Cargo.toml routing_engine -- --nocapture`
 Expected: PASS with ordered candidate semantics intact.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src-tauri/src/routing/policy.rs src-tauri/src/gateway/runtime_routing.rs src-tauri/src/gateway/routes.rs src-tauri/src/commands/policies.rs src-tauri/tests/gateway_provider_integration.rs
@@ -267,7 +269,7 @@ git commit -m "feat: drive runtime selection from persisted routing policy"
 - Modify: `src-tauri/tests/runtime_composition.rs`
 - Modify: `src-tauri/tests/gateway_provider_integration.rs`
 
-- [ ] **Step 1: Write the failing routing-reason visibility test**
+- [x] **Step 1: Write the failing routing-reason visibility test**
 
 ```rust
 // src-tauri/tests/runtime_composition.rs
@@ -284,12 +286,12 @@ async fn runtime_default_key_summary_reports_no_available_endpoint_for_current_p
 }
 ```
 
-- [ ] **Step 2: Run the targeted visibility test to verify current summaries are too weak**
+- [x] **Step 2: Run the targeted visibility test to verify current summaries are too weak**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_default_key_summary_reports_no_available_endpoint_for_current_policy_mode -- --exact`
 Expected: FAIL or show that routing reasons are not consistently surfaced from the real policy path.
 
-- [ ] **Step 3: Log selection and rejection using policy-aware context**
+- [x] **Step 3: Log selection and rejection using policy-aware context**
 
 ```rust
 // src-tauri/src/gateway/routes.rs
@@ -310,7 +312,7 @@ let selected_line = format_runtime_event_fields(
 log::info!("{selected_line}");
 ```
 
-- [ ] **Step 4: Reflect policy-aware availability into tray summary and default-key summary**
+- [x] **Step 4: Reflect policy-aware availability into tray summary and default-key summary**
 
 ```rust
 // src-tauri/src/tray_summary.rs
@@ -321,7 +323,7 @@ let current_mode_label = match unavailable_reason.as_ref() {
 };
 ```
 
-- [ ] **Step 5: Run focused visibility tests**
+- [x] **Step 5: Run focused visibility tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_composition -- --nocapture`
 Expected: PASS with summary surfaces reflecting policy-aware availability.
@@ -329,7 +331,7 @@ Expected: PASS with summary surfaces reflecting policy-aware availability.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_provider_integration -- --nocapture`
 Expected: PASS with policy-aware routing events and attempt context preserved.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/gateway/routes.rs src-tauri/src/tray_summary.rs src-tauri/tests/runtime_composition.rs src-tauri/tests/gateway_provider_integration.rs

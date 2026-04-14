@@ -8,6 +8,8 @@
 
 **Tech Stack:** Rust, Tokio, Axum, Tauri v2, Serde, existing CodexLAG runtime and tray modules, Tokio integration tests.
 
+**Status:** Completed locally on 2026-04-14. Historical implementation steps are retained for traceability; checkbox state below reflects the completed repository state.
+
 ---
 
 ## File Structure
@@ -35,7 +37,7 @@
 - Modify: `src-tauri/src/gateway/mod.rs`
 - Test: `src-tauri/tests/gateway_host.rs`
 
-- [ ] **Step 1: Write the failing gateway-host lifecycle test**
+- [x] **Step 1: Write the failing gateway-host lifecycle test**
 
 ```rust
 // src-tauri/tests/gateway_host.rs
@@ -58,12 +60,12 @@ async fn runtime_starts_and_restarts_a_real_loopback_gateway_host() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_starts_and_restarts_a_real_loopback_gateway_host -- --exact`
 Expected: FAIL with missing `gateway_host_status`, missing host state, or no live loopback listener.
 
-- [ ] **Step 3: Create the host type with explicit bind, shutdown, and task ownership**
+- [x] **Step 3: Create the host type with explicit bind, shutdown, and task ownership**
 
 ```rust
 // src-tauri/src/gateway/host.rs
@@ -119,7 +121,7 @@ impl GatewayHost {
 }
 ```
 
-- [ ] **Step 4: Export the new module from the gateway package**
+- [x] **Step 4: Export the new module from the gateway package**
 
 ```rust
 // src-tauri/src/gateway/mod.rs
@@ -130,12 +132,12 @@ pub mod runtime_routing;
 pub mod server;
 ```
 
-- [ ] **Step 5: Run the focused host test**
+- [x] **Step 5: Run the focused host test**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_host -- --nocapture`
 Expected: FAIL only on missing runtime wiring, not on missing host types.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/gateway/host.rs src-tauri/src/gateway/mod.rs src-tauri/tests/gateway_host.rs
@@ -151,7 +153,7 @@ git commit -m "feat: add dedicated gateway host type"
 - Modify: `src-tauri/src/lib.rs`
 - Modify: `src-tauri/tests/runtime_composition.rs`
 
-- [ ] **Step 1: Write the failing runtime-composition status test**
+- [x] **Step 1: Write the failing runtime-composition status test**
 
 ```rust
 // src-tauri/tests/runtime_composition.rs
@@ -167,12 +169,12 @@ async fn runtime_exposes_gateway_host_status_for_the_running_loopback_server() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [x] **Step 2: Run the targeted test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_exposes_gateway_host_status_for_the_running_loopback_server -- --exact`
 Expected: FAIL because `RuntimeState` does not yet own a real host.
 
-- [ ] **Step 3: Extend RuntimeState to own gateway host lifecycle**
+- [x] **Step 3: Extend RuntimeState to own gateway host lifecycle**
 
 ```rust
 // src-tauri/src/state.rs
@@ -208,7 +210,7 @@ pub fn gateway_host_status(&self) -> GatewayHostStatus {
 }
 ```
 
-- [ ] **Step 4: Start the host during bootstrap**
+- [x] **Step 4: Start the host during bootstrap**
 
 ```rust
 // src-tauri/src/bootstrap.rs
@@ -238,7 +240,7 @@ pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
 })
 ```
 
-- [ ] **Step 5: Run focused runtime-composition tests**
+- [x] **Step 5: Run focused runtime-composition tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_exposes_gateway_host_status_for_the_running_loopback_server -- --exact`
 Expected: PASS.
@@ -246,7 +248,7 @@ Expected: PASS.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_composition -- --nocapture`
 Expected: PASS with real host ownership.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/state.rs src-tauri/src/bootstrap.rs src-tauri/src/gateway/server.rs src-tauri/src/lib.rs src-tauri/tests/runtime_composition.rs
@@ -262,7 +264,7 @@ git commit -m "feat: move gateway host lifecycle into runtime state"
 - Modify: `src-tauri/tests/tray_restart.rs`
 - Modify: `src-tauri/tests/gateway_host.rs`
 
-- [ ] **Step 1: Write the failing tray restart behavior test**
+- [x] **Step 1: Write the failing tray restart behavior test**
 
 ```rust
 // src-tauri/tests/tray_restart.rs
@@ -282,12 +284,12 @@ async fn restart_tray_action_restarts_the_real_gateway_host() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted tray-restart test to verify it fails**
+- [x] **Step 2: Run the targeted tray-restart test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml restart_tray_action_restarts_the_real_gateway_host -- --exact`
 Expected: FAIL because restart still only rebuilds the in-memory gateway object.
 
-- [ ] **Step 3: Implement graceful shutdown and restart on RuntimeState**
+- [x] **Step 3: Implement graceful shutdown and restart on RuntimeState**
 
 ```rust
 // src-tauri/src/state.rs
@@ -311,7 +313,7 @@ pub fn restart_gateway(&self) -> crate::error::Result<()> {
 }
 ```
 
-- [ ] **Step 4: Surface host-backed status through tray summary**
+- [x] **Step 4: Surface host-backed status through tray summary**
 
 ```rust
 // src-tauri/src/tray_summary.rs
@@ -323,7 +325,7 @@ let gateway_status_label = if host_status.is_running {
 };
 ```
 
-- [ ] **Step 5: Run final gateway-host tests**
+- [x] **Step 5: Run final gateway-host tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_host -- --nocapture`
 Expected: PASS.
@@ -331,7 +333,7 @@ Expected: PASS.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml tray_restart -- --nocapture`
 Expected: PASS with tray restart hitting the real host lifecycle.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/state.rs src-tauri/src/tray.rs src-tauri/src/tray_summary.rs src-tauri/tests/tray_restart.rs src-tauri/tests/gateway_host.rs

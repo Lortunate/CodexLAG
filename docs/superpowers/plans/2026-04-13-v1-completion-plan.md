@@ -8,6 +8,8 @@
 
 **Tech Stack:** Tauri v2, Rust, Tokio, Axum, Serde, Rusqlite, keyring/Windows Credential Manager abstraction, React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, Radix UI, TanStack Table, React Hook Form, Zod, Vitest, Testing Library.
 
+**Status:** Completed locally on 2026-04-14. Historical implementation steps are retained for traceability; checkbox state below reflects the completed repository state.
+
 ---
 
 ## File Structure
@@ -125,7 +127,7 @@
 - Modify: `src-tauri/tests/runtime_composition.rs`
 - Modify: `src-tauri/tests/tray_restart.rs`
 
-- [ ] **Step 1: Write the failing host lifecycle test**
+- [x] **Step 1: Write the failing host lifecycle test**
 
 ```rust
 // src-tauri/tests/gateway_host.rs
@@ -147,12 +149,12 @@ async fn runtime_starts_and_restarts_a_real_loopback_gateway_host() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted host test to verify it fails**
+- [x] **Step 2: Run the targeted host test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_starts_and_restarts_a_real_loopback_gateway_host -- --exact`
 Expected: FAIL with missing `gateway_host_status` or no running loopback host in bootstrap.
 
-- [ ] **Step 3: Introduce a real host abstraction and wire it into runtime bootstrap**
+- [x] **Step 3: Introduce a real host abstraction and wire it into runtime bootstrap**
 
 ```rust
 // src-tauri/src/gateway/host.rs
@@ -177,7 +179,7 @@ pub struct GatewayHostStatus {
 }
 ```
 
-- [ ] **Step 4: Update tray restart to restart the real host**
+- [x] **Step 4: Update tray restart to restart the real host**
 
 ```rust
 // src-tauri/src/tray.rs
@@ -187,7 +189,7 @@ match item_id {
 }
 ```
 
-- [ ] **Step 5: Run focused backend tests**
+- [x] **Step 5: Run focused backend tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_host -- --nocapture`
 Expected: PASS for the new host lifecycle test.
@@ -195,7 +197,7 @@ Expected: PASS for the new host lifecycle test.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_mode_switch_updates_default_key_summary_and_tray_model -- --exact`
 Expected: PASS with real host wiring intact.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/gateway/host.rs src-tauri/src/lib.rs src-tauri/src/state.rs src-tauri/src/gateway/server.rs src-tauri/src/tray.rs src-tauri/tests/gateway_host.rs src-tauri/tests/runtime_composition.rs src-tauri/tests/tray_restart.rs
@@ -216,7 +218,7 @@ git commit -m "feat: start real loopback gateway host"
 - Modify: `src-tauri/tests/bootstrap_default_key.rs`
 - Modify: `src-tauri/tests/secret_store_persistence.rs`
 
-- [ ] **Step 1: Write the failing key issuance test**
+- [x] **Step 1: Write the failing key issuance test**
 
 ```rust
 // src-tauri/tests/platform_key_issuance.rs
@@ -248,12 +250,12 @@ async fn create_platform_key_issues_a_real_secret_and_stores_it() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [x] **Step 2: Run the targeted test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml create_platform_key_issues_a_real_secret_and_stores_it -- --exact`
 Expected: FAIL because `create_platform_key_from_runtime` does not return or store a secret.
 
-- [ ] **Step 3: Extend the platform-key model and command result shape**
+- [x] **Step 3: Extend the platform-key model and command result shape**
 
 ```rust
 // src-tauri/src/models.rs
@@ -282,7 +284,7 @@ pub struct CreatedPlatformKey {
 }
 ```
 
-- [ ] **Step 4: Generate and persist the secret during key creation**
+- [x] **Step 4: Generate and persist the secret during key creation**
 
 ```rust
 // src-tauri/src/commands/keys.rs
@@ -290,7 +292,7 @@ let secret = crate::bootstrap::generate_platform_key_secret();
 app_state.store_secret(&SecretKey::platform_key(key_id.clone()), secret.clone())?;
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml platform_key_issuance -- --nocapture`
 Expected: PASS for key issuance and secret persistence.
@@ -298,7 +300,7 @@ Expected: PASS for key issuance and secret persistence.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml bootstrap_creates_default_policy_and_default_key -- --exact`
 Expected: PASS with the expanded model fields.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/models.rs src-tauri/src/bootstrap.rs src-tauri/src/state.rs src-tauri/src/secret_store.rs src-tauri/src/db/migrations.rs src-tauri/src/db/repositories.rs src-tauri/src/commands/keys.rs src-tauri/tests/platform_key_issuance.rs src-tauri/tests/bootstrap_default_key.rs src-tauri/tests/secret_store_persistence.rs
@@ -561,7 +563,7 @@ git commit -m "feat: execute real newapi relay adapter flows"
 - Test: `src-tauri/tests/routing_engine.rs`
 - Modify: `src-tauri/tests/gateway_provider_integration.rs`
 
-- [ ] **Step 1: Write the failing policy-driven routing test**
+- [x] **Step 1: Write the failing policy-driven routing test**
 
 ```rust
 // src-tauri/tests/gateway_provider_integration.rs
@@ -590,12 +592,12 @@ async fn policy_selection_order_controls_first_attempt_endpoint() {
 }
 ```
 
-- [ ] **Step 2: Run policy/routing tests to verify current runtime ignores policy ordering**
+- [x] **Step 2: Run policy/routing tests to verify current runtime ignores policy ordering**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml policy_selection_order_controls_first_attempt_endpoint -- --exact`
 Expected: FAIL because runtime still chooses from static candidates and static order.
 
-- [ ] **Step 3: Expand health state and recovery semantics**
+- [x] **Step 3: Expand health state and recovery semantics**
 
 ```rust
 // src-tauri/src/models.rs
@@ -608,7 +610,7 @@ pub enum EndpointHealthState {
 }
 ```
 
-- [ ] **Step 4: Feed policy order and runtime candidate filtering into selection**
+- [x] **Step 4: Feed policy order and runtime candidate filtering into selection**
 
 ```rust
 // src-tauri/src/gateway/runtime_routing.rs
@@ -627,7 +629,7 @@ where
 }
 ```
 
-- [ ] **Step 5: Re-run routing tests**
+- [x] **Step 5: Re-run routing tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml routing_engine -- --nocapture`
 Expected: PASS with explicit health-state transitions and policy-driven ordering.
@@ -635,7 +637,7 @@ Expected: PASS with explicit health-state transitions and policy-driven ordering
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_provider_integration -- --nocapture`
 Expected: PASS with runtime selecting endpoints according to persisted policy.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/models.rs src-tauri/src/routing/policy.rs src-tauri/src/routing/engine.rs src-tauri/src/gateway/runtime_routing.rs src-tauri/src/gateway/routes.rs src-tauri/src/commands/policies.rs src-tauri/src/tray_summary.rs src-tauri/tests/routing_engine.rs src-tauri/tests/gateway_provider_integration.rs
@@ -731,7 +733,7 @@ git commit -m "feat: persist request lifecycle records on the runtime path"
 - Create: `src/components/ui/*`
 - Test: `src/test/app-shell.test.tsx`
 
-- [ ] **Step 1: Write the failing app-shell visual-structure test**
+- [x] **Step 1: Write the failing app-shell visual-structure test**
 
 ```tsx
 // src/test/app-shell.test.tsx
@@ -744,12 +746,12 @@ it("renders the production desktop shell with persistent navigation and header c
 });
 ```
 
-- [ ] **Step 2: Run the focused frontend test to verify it fails**
+- [x] **Step 2: Run the focused frontend test to verify it fails**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: FAIL because the current shell is still the prototype sidebar/content layout.
 
-- [ ] **Step 3: Add Tailwind v4 + shadcn/ui foundation using the current Vite path**
+- [x] **Step 3: Add Tailwind v4 + shadcn/ui foundation using the current Vite path**
 
 ```json
 // package.json
@@ -790,7 +792,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 4: Replace the prototype shell with reusable desktop layout primitives**
+- [x] **Step 4: Replace the prototype shell with reusable desktop layout primitives**
 
 ```tsx
 // src/components/app-shell.tsx
@@ -814,12 +816,12 @@ export function AppShell({
 }
 ```
 
-- [ ] **Step 5: Run the focused frontend shell tests**
+- [x] **Step 5: Run the focused frontend shell tests**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: PASS with the rebuilt desktop shell.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add package.json vite.config.ts tsconfig.json src/main.tsx src/styles.css components.json src/lib/utils.ts src/components src/test/app-shell.test.tsx
@@ -846,7 +848,7 @@ git commit -m "feat: add desktop UI foundation with tailwind and shadcn"
 - Modify: `src/test/app-shell.test.tsx`
 - Modify: `src/test/tauri.test.ts`
 
-- [ ] **Step 1: Write the failing page workflow tests**
+- [x] **Step 1: Write the failing page workflow tests**
 
 ```tsx
 // src/test/app-shell.test.tsx
@@ -865,12 +867,12 @@ it("renders policy fields from hydrated backend data", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused frontend tests to verify they fail**
+- [x] **Step 2: Run the focused frontend tests to verify they fail**
 
 Run: `bun run test -- src/test/app-shell.test.tsx src/test/tauri.test.ts`
 Expected: FAIL because the existing page implementations still expose prototype-only flows and incomplete data hydration.
 
-- [ ] **Step 3: Hydrate the frontend contract with the new backend result shapes**
+- [x] **Step 3: Hydrate the frontend contract with the new backend result shapes**
 
 ```ts
 // src/lib/types.ts
@@ -898,7 +900,7 @@ export interface PolicySummary {
 }
 ```
 
-- [ ] **Step 4: Rebuild the pages as real operations screens**
+- [x] **Step 4: Rebuild the pages as real operations screens**
 
 ```tsx
 // src/features/keys/keys-page.tsx
@@ -923,12 +925,12 @@ export interface PolicySummary {
 <PolicyEditor policies={policies} endpointIds={endpointIds} onSave={handleSavePolicy} />
 ```
 
-- [ ] **Step 5: Run all frontend tests**
+- [x] **Step 5: Run all frontend tests**
 
 Run: `bun run test`
 Expected: PASS for `src/test/app-shell.test.tsx` and `src/test/tauri.test.ts`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/App.tsx src/lib/types.ts src/lib/tauri.ts src/features/overview/overview-page.tsx src/features/accounts/accounts-page.tsx src/features/accounts/account-import-form.tsx src/features/relays/relays-page.tsx src/features/relays/relay-editor.tsx src/features/keys/keys-page.tsx src/features/keys/key-management-panel.tsx src/features/policies/policies-page.tsx src/features/policies/policy-editor.tsx src/features/logs/logs-page.tsx src/features/default-key/default-key-mode-toggle.tsx src/test/app-shell.test.tsx src/test/tauri.test.ts
@@ -990,7 +992,7 @@ Verified on `2026-04-14`:
 - `bun run test` -> `2` files passed, `28` tests passed
 - `cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast` -> full backend suite passed with `0` failing targets
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/windows-release-gates.yml

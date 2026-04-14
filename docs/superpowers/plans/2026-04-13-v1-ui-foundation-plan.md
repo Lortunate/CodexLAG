@@ -8,6 +8,8 @@
 
 **Tech Stack:** React 19, TypeScript, Vite, Tailwind CSS v4, `@tailwindcss/vite`, shadcn/ui, Radix UI, class-variance-authority, lucide-react, Vitest, Testing Library.
 
+**Status:** Completed locally on 2026-04-14. Historical implementation steps are retained for traceability; checkbox state below reflects the completed repository state.
+
 ---
 
 ## File Structure
@@ -41,7 +43,7 @@
 - Create: `components.json`
 - Test: `src/test/app-shell.test.tsx`
 
-- [ ] **Step 1: Write the failing shell-structure test**
+- [x] **Step 1: Write the failing shell-structure test**
 
 ```tsx
 // src/test/app-shell.test.tsx
@@ -54,12 +56,12 @@ it("renders the production desktop shell with persistent navigation and header c
 });
 ```
 
-- [ ] **Step 2: Run the focused test to verify it fails**
+- [x] **Step 2: Run the focused test to verify it fails**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: FAIL because the current shell still uses the prototype layout and old styling setup.
 
-- [ ] **Step 3: Add the UI foundation dependencies**
+- [x] **Step 3: Add the UI foundation dependencies**
 
 ```json
 // package.json
@@ -80,7 +82,7 @@ Expected: FAIL because the current shell still uses the prototype layout and old
 }
 ```
 
-- [ ] **Step 4: Configure Tailwind and the `@` alias for the app**
+- [x] **Step 4: Configure Tailwind and the `@` alias for the app**
 
 ```ts
 // vite.config.ts
@@ -135,12 +137,12 @@ export default defineConfig({
 }
 ```
 
-- [ ] **Step 5: Run the focused shell test**
+- [x] **Step 5: Run the focused shell test**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: FAIL only on missing shell components, not on broken build setup.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add package.json vite.config.ts tsconfig.json components.json src/test/app-shell.test.tsx
@@ -160,7 +162,7 @@ git commit -m "feat: wire tailwind and shadcn into the desktop app"
 - Modify: `src/App.tsx`
 - Modify: `src/test/app-shell.test.tsx`
 
-- [ ] **Step 1: Write the failing shell-primitive behavior test**
+- [x] **Step 1: Write the failing shell-primitive behavior test**
 
 ```tsx
 // src/test/app-shell.test.tsx
@@ -173,12 +175,12 @@ it("renders the shared desktop shell and highlights the active page", async () =
 });
 ```
 
-- [ ] **Step 2: Run the focused shell-primitive test to verify it fails**
+- [x] **Step 2: Run the focused shell-primitive test to verify it fails**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: FAIL because reusable shell primitives do not yet exist.
 
-- [ ] **Step 3: Add the utility helper used by shadcn-style components**
+- [x] **Step 3: Add the utility helper used by shadcn-style components**
 
 ```ts
 // src/lib/utils.ts
@@ -190,7 +192,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 ```
 
-- [ ] **Step 4: Create the reusable shell and header primitives**
+- [x] **Step 4: Create the reusable shell and header primitives**
 
 ```tsx
 // src/components/app-shell.tsx
@@ -232,7 +234,7 @@ export function PageHeader({
 }
 ```
 
-- [ ] **Step 5: Replace the old CSS with Tailwind-backed app tokens**
+- [x] **Step 5: Replace the old CSS with Tailwind-backed app tokens**
 
 ```css
 /* src/styles.css */
@@ -252,12 +254,12 @@ body {
 }
 ```
 
-- [ ] **Step 6: Run focused frontend tests**
+- [x] **Step 6: Run focused frontend tests**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: PASS with the shared shell and header primitives in place.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/lib/utils.ts src/components/app-shell.tsx src/components/page-header.tsx src/components/status-badge.tsx src/components/ui src/main.tsx src/styles.css src/App.tsx src/test/app-shell.test.tsx
@@ -271,7 +273,7 @@ git commit -m "feat: add shared desktop shell primitives"
 - Modify: `src/test/tauri.test.ts`
 - Modify: `src/test/app-shell.test.tsx`
 
-- [ ] **Step 1: Write the failing navigation-stability test**
+- [x] **Step 1: Write the failing navigation-stability test**
 
 ```tsx
 // src/test/app-shell.test.tsx
@@ -287,12 +289,12 @@ it("keeps the six primary navigation targets available from the new shell", asyn
 });
 ```
 
-- [ ] **Step 2: Run the focused navigation-stability test to verify it fails**
+- [x] **Step 2: Run the focused navigation-stability test to verify it fails**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: FAIL because the new shell has not yet been wired around the existing six-page model.
 
-- [ ] **Step 3: Rebuild `App.tsx` around the shared shell without changing page semantics**
+- [x] **Step 3: Rebuild `App.tsx` around the shared shell without changing page semantics**
 
 ```tsx
 // src/App.tsx
@@ -328,12 +330,12 @@ return (
 );
 ```
 
-- [ ] **Step 4: Run all foundation-layer frontend tests**
+- [x] **Step 4: Run all foundation-layer frontend tests**
 
 Run: `bun run test -- src/test/app-shell.test.tsx src/test/tauri.test.ts`
 Expected: PASS with the shell foundation stable enough for page-by-page rebuild work.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/App.tsx src/test/tauri.test.ts src/test/app-shell.test.tsx

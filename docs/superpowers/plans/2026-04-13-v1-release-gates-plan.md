@@ -8,6 +8,8 @@
 
 **Tech Stack:** GitHub Actions (Windows), Bun, Rust/Cargo, existing docs tree, existing test suites.
 
+**Status:** Completed locally on 2026-04-14. Historical implementation steps are retained for traceability; checkbox state below reflects the completed repository state.
+
 ---
 
 ## File Structure
@@ -32,7 +34,7 @@
 **Files:**
 - Modify: `.github/workflows/windows-release-gates.yml`
 
-- [ ] **Step 1: Write the failing CI-content check as a local expectation**
+- [x] **Step 1: Write the failing CI-content check as a local expectation**
 
 ```bash
 cat .github/workflows/windows-release-gates.yml
@@ -46,12 +48,12 @@ Expected additions:
 - cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-- [ ] **Step 2: Verify the current workflow is missing or incomplete**
+- [x] **Step 2: Verify the current workflow is missing or incomplete**
 
 Run: `rg -n "bun run test|cargo test --manifest-path src-tauri/Cargo.toml" .github/workflows/windows-release-gates.yml`
 Expected: MISS or incomplete coverage for the current v1 release gate.
 
-- [ ] **Step 3: Update the Windows release-gate workflow**
+- [x] **Step 3: Update the Windows release-gate workflow**
 
 ```yaml
 # .github/workflows/windows-release-gates.yml
@@ -65,12 +67,12 @@ Expected: MISS or incomplete coverage for the current v1 release gate.
   run: cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-- [ ] **Step 4: Verify the workflow contains the expected gates**
+- [x] **Step 4: Verify the workflow contains the expected gates**
 
 Run: `rg -n "bun install --frozen-lockfile|bun run test|cargo test --manifest-path src-tauri/Cargo.toml" .github/workflows/windows-release-gates.yml`
 Expected: 3 matches.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/windows-release-gates.yml
@@ -84,7 +86,7 @@ git commit -m "chore: align windows release gates with v1 verification"
 - Modify: `docs/superpowers/specs/2026-04-13-v1-completion-design.md`
 - Modify: `docs/superpowers/specs/foundation/codexlag-foundation.md`
 
-- [ ] **Step 1: Verify the expected spec tree**
+- [x] **Step 1: Verify the expected spec tree**
 
 Run: `find docs/superpowers/specs -maxdepth 2 -type f | sort`
 Expected:
@@ -95,12 +97,12 @@ docs/superpowers/specs/2026-04-13-v1-completion-design.md
 docs/superpowers/specs/foundation/codexlag-foundation.md
 ```
 
-- [ ] **Step 2: Confirm the product and completion specs reference the foundation spec**
+- [x] **Step 2: Confirm the product and completion specs reference the foundation spec**
 
 Run: `rg -n "codexlag-foundation" docs/superpowers/specs/2026-04-11-product-design.md docs/superpowers/specs/2026-04-13-v1-completion-design.md`
 Expected: matches in both files.
 
-- [ ] **Step 3: Keep only shared rules in the foundation spec**
+- [x] **Step 3: Keep only shared rules in the foundation spec**
 
 ```markdown
 <!-- docs/superpowers/specs/foundation/codexlag-foundation.md -->
@@ -113,12 +115,12 @@ Expected: matches in both files.
 - testing and release-gate rules
 ```
 
-- [ ] **Step 4: Re-run the spec-tree verification**
+- [x] **Step 4: Re-run the spec-tree verification**
 
 Run: `find docs/superpowers/specs -maxdepth 2 -type f | sort && rg -n "codexlag-foundation" docs/superpowers/specs/2026-04-11-product-design.md docs/superpowers/specs/2026-04-13-v1-completion-design.md`
 Expected: expected spec tree plus references intact.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-04-11-product-design.md docs/superpowers/specs/2026-04-13-v1-completion-design.md docs/superpowers/specs/foundation/codexlag-foundation.md
@@ -130,7 +132,7 @@ git commit -m "docs: lock codexlag specs to foundation product and completion"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-04-13-v1-completion-plan.md`
 
-- [ ] **Step 1: Verify the expected plan tree**
+- [x] **Step 1: Verify the expected plan tree**
 
 Run: `find docs/superpowers/plans -maxdepth 1 -type f | sort`
 Expected:
@@ -149,12 +151,12 @@ docs/superpowers/plans/2026-04-13-v1-ui-pages-plan.md
 docs/superpowers/plans/2026-04-13-v1-release-gates-plan.md
 ```
 
-- [ ] **Step 2: Ensure the master plan references the dispatch-ready subplans**
+- [x] **Step 2: Ensure the master plan references the dispatch-ready subplans**
 
 Run: `rg -n "Dispatch-ready subplans|v1-gateway-host-plan|v1-release-gates-plan" docs/superpowers/plans/2026-04-13-v1-completion-plan.md`
 Expected: matches covering the subplan references.
 
-- [ ] **Step 3: Update the master plan doc section if any subplan links are missing**
+- [x] **Step 3: Update the master plan doc section if any subplan links are missing**
 
 ```markdown
 <!-- docs/superpowers/plans/2026-04-13-v1-completion-plan.md -->
@@ -171,12 +173,12 @@ Expected: matches covering the subplan references.
   - release gates
 ```
 
-- [ ] **Step 4: Re-run the plan-tree verification**
+- [x] **Step 4: Re-run the plan-tree verification**
 
 Run: `find docs/superpowers/plans -maxdepth 1 -type f | sort && rg -n "Dispatch-ready subplans" docs/superpowers/plans/2026-04-13-v1-completion-plan.md`
 Expected: full workstream plan tree plus master-plan references.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-04-13-v1-completion-plan.md

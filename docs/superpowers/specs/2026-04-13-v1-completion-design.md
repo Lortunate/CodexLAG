@@ -18,7 +18,7 @@ Provider inventory bootstrap boundary:
 
 Complete CodexLAG V1 as a Windows-first Tauri desktop application that exposes a real loopback Codex gateway, a real local control plane, a real local audit trail, and a production-grade desktop UI.
 
-This design does not replace the original 2026-04-11 product spec. It narrows and sequences the remaining work needed to convert the current repository from a well-tested scaffold into a releasable V1.
+This design does not replace the original 2026-04-11 product spec. It records the closure work that converted the repository from a well-tested scaffold into a releasable V1 and remains the reference for what was required to finish that scope.
 
 ## 2. Confirmed Scope
 
@@ -70,14 +70,14 @@ The current repository already contains:
 - runtime logging foundation
 - React shell with six navigation sections
 
-The repository does not yet satisfy V1 because:
+The repository now satisfies V1 because:
 
-- the gateway still routes through fixed placeholder endpoints instead of persisted account/relay state
-- provider execution is still dominated by test doubles and placeholder success data
-- platform key creation does not issue a real secret
-- policy persistence exists, but policy fields do not drive runtime endpoint selection
-- business request audit data is not yet fully persisted and queried from the main runtime path
-- the desktop UI is still closer to an integration prototype than a release-ready control console
+- the gateway runs as a real loopback host and routes through persisted account and relay inventory
+- provider execution paths are wired through the official and relay adapters required for local verification
+- platform key creation issues a real secret and persists runtime metadata through the secret store and database
+- policy persistence now drives runtime endpoint ordering, retry behavior, fallback, and recovery semantics
+- business request audit data is persisted and queried from the runtime path
+- the desktop UI now behaves as a release-ready local operations console instead of an integration prototype
 
 ## 4. Architecture Direction
 
@@ -383,4 +383,4 @@ V1 is complete only when CodexLAG is a real local desktop gateway product rather
 - real tray/control-plane semantics
 - real operator-facing desktop UI
 
-That is the handoff target for the follow-up implementation plan.
+That handoff target has now been met in this repository.

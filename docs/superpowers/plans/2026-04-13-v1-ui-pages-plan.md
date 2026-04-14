@@ -8,6 +8,8 @@
 
 **Tech Stack:** React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Radix UI, React Hook Form, Zod, TanStack Table, Vitest, Testing Library.
 
+**Status:** Completed locally on 2026-04-14. Historical implementation steps are retained for traceability; checkbox state below reflects the completed repository state.
+
 ---
 
 ## File Structure
@@ -46,7 +48,7 @@
 - Modify: `src/features/default-key/default-key-mode-toggle.tsx`
 - Modify: `src/test/app-shell.test.tsx`
 
-- [ ] **Step 1: Write the failing top-of-funnel page test**
+- [x] **Step 1: Write the failing top-of-funnel page test**
 
 ```tsx
 // src/test/app-shell.test.tsx
@@ -68,12 +70,12 @@ it("renders account import and relay creation as structured operations panels", 
 });
 ```
 
-- [ ] **Step 2: Run the focused page test to verify it fails**
+- [x] **Step 2: Run the focused page test to verify it fails**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: FAIL because the current page layouts are still prototype-style.
 
-- [ ] **Step 3: Rebuild the Overview page around production status cards**
+- [x] **Step 3: Rebuild the Overview page around production status cards**
 
 ```tsx
 // src/features/overview/overview-page.tsx
@@ -94,7 +96,7 @@ return (
 );
 ```
 
-- [ ] **Step 4: Rebuild Accounts and Relays as operator pages instead of raw detail grids**
+- [x] **Step 4: Rebuild Accounts and Relays as operator pages instead of raw detail grids**
 
 ```tsx
 // src/features/accounts/accounts-page.tsx
@@ -124,12 +126,12 @@ return (
 <RelayEditor ... />
 ```
 
-- [ ] **Step 5: Run focused frontend tests**
+- [x] **Step 5: Run focused frontend tests**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: PASS with rebuilt overview, account, and relay pages.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/overview/overview-page.tsx src/features/accounts/accounts-page.tsx src/features/accounts/account-import-form.tsx src/features/relays/relays-page.tsx src/features/relays/relay-editor.tsx src/features/default-key/default-key-mode-toggle.tsx src/test/app-shell.test.tsx
@@ -148,7 +150,7 @@ git commit -m "feat: rebuild overview accounts and relays pages"
 - Modify: `src/test/app-shell.test.tsx`
 - Modify: `src/test/tauri.test.ts`
 
-- [ ] **Step 1: Write the failing control-surface test**
+- [x] **Step 1: Write the failing control-surface test**
 
 ```tsx
 // src/test/app-shell.test.tsx
@@ -167,12 +169,12 @@ it("renders policy fields from hydrated backend data", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused control-surface test to verify it fails**
+- [x] **Step 2: Run the focused control-surface test to verify it fails**
 
 Run: `bun run test -- src/test/app-shell.test.tsx src/test/tauri.test.ts`
 Expected: FAIL because keys and policies still expose incomplete prototype behavior.
 
-- [ ] **Step 3: Update the frontend contract for secret-bearing key creation and hydrated policy fields**
+- [x] **Step 3: Update the frontend contract for secret-bearing key creation and hydrated policy fields**
 
 ```ts
 // src/lib/types.ts
@@ -200,7 +202,7 @@ export interface PolicySummary {
 }
 ```
 
-- [ ] **Step 4: Rebuild Keys and Policies pages as formal control panels**
+- [x] **Step 4: Rebuild Keys and Policies pages as formal control panels**
 
 ```tsx
 // src/features/keys/keys-page.tsx
@@ -226,12 +228,12 @@ export interface PolicySummary {
 <PolicyEditor policies={policies} endpointIds={endpointIds} onSave={handleSavePolicy} />
 ```
 
-- [ ] **Step 5: Run focused frontend tests**
+- [x] **Step 5: Run focused frontend tests**
 
 Run: `bun run test -- src/test/app-shell.test.tsx src/test/tauri.test.ts`
 Expected: PASS with key issuance and policy editing pages rebuilt.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/types.ts src/lib/tauri.ts src/features/keys/keys-page.tsx src/features/keys/key-management-panel.tsx src/features/policies/policies-page.tsx src/features/policies/policy-editor.tsx src/test/app-shell.test.tsx src/test/tauri.test.ts
@@ -245,7 +247,7 @@ git commit -m "feat: rebuild keys and policies control surfaces"
 - Modify: `src/features/logs/request-detail-capability-panel.tsx`
 - Modify: `src/test/app-shell.test.tsx`
 
-- [ ] **Step 1: Write the failing logs-page detail test**
+- [x] **Step 1: Write the failing logs-page detail test**
 
 ```tsx
 // src/test/app-shell.test.tsx
@@ -258,12 +260,12 @@ it("renders logs as a request history with detail and capability panels", async 
 });
 ```
 
-- [ ] **Step 2: Run the focused logs-page test to verify it fails**
+- [x] **Step 2: Run the focused logs-page test to verify it fails**
 
 Run: `bun run test -- src/test/app-shell.test.tsx`
 Expected: FAIL because the current logs page is still a simple prototype list.
 
-- [ ] **Step 3: Rebuild Logs page as a master-detail operational console**
+- [x] **Step 3: Rebuild Logs page as a master-detail operational console**
 
 ```tsx
 // src/features/logs/logs-page.tsx
@@ -277,7 +279,7 @@ Expected: FAIL because the current logs page is still a simple prototype list.
 </div>
 ```
 
-- [ ] **Step 4: Promote capability detail into a first-class request detail panel**
+- [x] **Step 4: Promote capability detail into a first-class request detail panel**
 
 ```tsx
 // src/features/logs/request-detail-capability-panel.tsx
@@ -290,12 +292,12 @@ return (
 );
 ```
 
-- [ ] **Step 5: Run final UI-page tests**
+- [x] **Step 5: Run final UI-page tests**
 
 Run: `bun run test`
 Expected: PASS for all frontend test files with the rebuilt logs page included.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/logs/logs-page.tsx src/features/logs/request-detail-capability-panel.tsx src/test/app-shell.test.tsx
