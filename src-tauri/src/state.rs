@@ -11,7 +11,9 @@ use crate::gateway::{
     server::LoopbackGateway,
 };
 use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
-use crate::models::{ImportedOfficialAccount, ManagedRelay, PlatformKey, RoutingPolicy};
+use crate::models::{
+    ImportedOfficialAccount, ManagedRelay, PlatformKey, ProviderSessionSummary, RoutingPolicy,
+};
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
 use crate::tray::{build_tray_model_for_runtime, TrayModel};
@@ -101,11 +103,22 @@ impl AppState {
         self.repositories.iter_imported_official_accounts()
     }
 
+    pub fn iter_provider_sessions(&self) -> impl Iterator<Item = &ProviderSessionSummary> {
+        self.repositories.iter_provider_sessions()
+    }
+
     pub fn save_imported_official_account(
         &mut self,
         account: ImportedOfficialAccount,
     ) -> crate::error::Result<()> {
         self.repositories.save_imported_official_account(account)
+    }
+
+    pub fn save_provider_session(
+        &mut self,
+        session: ProviderSessionSummary,
+    ) -> crate::error::Result<()> {
+        self.repositories.save_provider_session(session)
     }
 
     pub fn managed_relay(&self, relay_id: &str) -> Option<&ManagedRelay> {
@@ -371,6 +384,20 @@ impl RuntimeState {
 
     pub fn set_current_mode(&self, mode: RoutingMode) -> crate::error::Result<()> {
         self.app_state_mut().set_default_key_allowed_mode(mode)
+    }
+
+    pub fn list_provider_sessions(&self) -> crate::error::Result<Vec<ProviderSessionSummary>> {
+        let mut sessions = self
+            .app_state()
+            .iter_provider_sessions()
+            .cloned()
+            .collect::<Vec<_>>();
+        sessions.sort_by(|left, right| {
+            left.provider_id
+                .cmp(&right.provider_id)
+                .then_with(|| left.account_id.cmp(&right.account_id))
+        });
+        Ok(sessions)
     }
 
     pub fn rebuild_gateway_candidates(&self) -> crate::error::Result<()> {

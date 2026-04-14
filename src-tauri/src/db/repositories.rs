@@ -10,6 +10,7 @@ use crate::error::{CodexLagError, Result};
 use crate::logging::usage::{UsageProvenance, UsageRequestDetail};
 use crate::models::{
     CredentialKind, ImportedOfficialAccount, ManagedRelay, PlatformKey, PricingProfile,
+    ProviderSessionSummary,
     RequestAttemptLog, RequestLog, RoutingPolicy,
 };
 
@@ -27,6 +28,7 @@ pub struct Repositories {
     policies: HashMap<String, RoutingPolicy>,
     keys: HashMap<String, PlatformKey>,
     imported_official_accounts: HashMap<String, ImportedOfficialAccount>,
+    provider_sessions: HashMap<String, ProviderSessionSummary>,
     managed_relays: HashMap<String, ManagedRelay>,
 }
 
@@ -49,6 +51,7 @@ impl Repositories {
         let policies = Self::load_policies(&connection)?;
         let keys = Self::load_platform_keys(&connection)?;
         let imported_official_accounts = Self::load_imported_official_accounts(&connection)?;
+        let provider_sessions = Self::load_provider_sessions(&connection)?;
         let managed_relays = Self::load_managed_relays(&connection)?;
 
         Ok(Self {
@@ -56,6 +59,7 @@ impl Repositories {
             policies,
             keys,
             imported_official_accounts,
+            provider_sessions,
             managed_relays,
         })
     }
@@ -354,6 +358,54 @@ impl Repositories {
         &self,
     ) -> impl Iterator<Item = &ImportedOfficialAccount> {
         self.imported_official_accounts.values()
+    }
+
+    pub fn save_provider_session(&mut self, session: ProviderSessionSummary) -> Result<()> {
+        let connection = self.open_connection()?;
+        connection
+            .execute(
+                "
+                INSERT INTO provider_sessions (
+                    provider_id,
+                    account_id,
+                    display_name,
+                    auth_state,
+                    expires_at_ms,
+                    last_refresh_at_ms,
+                    last_refresh_error
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ON CONFLICT(provider_id, account_id) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    auth_state = excluded.auth_state,
+                    expires_at_ms = excluded.expires_at_ms,
+                    last_refresh_at_ms = excluded.last_refresh_at_ms,
+                    last_refresh_error = excluded.last_refresh_error
+                ",
+                params![
+                    &session.provider_id,
+                    &session.account_id,
+                    &session.display_name,
+                    &session.auth_state,
+                    session.expires_at_ms,
+                    session.last_refresh_at_ms,
+                    &session.last_refresh_error,
+                ],
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to persist provider session '{}:{}': {error}",
+                    session.provider_id, session.account_id
+                ))
+            })?;
+
+        self.provider_sessions
+            .insert(provider_session_key(&session.provider_id, &session.account_id), session);
+        Ok(())
+    }
+
+    pub fn iter_provider_sessions(&self) -> impl Iterator<Item = &ProviderSessionSummary> {
+        self.provider_sessions.values()
     }
 
     pub fn save_managed_relay(&mut self, relay: ManagedRelay) -> Result<()> {
@@ -1200,6 +1252,68 @@ impl Repositories {
         Ok(accounts)
     }
 
+    fn load_provider_sessions(connection: &Connection) -> Result<HashMap<String, ProviderSessionSummary>> {
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT
+                    provider_id,
+                    account_id,
+                    display_name,
+                    auth_state,
+                    expires_at_ms,
+                    last_refresh_at_ms,
+                    last_refresh_error
+                FROM provider_sessions
+                ",
+            )
+            .map_err(|error| {
+                CodexLagError::new(format!("failed to prepare provider session query: {error}"))
+            })?;
+
+        let mut rows = statement.query([]).map_err(|error| {
+            CodexLagError::new(format!("failed to query provider sessions: {error}"))
+        })?;
+        let mut sessions = HashMap::new();
+
+        while let Some(row) = rows.next().map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to read provider session row from sqlite cursor: {error}"
+            ))
+        })? {
+            let session = ProviderSessionSummary {
+                provider_id: row.get(0).map_err(|error| {
+                    CodexLagError::new(format!("failed to decode provider session provider id: {error}"))
+                })?,
+                account_id: row.get(1).map_err(|error| {
+                    CodexLagError::new(format!("failed to decode provider session account id: {error}"))
+                })?,
+                display_name: row.get(2).map_err(|error| {
+                    CodexLagError::new(format!("failed to decode provider session display name: {error}"))
+                })?,
+                auth_state: row.get(3).map_err(|error| {
+                    CodexLagError::new(format!("failed to decode provider session auth state: {error}"))
+                })?,
+                expires_at_ms: row.get(4).map_err(|error| {
+                    CodexLagError::new(format!("failed to decode provider session expiry: {error}"))
+                })?,
+                last_refresh_at_ms: row.get(5).map_err(|error| {
+                    CodexLagError::new(format!("failed to decode provider session refresh time: {error}"))
+                })?,
+                last_refresh_error: row.get(6).map_err(|error| {
+                    CodexLagError::new(format!("failed to decode provider session refresh error: {error}"))
+                })?,
+            };
+
+            sessions.insert(
+                provider_session_key(&session.provider_id, &session.account_id),
+                session,
+            );
+        }
+
+        Ok(sessions)
+    }
+
     fn load_managed_relays(connection: &Connection) -> Result<HashMap<String, ManagedRelay>> {
         let mut statement = connection
             .prepare(
@@ -1298,6 +1412,10 @@ impl Repositories {
             })?;
         Ok(())
     }
+}
+
+fn provider_session_key(provider_id: &str, account_id: &str) -> String {
+    format!("{provider_id}:{account_id}")
 }
 
 fn estimate_total_cost_micros(
