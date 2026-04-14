@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "CodexLAG",
+  "project_id": "b4dff21d-e7cf-493d-a206-2cd3d75da91d"
+}
