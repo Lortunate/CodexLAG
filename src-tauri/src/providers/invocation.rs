@@ -182,7 +182,25 @@ fn success_usage_dimensions_for_endpoint(
     endpoint: &CandidateEndpoint,
 ) -> Option<InvocationUsageDimensions> {
     let model = success_model_for_endpoint(endpoint)?;
-    Some(match model {
+    Some(default_usage_dimensions_for_model(model))
+}
+
+const OFFICIAL_MODEL_MATRIX: &[&str] = &["claude-3-5-sonnet", "claude-3-7-sonnet"];
+const RELAY_MODEL_MATRIX: &[&str] = &["gpt-4.1-mini", "gpt-4o-mini"];
+
+pub fn models_for_endpoint(endpoint: &CandidateEndpoint) -> &'static [&'static str] {
+    match endpoint.id.as_str() {
+        "official-default" => OFFICIAL_MODEL_MATRIX,
+        "relay-default" => RELAY_MODEL_MATRIX,
+        _ => match endpoint.pool {
+            PoolKind::Official => OFFICIAL_MODEL_MATRIX,
+            PoolKind::Relay => RELAY_MODEL_MATRIX,
+        },
+    }
+}
+
+pub fn default_usage_dimensions_for_model(model: &str) -> InvocationUsageDimensions {
+    match model {
         "claude-3-7-sonnet" => InvocationUsageDimensions {
             input_tokens: 1_024,
             output_tokens: 256,
@@ -203,20 +221,6 @@ fn success_usage_dimensions_for_endpoint(
             cache_read_tokens: 64,
             cache_write_tokens: 0,
             reasoning_tokens: 16,
-        },
-    })
-}
-
-const OFFICIAL_MODEL_MATRIX: &[&str] = &["claude-3-5-sonnet", "claude-3-7-sonnet"];
-const RELAY_MODEL_MATRIX: &[&str] = &["gpt-4.1-mini", "gpt-4o-mini"];
-
-pub fn models_for_endpoint(endpoint: &CandidateEndpoint) -> &'static [&'static str] {
-    match endpoint.id.as_str() {
-        "official-default" => OFFICIAL_MODEL_MATRIX,
-        "relay-default" => RELAY_MODEL_MATRIX,
-        _ => match endpoint.pool {
-            PoolKind::Official => OFFICIAL_MODEL_MATRIX,
-            PoolKind::Relay => RELAY_MODEL_MATRIX,
         },
     }
 }
