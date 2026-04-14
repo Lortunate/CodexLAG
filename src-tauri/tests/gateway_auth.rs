@@ -6,7 +6,9 @@ use codexlag_lib::{
     bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test},
     commands::keys::{create_platform_key_from_runtime, CreatePlatformKeyInput},
     gateway::build_router_for_test,
-    routing::policy::RoutingMode, secret_store::SecretKey,
+    routing::{engine::choose_endpoint, policy::RoutingMode},
+    secret_store::SecretKey,
+    state::RuntimeState,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -55,13 +57,18 @@ async fn gateway_auth_codex_route_rejects_invalid_platform_key() {
 
 #[tokio::test]
 async fn gateway_auth_codex_route_accepts_valid_platform_key() {
-    let state = bootstrap_state_for_test().await.expect("bootstrap");
-    let secret = state
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    let secret = runtime
+        .app_state()
         .secret(&SecretKey::default_platform_key())
         .expect("platform key secret");
-    let app = build_router_for_test(state);
+    let expected_endpoint_id = selected_endpoint_id(&runtime, "hybrid");
 
-    let response = app
+    let response = runtime
+        .loopback_gateway()
+        .router()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -84,21 +91,26 @@ async fn gateway_auth_codex_route_accepts_valid_platform_key() {
     assert_eq!(payload["platform_key"], "default");
     assert_eq!(payload["policy"], "default");
     assert_eq!(payload["allowed_mode"], "hybrid");
-    assert_eq!(payload["endpoint_id"], "official-default");
+    assert_eq!(payload["endpoint_id"], expected_endpoint_id);
 }
 
 #[tokio::test]
 async fn gateway_auth_codex_route_respects_account_only_mode() {
-    let mut state = bootstrap_state_for_test().await.expect("bootstrap");
-    state
-        .set_default_key_allowed_mode(RoutingMode::AccountOnly)
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .set_current_mode(RoutingMode::AccountOnly)
         .expect("set account-only mode");
-    let secret = state
+    let secret = runtime
+        .app_state()
         .secret(&SecretKey::default_platform_key())
         .expect("platform key secret");
-    let app = build_router_for_test(state);
+    let expected_endpoint_id = selected_endpoint_id(&runtime, "account_only");
 
-    let response = app
+    let response = runtime
+        .loopback_gateway()
+        .router()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -115,21 +127,26 @@ async fn gateway_auth_codex_route_respects_account_only_mode() {
         .await
         .expect("codex body");
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("gateway response json");
-    assert_eq!(payload["endpoint_id"], "official-default");
+    assert_eq!(payload["endpoint_id"], expected_endpoint_id);
 }
 
 #[tokio::test]
 async fn gateway_auth_codex_route_respects_relay_only_mode() {
-    let mut state = bootstrap_state_for_test().await.expect("bootstrap");
-    state
-        .set_default_key_allowed_mode(RoutingMode::RelayOnly)
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+    runtime
+        .set_current_mode(RoutingMode::RelayOnly)
         .expect("set relay-only mode");
-    let secret = state
+    let secret = runtime
+        .app_state()
         .secret(&SecretKey::default_platform_key())
         .expect("platform key secret");
-    let app = build_router_for_test(state);
+    let expected_endpoint_id = selected_endpoint_id(&runtime, "relay_only");
 
-    let response = app
+    let response = runtime
+        .loopback_gateway()
+        .router()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -146,7 +163,7 @@ async fn gateway_auth_codex_route_respects_relay_only_mode() {
         .await
         .expect("codex body");
     let payload: Value = serde_json::from_slice(body.as_ref()).expect("gateway response json");
-    assert_eq!(payload["endpoint_id"], "relay-default");
+    assert_eq!(payload["endpoint_id"], expected_endpoint_id);
 }
 
 #[tokio::test]
@@ -180,4 +197,10 @@ async fn newly_created_platform_key_can_authenticate_against_the_gateway() {
         .expect("response");
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+fn selected_endpoint_id(runtime: &RuntimeState, mode: &str) -> String {
+    choose_endpoint(mode, &runtime.loopback_gateway().state().current_candidates())
+        .expect("endpoint selected for mode")
+        .id
 }

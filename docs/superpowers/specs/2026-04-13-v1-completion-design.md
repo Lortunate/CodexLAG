@@ -1,7 +1,7 @@
 # CodexLAG V1 Completion Design
 
 - Date: 2026-04-13
-- Status: Draft approved in terminal discussion, written spec pending final user review
+- Status: Release gates verified locally on 2026-04-14; final V1 sign-off still requires explicit closure of the official-provider scope deviation and plan checkbox backfill
 - Project: CodexLAG
 - Related references:
   - `docs/superpowers/specs/foundation/codexlag-foundation.md`

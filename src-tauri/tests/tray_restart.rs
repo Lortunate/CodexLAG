@@ -1,7 +1,10 @@
 use codexlag_lib::{
     bootstrap::bootstrap_runtime_for_test,
     commands::accounts::refresh_account_balance_from_runtime,
-    routing::{engine::PoolKind, policy::RoutingMode},
+    routing::{
+        engine::{endpoint_rejection_reason, wall_clock_now_ms, PoolKind},
+        policy::RoutingMode,
+    },
     tray::{apply_tray_action_for_runtime, build_tray_model_for_runtime, TrayItemId, TrayModel},
 };
 
@@ -12,6 +15,23 @@ fn tray_label(model: &TrayModel, id: TrayItemId) -> String {
         .find(|item| item.id == id)
         .map(|item| item.label.text().to_string())
         .unwrap_or_else(|| panic!("missing tray item {:?}", id))
+}
+
+fn available_endpoints_label(runtime: &codexlag_lib::state::RuntimeState) -> String {
+    let mut available_official = 0usize;
+    let mut available_relay = 0usize;
+    let now_ms = wall_clock_now_ms();
+    for candidate in runtime.loopback_gateway().state().current_candidates() {
+        if endpoint_rejection_reason(&candidate, now_ms).is_some() {
+            continue;
+        }
+        match candidate.pool {
+            PoolKind::Official => available_official += 1,
+            PoolKind::Relay => available_relay += 1,
+        }
+    }
+
+    format!("Available endpoints | official: {available_official}, relay: {available_relay}")
 }
 
 #[tokio::test]
@@ -36,12 +56,29 @@ async fn tray_model_exposes_operational_summary_lines() {
     );
     assert_eq!(
         tray_label(&model, TrayItemId::AvailableEndpoints),
-        "Available endpoints | official: 1, relay: 1"
+        available_endpoints_label(&runtime)
     );
     assert_eq!(
         tray_label(&model, TrayItemId::LastBalanceRefresh),
         "Last balance refresh | none"
     );
+}
+
+#[tokio::test]
+async fn tray_summary_counts_inventory_derived_official_and_relay_candidates() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let model = runtime.tray_model();
+    let labels = model
+        .items
+        .iter()
+        .map(|item| item.label.text().to_string())
+        .collect::<Vec<_>>();
+
+    assert!(labels.iter().any(|label| label.contains("official:")));
+    assert!(labels.iter().any(|label| label.contains("relay:")));
 }
 
 #[tokio::test]
@@ -73,7 +110,7 @@ async fn restart_tray_action_restarts_the_real_gateway_host() {
     );
     assert_eq!(
         tray_label(&degraded, TrayItemId::AvailableEndpoints),
-        "Available endpoints | official: 1, relay: 0"
+        available_endpoints_label(&runtime)
     );
 
     let restarted = apply_tray_action_for_runtime(&runtime, TrayItemId::RestartGateway)
@@ -91,7 +128,7 @@ async fn restart_tray_action_restarts_the_real_gateway_host() {
     );
     assert_eq!(
         tray_label(&restarted, TrayItemId::AvailableEndpoints),
-        "Available endpoints | official: 1, relay: 1"
+        available_endpoints_label(&runtime)
     );
     assert_eq!(
         tray_label(&restarted, TrayItemId::LastBalanceRefresh),

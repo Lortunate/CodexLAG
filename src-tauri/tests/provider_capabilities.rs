@@ -53,11 +53,15 @@ fn official_session_supports_unloaded_metadata_state() {
         account_identity: None,
         auth_mode: None,
         refresh_capability: None,
+        quota_capability: None,
+        last_verified_at_ms: None,
+        status: "active".to_string(),
     };
 
     assert_eq!(session.account_identity, None);
     assert_eq!(session.auth_mode, None);
     assert_eq!(session.refresh_capability, None);
+    assert_eq!(session.status, "active");
 }
 
 #[test]
@@ -67,6 +71,9 @@ fn official_session_can_represent_unknown_auth_mode() {
         account_identity: Some("user@example.com".to_string()),
         auth_mode: Some(OfficialAuthMode::Unknown("sso".to_string())),
         refresh_capability: Some(true),
+        quota_capability: Some(false),
+        last_verified_at_ms: None,
+        status: "active".to_string(),
     };
 
     assert_eq!(
@@ -126,6 +133,9 @@ fn official_sessions_report_balance_capability_as_non_queryable() {
         account_identity: Some("user@example.com".to_string()),
         auth_mode: Some(OfficialAuthMode::ApiKey),
         refresh_capability: Some(true),
+        quota_capability: Some(false),
+        last_verified_at_ms: None,
+        status: "active".to_string(),
     };
 
     assert_eq!(

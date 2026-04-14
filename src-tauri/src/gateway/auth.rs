@@ -1,6 +1,6 @@
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc, RwLock, RwLockReadGuard,
+    Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
 
 use axum::{
@@ -72,6 +72,12 @@ impl GatewayState {
             .expect("gateway app state lock poisoned")
     }
 
+    pub fn app_state_mut(&self) -> RwLockWriteGuard<'_, AppState> {
+        self.app_state
+            .write()
+            .expect("gateway app state lock poisoned")
+    }
+
     pub fn policy_for_platform_key(&self, platform_key: &PlatformKey) -> Option<RoutingPolicy> {
         self.app_state()
             .get_policy_by_id(&platform_key.policy_id)
@@ -110,6 +116,7 @@ impl GatewayState {
     pub fn choose_endpoint_with_runtime_failover<F>(
         &self,
         request_id: &str,
+        policy: &RoutingPolicy,
         mode: &str,
         invoke: F,
     ) -> Result<RouteSelection, RouteSelectionError>
@@ -119,7 +126,7 @@ impl GatewayState {
         self.routing
             .write()
             .expect("gateway routing lock poisoned")
-            .choose_with_failover(request_id, mode, invoke)
+            .choose_with_failover(request_id, policy, mode, invoke)
     }
 
     pub fn invoke_provider(

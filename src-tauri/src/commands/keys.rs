@@ -152,8 +152,8 @@ pub fn create_platform_key_from_runtime(
         .map_err(|error| {
             CodexLagError::new("Failed to persist platform key secret.").with_internal_context(
                 format!(
-                    "command=create_platform_key;operation=store_secret;key_id={key_id};cause={error}"
-                ),
+                "command=create_platform_key;operation=store_secret;key_id={key_id};cause={error}"
+            ),
             )
         })?;
     app_state

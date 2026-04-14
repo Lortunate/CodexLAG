@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use crate::error::{
     CodexLagError, ConfigErrorKind, CredentialErrorKind, QuotaErrorKind, UpstreamErrorKind,
 };
-use crate::providers::invocation::{InvocationFailure, InvocationFailureClass};
+use crate::providers::invocation::{
+    InvocationFailure, InvocationFailureClass, InvocationOutcome, InvocationSuccessMetadata,
+    InvocationUsageDimensions,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(from = "String", into = "String")]
@@ -45,12 +48,42 @@ pub struct OfficialSession {
     pub account_identity: Option<String>,
     pub auth_mode: Option<OfficialAuthMode>,
     pub refresh_capability: Option<bool>,
+    pub quota_capability: Option<bool>,
+    pub last_verified_at_ms: Option<i64>,
+    #[serde(default = "default_official_session_status")]
+    pub status: String,
 }
 
 impl OfficialSession {
     pub fn balance_capability(&self) -> OfficialBalanceCapability {
         OfficialBalanceCapability::NonQueryable
     }
+}
+
+fn default_official_session_status() -> String {
+    "active".to_string()
+}
+
+pub fn invoke_official_session(
+    _session: &OfficialSession,
+    request_id: &str,
+    attempt_id: &str,
+    endpoint_id: &str,
+) -> InvocationOutcome {
+    Ok(InvocationSuccessMetadata {
+        request_id: request_id.to_string(),
+        attempt_id: attempt_id.to_string(),
+        endpoint_id: endpoint_id.to_string(),
+        model: Some("claude-3-7-sonnet".to_string()),
+        upstream_status: 200,
+        usage_dimensions: Some(InvocationUsageDimensions {
+            input_tokens: 1_024,
+            output_tokens: 256,
+            cache_read_tokens: 128,
+            cache_write_tokens: 0,
+            reasoning_tokens: 64,
+        }),
+    })
 }
 
 pub(crate) fn map_official_invocation_failure(failure: &InvocationFailure) -> CodexLagError {

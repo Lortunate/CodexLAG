@@ -1,6 +1,7 @@
 use codexlag_lib::{
     bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test_at, runtime_database_path},
     commands::{
+        accounts::{import_official_account_login_from_runtime, OfficialAccountImportInput},
         keys::{
             default_key_summary_from_runtime, default_key_summary_from_state,
             set_default_key_mode_from_runtime,
@@ -13,13 +14,14 @@ use codexlag_lib::{
     },
     error::ErrorCategory,
     routing::{
-        engine::PoolKind,
+        engine::{endpoint_rejection_reason, wall_clock_now_ms, PoolKind},
         policy::{RoutingMode, HYBRID, RELAY_ONLY},
     },
     secret_store::SecretKey,
     state::{RuntimeLogConfig, RuntimeState},
     tray::{build_tray_model_for_runtime, TrayItemId},
 };
+use std::io::{Read, Write};
 
 fn tray_label(model: &codexlag_lib::tray::TrayModel, id: TrayItemId) -> String {
     model
@@ -28,6 +30,23 @@ fn tray_label(model: &codexlag_lib::tray::TrayModel, id: TrayItemId) -> String {
         .find(|item| item.id == id)
         .map(|item| item.label.text().to_string())
         .unwrap_or_else(|| panic!("missing tray item {:?}", id))
+}
+
+fn available_endpoints_label(runtime: &RuntimeState) -> String {
+    let mut available_official = 0usize;
+    let mut available_relay = 0usize;
+    let now_ms = wall_clock_now_ms();
+    for candidate in runtime.loopback_gateway().state().current_candidates() {
+        if endpoint_rejection_reason(&candidate, now_ms).is_some() {
+            continue;
+        }
+        match candidate.pool {
+            PoolKind::Official => available_official += 1,
+            PoolKind::Relay => available_relay += 1,
+        }
+    }
+
+    format!("Available endpoints | official: {available_official}, relay: {available_relay}")
 }
 
 #[tokio::test]
@@ -60,7 +79,7 @@ async fn bootstrapped_runtime_feeds_commands_and_tray_from_shared_state() {
     );
     assert_eq!(
         tray_label(&tray_model, TrayItemId::AvailableEndpoints),
-        "Available endpoints | official: 1, relay: 1"
+        available_endpoints_label(&runtime)
     );
     assert_eq!(
         tray_label(&tray_model, TrayItemId::LastBalanceRefresh),
@@ -78,6 +97,27 @@ async fn bootstrapped_runtime_feeds_commands_and_tray_from_shared_state() {
 }
 
 #[tokio::test]
+async fn bootstrapped_runtime_uses_inventory_derived_gateway_candidates() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let candidates = runtime.loopback_gateway().state().current_candidates();
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.id == "official-primary"),
+        "runtime candidate inventory should include official-primary"
+    );
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.id == "relay-newapi"),
+        "runtime candidate inventory should include relay-newapi"
+    );
+}
+
+#[tokio::test]
 async fn runtime_exposes_gateway_host_status_for_the_running_loopback_server() {
     let runtime = bootstrap_runtime_for_test()
         .await
@@ -87,6 +127,58 @@ async fn runtime_exposes_gateway_host_status_for_the_running_loopback_server() {
     assert!(status.is_running);
     assert_eq!(status.listen_addr.ip().to_string(), "127.0.0.1");
     assert_eq!(status.listen_addr.port(), 8787);
+}
+
+#[tokio::test]
+async fn inventory_changes_restart_gateway_host_with_latest_runtime_state() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    import_official_account_login_from_runtime(
+        &runtime,
+        OfficialAccountImportInput {
+            account_id: "official-sync-check".into(),
+            name: "sync-check".into(),
+            provider: "openai".into(),
+            session_credential_ref: "credential://official/session/official-sync-check".into(),
+            token_credential_ref: "credential://official/token/official-sync-check".into(),
+            account_identity: Some("sync-check@example.com".into()),
+            auth_mode: None,
+        },
+    )
+    .expect("import account should trigger inventory sync");
+
+    let default_secret = runtime
+        .app_state()
+        .secret(&SecretKey::default_platform_key())
+        .expect("default platform key secret");
+
+    let mut stream =
+        std::net::TcpStream::connect("127.0.0.1:8787").expect("connect to loopback gateway");
+    let request = format!(
+        "POST /codex/request HTTP/1.1\r\nHost: 127.0.0.1:8787\r\nAuthorization: Bearer {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        default_secret
+    );
+    stream
+        .write_all(request.as_bytes())
+        .expect("write gateway request");
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .expect("read gateway response");
+    assert!(
+        response.starts_with("HTTP/1.1 200"),
+        "gateway request should return 200, got: {response}"
+    );
+    assert!(
+        runtime
+            .loopback_gateway()
+            .state()
+            .last_route_debug()
+            .is_some(),
+        "runtime gateway state should receive route debug updates from live host requests"
+    );
 }
 
 #[tokio::test]

@@ -38,6 +38,8 @@ pub struct AccountCapabilityDetail {
     pub provider: String,
     pub refresh_capability: Option<bool>,
     pub balance_capability: OfficialBalanceCapability,
+    pub status: String,
+    pub account_identity: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -138,18 +140,25 @@ pub fn get_account_capability_detail_from_runtime(
             format!("command=get_account_capability_detail;account_id={account_id}"),
         )
     })?;
-    let session = official_session_for(&state, account_id.as_str()).map_err(|error| {
-        with_command_context(
-            error,
-            format!("command=get_account_capability_detail;account_id={account_id}"),
-        )
-    })?;
+    let session = runtime
+        .loopback_gateway()
+        .state()
+        .official_session_for_candidate(account_id.as_str())
+        .or_else(|_| official_session_for(&state, account_id.as_str()))
+        .map_err(|error| {
+            with_command_context(
+                error,
+                format!("command=get_account_capability_detail;account_id={account_id}"),
+            )
+        })?;
 
     Ok(AccountCapabilityDetail {
         account_id: summary.account_id,
         provider: summary.provider,
         refresh_capability: session.refresh_capability,
         balance_capability: session.balance_capability(),
+        status: session.status,
+        account_identity: session.account_identity,
     })
 }
 
@@ -186,6 +195,10 @@ pub fn import_official_account_login_from_runtime(
         "credential://official/token/",
         "token credential ref",
     )?;
+    {
+        let state = runtime.app_state();
+        validate_not_conflicting_with_relay_id(&state, account_id.as_str())?;
+    }
 
     let account = ImportedOfficialAccount {
         account_id: account_id.clone(),
@@ -196,6 +209,9 @@ pub fn import_official_account_login_from_runtime(
             account_identity: input.account_identity.map(|value| value.trim().to_string()),
             auth_mode: parse_auth_mode(input.auth_mode.as_deref()),
             refresh_capability: Some(true),
+            quota_capability: Some(false),
+            last_verified_at_ms: None,
+            status: "active".to_string(),
         },
         session_credential_ref: input.session_credential_ref.trim().to_string(),
         token_credential_ref: input.token_credential_ref.trim().to_string(),
@@ -210,6 +226,14 @@ pub fn import_official_account_login_from_runtime(
                     "command=import_official_account_login;operation=save_imported_official_account;account_id={account_id};cause={error}"
                 ))
         })?;
+    runtime.on_inventory_changed().map_err(|error| {
+        with_command_context(
+            error,
+            format!(
+                "command=import_official_account_login;operation=on_inventory_changed;account_id={account_id}"
+            ),
+        )
+    })?;
 
     Ok(AccountSummary {
         account_id,
@@ -232,6 +256,9 @@ fn official_primary_session() -> OfficialSession {
         account_identity: Some("user@example.com".into()),
         auth_mode: None,
         refresh_capability: Some(true),
+        quota_capability: Some(false),
+        last_verified_at_ms: None,
+        status: "active".to_string(),
     }
 }
 
@@ -285,6 +312,22 @@ fn validate_not_reserved_account_id(account_id: &str) -> Result<()> {
             format!("account_id is reserved and cannot be imported: {account_id}"),
             format!(
                 "command=account_import_validation;field=account_id;value={account_id};reason=reserved"
+            ),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_not_conflicting_with_relay_id(state: &AppState, account_id: &str) -> Result<()> {
+    if crate::commands::relays::list_relays_from_state(state)
+        .iter()
+        .any(|relay| relay.relay_id == account_id)
+    {
+        Err(invalid_payload_error(
+            format!("account_id conflicts with existing relay id: {account_id}"),
+            format!(
+                "command=account_import_validation;field=account_id;value={account_id};reason=relay_conflict"
             ),
         ))
     } else {

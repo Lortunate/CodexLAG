@@ -22,7 +22,11 @@ impl LoopbackGateway {
         app_state: Arc<RwLock<AppState>>,
         usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     ) -> Self {
-        Self::new_with_runtime(app_state, usage_records, default_candidates())
+        let candidates = {
+            let state = app_state.read().expect("gateway app state lock poisoned");
+            build_candidates_from_state(&state)
+        };
+        Self::new_with_runtime(app_state, usage_records, candidates)
     }
 
     pub fn new_with_runtime(
@@ -77,9 +81,6 @@ pub fn build_router_for_test_with_runtime(
     .router()
 }
 
-pub fn default_candidates() -> Vec<CandidateEndpoint> {
-    vec![
-        CandidateEndpoint::official("official-default", 10, true),
-        CandidateEndpoint::relay("relay-default", 20, true),
-    ]
+pub fn build_candidates_from_state(app_state: &crate::state::AppState) -> Vec<CandidateEndpoint> {
+    crate::routing::candidates::build_runtime_candidates(app_state)
 }
