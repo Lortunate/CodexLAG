@@ -39,7 +39,7 @@
 - Modify: `src-tauri/src/commands/relays.rs`
 - Test: `src-tauri/tests/runtime_candidate_inventory.rs`
 
-- [ ] **Step 1: Write the failing candidate-inventory test**
+- [x] **Step 1: Write the failing candidate-inventory test**
 
 ```rust
 // src-tauri/tests/runtime_candidate_inventory.rs
@@ -61,12 +61,12 @@ async fn runtime_candidates_are_built_from_persisted_accounts_and_relays() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [x] **Step 2: Run the targeted test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_candidates_are_built_from_persisted_accounts_and_relays -- --exact`
 Expected: FAIL because runtime still uses `default_candidates()`.
 
-- [ ] **Step 3: Introduce a routing candidate builder**
+- [x] **Step 3: Introduce a routing candidate builder**
 
 ```rust
 // src-tauri/src/routing/candidates.rs
@@ -92,7 +92,7 @@ pub fn build_runtime_candidates(state: &AppState) -> Vec<CandidateEndpoint> {
 }
 ```
 
-- [ ] **Step 4: Export the candidate builder from the routing module**
+- [x] **Step 4: Export the candidate builder from the routing module**
 
 ```rust
 // src-tauri/src/routing/mod.rs
@@ -101,12 +101,12 @@ pub mod engine;
 pub mod policy;
 ```
 
-- [ ] **Step 5: Run the focused candidate-builder test**
+- [x] **Step 5: Run the focused candidate-builder test**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_candidate_inventory -- --nocapture`
 Expected: FAIL only on runtime wiring, not on missing builder definitions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/routing/candidates.rs src-tauri/src/routing/mod.rs src-tauri/src/commands/accounts.rs src-tauri/src/commands/relays.rs src-tauri/tests/runtime_candidate_inventory.rs
@@ -123,7 +123,7 @@ git commit -m "feat: add runtime candidate builder from persisted inventory"
 - Modify: `src-tauri/tests/runtime_candidate_inventory.rs`
 - Modify: `src-tauri/tests/runtime_composition.rs`
 
-- [ ] **Step 1: Write the failing gateway composition test**
+- [x] **Step 1: Write the failing gateway composition test**
 
 ```rust
 // src-tauri/tests/runtime_composition.rs
@@ -139,12 +139,12 @@ async fn bootstrapped_runtime_uses_inventory_derived_gateway_candidates() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted composition test to verify it fails**
+- [x] **Step 2: Run the targeted composition test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml bootstrapped_runtime_uses_inventory_derived_gateway_candidates -- --exact`
 Expected: FAIL because `LoopbackGateway::new` still uses `default_candidates()`.
 
-- [ ] **Step 3: Change gateway creation to consume inventory-derived candidates**
+- [x] **Step 3: Change gateway creation to consume inventory-derived candidates**
 
 ```rust
 // src-tauri/src/gateway/server.rs
@@ -167,7 +167,7 @@ let candidates = {
 };
 ```
 
-- [ ] **Step 4: Add a runtime-side refresh path for candidate inventory changes**
+- [x] **Step 4: Add a runtime-side refresh path for candidate inventory changes**
 
 ```rust
 // src-tauri/src/state.rs
@@ -183,7 +183,7 @@ pub fn rebuild_gateway_candidates(&self) {
 }
 ```
 
-- [ ] **Step 5: Run focused runtime tests**
+- [x] **Step 5: Run focused runtime tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_candidate_inventory -- --nocapture`
 Expected: PASS with inventory-derived candidates.
@@ -191,7 +191,7 @@ Expected: PASS with inventory-derived candidates.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_composition -- --nocapture`
 Expected: PASS with runtime gateway rebuilt from persisted inventory.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/gateway/server.rs src-tauri/src/gateway/auth.rs src-tauri/src/gateway/runtime_routing.rs src-tauri/src/state.rs src-tauri/tests/runtime_candidate_inventory.rs src-tauri/tests/runtime_composition.rs
@@ -206,7 +206,7 @@ git commit -m "feat: rebuild runtime gateway from inventory-derived candidates"
 - Modify: `src-tauri/tests/tray_restart.rs`
 - Modify: `src-tauri/tests/runtime_composition.rs`
 
-- [ ] **Step 1: Write the failing tray-summary candidate test**
+- [x] **Step 1: Write the failing tray-summary candidate test**
 
 ```rust
 // src-tauri/tests/tray_restart.rs
@@ -228,12 +228,12 @@ async fn tray_summary_counts_inventory_derived_official_and_relay_candidates() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted tray-summary test to verify it fails or is still placeholder-backed**
+- [x] **Step 2: Run the targeted tray-summary test to verify it fails or is still placeholder-backed**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml tray_summary_counts_inventory_derived_official_and_relay_candidates -- --exact`
 Expected: FAIL or reveal counts still sourced from placeholder candidates.
 
-- [ ] **Step 3: Base tray summary counts on current runtime candidates**
+- [x] **Step 3: Base tray summary counts on current runtime candidates**
 
 ```rust
 // src-tauri/src/tray_summary.rs
@@ -251,7 +251,7 @@ for candidate in gateway_state.current_candidates() {
 }
 ```
 
-- [ ] **Step 4: Refresh tray/runtime status after inventory-changing operations**
+- [x] **Step 4: Refresh tray/runtime status after inventory-changing operations**
 
 ```rust
 // src-tauri/src/state.rs
@@ -260,7 +260,7 @@ pub fn on_inventory_changed(&self) {
 }
 ```
 
-- [ ] **Step 5: Run final candidate/tray tests**
+- [x] **Step 5: Run final candidate/tray tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml tray_restart -- --nocapture`
 Expected: PASS with tray summary derived from the real runtime inventory.
@@ -268,7 +268,7 @@ Expected: PASS with tray summary derived from the real runtime inventory.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_composition -- --nocapture`
 Expected: PASS with status surfaces aligned to current candidates.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/tray_summary.rs src-tauri/src/state.rs src-tauri/tests/tray_restart.rs src-tauri/tests/runtime_composition.rs

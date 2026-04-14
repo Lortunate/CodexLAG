@@ -34,7 +34,7 @@
 - Modify: `src-tauri/src/gateway/routes.rs`
 - Create: `src-tauri/tests/request_lifecycle_persistence.rs`
 
-- [ ] **Step 1: Write the failing request lifecycle persistence test**
+- [x] **Step 1: Write the failing request lifecycle persistence test**
 
 ```rust
 // src-tauri/tests/request_lifecycle_persistence.rs
@@ -49,12 +49,12 @@ async fn runtime_gateway_requests_are_persisted_to_request_logs_and_attempt_logs
 }
 ```
 
-- [ ] **Step 2: Run the targeted persistence test to verify it fails**
+- [x] **Step 2: Run the targeted persistence test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_gateway_requests_are_persisted_to_request_logs_and_attempt_logs -- --exact`
 Expected: FAIL because the runtime path still writes only in-memory usage history.
 
-- [ ] **Step 3: Add a repository write entrypoint that is ready for runtime use**
+- [x] **Step 3: Add a repository write entrypoint that is ready for runtime use**
 
 ```rust
 // src-tauri/src/db/repositories.rs
@@ -67,7 +67,7 @@ pub fn append_runtime_request_lifecycle(
 }
 ```
 
-- [ ] **Step 4: Call the persistence path from gateway execution**
+- [x] **Step 4: Call the persistence path from gateway execution**
 
 ```rust
 // src-tauri/src/gateway/routes.rs
@@ -77,12 +77,12 @@ runtime
     .append_runtime_request_lifecycle(&request_log, &attempt_logs)?;
 ```
 
-- [ ] **Step 5: Run focused persistence tests**
+- [x] **Step 5: Run focused persistence tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml request_lifecycle_persistence -- --nocapture`
 Expected: PASS with runtime requests now creating persisted request and attempt rows.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/db/repositories.rs src-tauri/src/gateway/routes.rs src-tauri/tests/request_lifecycle_persistence.rs
@@ -97,7 +97,7 @@ git commit -m "feat: persist request lifecycle records from runtime gateway path
 - Modify: `src-tauri/tests/request_attempt_logging.rs`
 - Modify: `src-tauri/tests/observability_e2e.rs`
 
-- [ ] **Step 1: Write the failing persisted-detail derivation test**
+- [x] **Step 1: Write the failing persisted-detail derivation test**
 
 ```rust
 // src-tauri/tests/request_attempt_logging.rs
@@ -146,12 +146,12 @@ fn request_detail_can_be_derived_from_persisted_request_and_attempt_rows() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted detail test to verify it fails**
+- [x] **Step 2: Run the targeted detail test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml request_detail_can_be_derived_from_persisted_request_and_attempt_rows -- --exact`
 Expected: FAIL because the usage layer does not yet derive detail from persisted rows.
 
-- [ ] **Step 3: Add a persisted-row detail adapter**
+- [x] **Step 3: Add a persisted-row detail adapter**
 
 ```rust
 // src-tauri/src/logging/usage.rs
@@ -189,7 +189,7 @@ pub fn usage_request_detail_from_persisted_rows(
 }
 ```
 
-- [ ] **Step 4: Add repository helpers that load request+attempt bundles**
+- [x] **Step 4: Add repository helpers that load request+attempt bundles**
 
 ```rust
 // src-tauri/src/db/repositories.rs
@@ -202,7 +202,7 @@ pub fn recent_request_details(&self, limit: Option<usize>) -> Result<Vec<UsageRe
 }
 ```
 
-- [ ] **Step 5: Run focused persistence/detail tests**
+- [x] **Step 5: Run focused persistence/detail tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml request_attempt_logging -- --nocapture`
 Expected: PASS with persisted detail derivation covered.
@@ -210,7 +210,7 @@ Expected: PASS with persisted detail derivation covered.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml observability_e2e -- --nocapture`
 Expected: PASS with persisted lifecycle rows driving request detail surfaces.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/logging/usage.rs src-tauri/src/db/repositories.rs src-tauri/tests/request_attempt_logging.rs src-tauri/tests/observability_e2e.rs
@@ -225,7 +225,7 @@ git commit -m "feat: derive request detail from persisted lifecycle rows"
 - Modify: `src-tauri/tests/command_surface.rs`
 - Modify: `src-tauri/tests/observability_e2e.rs`
 
-- [ ] **Step 1: Write the failing persisted-command test**
+- [x] **Step 1: Write the failing persisted-command test**
 
 ```rust
 // src-tauri/tests/command_surface.rs
@@ -240,12 +240,12 @@ async fn usage_commands_read_from_persisted_request_lifecycle_data() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted command-surface test to verify it fails**
+- [x] **Step 2: Run the targeted command-surface test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml usage_commands_read_from_persisted_request_lifecycle_data -- --exact`
 Expected: FAIL because log commands still depend on `runtime.usage_records()`.
 
-- [ ] **Step 3: Change command handlers to use repository-backed request detail**
+- [x] **Step 3: Change command handlers to use repository-backed request detail**
 
 ```rust
 // src-tauri/src/commands/logs.rs
@@ -275,7 +275,7 @@ pub fn usage_request_detail_from_runtime(
 }
 ```
 
-- [ ] **Step 4: Keep runtime usage memory only as a short-lived observability cache**
+- [x] **Step 4: Keep runtime usage memory only as a short-lived observability cache**
 
 ```rust
 // src-tauri/src/state.rs
@@ -287,7 +287,7 @@ pub fn usage_records(&self) -> Vec<UsageRecord> {
 }
 ```
 
-- [ ] **Step 5: Run final lifecycle/log command tests**
+- [x] **Step 5: Run final lifecycle/log command tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml command_surface -- --nocapture`
 Expected: PASS with command surfaces now backed by persisted lifecycle data.
@@ -295,7 +295,7 @@ Expected: PASS with command surfaces now backed by persisted lifecycle data.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml observability_e2e -- --nocapture`
 Expected: PASS with persisted business logs and runtime logs remaining correlatable.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/commands/logs.rs src-tauri/src/state.rs src-tauri/tests/command_surface.rs src-tauri/tests/observability_e2e.rs

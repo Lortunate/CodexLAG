@@ -37,7 +37,7 @@
 - Modify: `src-tauri/src/commands/accounts.rs`
 - Test: `src-tauri/tests/official_provider_integration.rs`
 
-- [ ] **Step 1: Write the failing official runtime-state test**
+- [x] **Step 1: Write the failing official runtime-state test**
 
 ```rust
 // src-tauri/tests/official_provider_integration.rs
@@ -59,12 +59,12 @@ async fn imported_official_account_exposes_runtime_status_and_identity() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [x] **Step 2: Run the targeted test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml imported_official_account_exposes_runtime_status_and_identity -- --exact`
 Expected: FAIL because official-account detail does not yet expose stable runtime status.
 
-- [ ] **Step 3: Expand the official-session runtime model**
+- [x] **Step 3: Expand the official-session runtime model**
 
 ```rust
 // src-tauri/src/providers/official.rs
@@ -80,7 +80,7 @@ pub struct OfficialSession {
 }
 ```
 
-- [ ] **Step 4: Return the richer capability detail from account commands**
+- [x] **Step 4: Return the richer capability detail from account commands**
 
 ```rust
 // src-tauri/src/commands/accounts.rs
@@ -107,7 +107,7 @@ Ok(AccountCapabilityDetail {
 })
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml official_provider_integration -- --nocapture`
 Expected: PASS with official runtime status and identity surfaced.
@@ -115,7 +115,7 @@ Expected: PASS with official runtime status and identity surfaced.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml provider_capabilities -- --nocapture`
 Expected: PASS with updated official-session serialization.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/providers/official.rs src-tauri/src/models.rs src-tauri/src/commands/accounts.rs src-tauri/tests/official_provider_integration.rs src-tauri/tests/provider_capabilities.rs
@@ -130,7 +130,7 @@ git commit -m "feat: expose imported official accounts as runtime provider state
 - Modify: `src-tauri/tests/command_surface.rs`
 - Modify: `src-tauri/tests/official_provider_integration.rs`
 
-- [ ] **Step 1: Write the failing imported-credential validation test**
+- [x] **Step 1: Write the failing imported-credential validation test**
 
 ```rust
 // src-tauri/tests/official_provider_integration.rs
@@ -149,12 +149,12 @@ async fn imported_official_account_runtime_path_requires_stored_session_secret()
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [x] **Step 2: Run the targeted test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml imported_official_account_runtime_path_requires_stored_session_secret -- --exact`
 Expected: FAIL because gateway runtime does not yet load imported account secrets.
 
-- [ ] **Step 3: Add gateway-side session hydration through secret references**
+- [x] **Step 3: Add gateway-side session hydration through secret references**
 
 ```rust
 // src-tauri/src/gateway/auth.rs
@@ -178,7 +178,7 @@ pub fn official_session_for_candidate(
 }
 ```
 
-- [ ] **Step 4: Make account capability queries reflect runtime secret validity**
+- [x] **Step 4: Make account capability queries reflect runtime secret validity**
 
 ```rust
 // src-tauri/src/commands/accounts.rs
@@ -189,7 +189,7 @@ let session = runtime
     .or_else(|_| official_session_for(&state, account_id.as_str()))?;
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml official_provider_integration -- --nocapture`
 Expected: PASS with secret-store-backed runtime validation.
@@ -197,7 +197,7 @@ Expected: PASS with secret-store-backed runtime validation.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml account_import_login_command_validates_and_persists_entry -- --exact`
 Expected: PASS with account-import command behavior intact.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/gateway/auth.rs src-tauri/src/commands/accounts.rs src-tauri/tests/command_surface.rs src-tauri/tests/official_provider_integration.rs
@@ -214,7 +214,7 @@ git commit -m "feat: validate imported official credentials through runtime secr
 - Modify: `src-tauri/tests/gateway_provider_integration.rs`
 - Modify: `src-tauri/tests/official_provider_integration.rs`
 
-- [ ] **Step 1: Write the failing official-provider gateway integration test**
+- [x] **Step 1: Write the failing official-provider gateway integration test**
 
 ```rust
 // src-tauri/tests/gateway_provider_integration.rs
@@ -232,12 +232,12 @@ async fn official_provider_path_can_be_selected_from_runtime_inventory() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted gateway/provider test to verify it still uses placeholder invocation**
+- [x] **Step 2: Run the targeted gateway/provider test to verify it still uses placeholder invocation**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml official_provider_path_can_be_selected_from_runtime_inventory -- --exact`
 Expected: FAIL or reveal that official execution still uses placeholder invocation semantics.
 
-- [ ] **Step 3: Add an official-adapter execution entrypoint**
+- [x] **Step 3: Add an official-adapter execution entrypoint**
 
 ```rust
 // src-tauri/src/providers/official.rs
@@ -265,7 +265,7 @@ pub async fn invoke_official_session(
 }
 ```
 
-- [ ] **Step 4: Dispatch official candidates through the adapter path from gateway runtime**
+- [x] **Step 4: Dispatch official candidates through the adapter path from gateway runtime**
 
 ```rust
 // src-tauri/src/gateway/routes.rs
@@ -284,7 +284,7 @@ let outcome = match selected.pool {
 };
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_provider_integration -- --nocapture`
 Expected: PASS with official candidates flowing through the official adapter path.
@@ -292,7 +292,7 @@ Expected: PASS with official candidates flowing through the official adapter pat
 Run: `cargo test --manifest-path src-tauri/Cargo.toml official_provider_integration -- --nocapture`
 Expected: PASS with official runtime/provider integration covered.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/providers/mod.rs src-tauri/src/providers/official.rs src-tauri/src/gateway/routes.rs src-tauri/src/gateway/runtime_routing.rs src-tauri/tests/gateway_provider_integration.rs src-tauri/tests/official_provider_integration.rs

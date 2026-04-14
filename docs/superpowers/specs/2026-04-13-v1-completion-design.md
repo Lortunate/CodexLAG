@@ -1,13 +1,18 @@
 # CodexLAG V1 Completion Design
 
 - Date: 2026-04-13
-- Status: Release gates verified locally on 2026-04-14; final V1 sign-off still requires explicit closure of the official-provider scope deviation and plan checkbox backfill
+- Status: Release gates verified locally on 2026-04-14; official-provider scope deviation closed by keeping provider inventory test-only at bootstrap; plan checkbox backfill completed
 - Project: CodexLAG
 - Related references:
   - `docs/superpowers/specs/foundation/codexlag-foundation.md`
   - `docs/superpowers/specs/2026-04-11-product-design.md`
   - `docs/superpowers/plans/2026-04-13-v1-completion-plan.md`
   - `E:/Projects/3rdp/agents/CLIProxyAPI`
+
+Provider inventory bootstrap boundary:
+
+- production/default bootstrap creates only the default key and default policy
+- provider inventory for integration coverage is injected only by `bootstrap_state_with_provider_inventory_for_test*` and `bootstrap_runtime_for_test`
 
 ## 1. Goal
 

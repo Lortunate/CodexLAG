@@ -39,7 +39,7 @@
 - Modify: `src-tauri/tests/newapi_balance.rs`
 - Modify: `src-tauri/tests/balance_refresh.rs`
 
-- [ ] **Step 1: Write the failing NewAPI balance integration test**
+- [x] **Step 1: Write the failing NewAPI balance integration test**
 
 ```rust
 // src-tauri/tests/newapi_provider_integration.rs
@@ -60,12 +60,12 @@ async fn newapi_relay_balance_refresh_uses_adapter_logic_instead_of_fixtures() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted relay-balance test to verify it fails**
+- [x] **Step 2: Run the targeted relay-balance test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml newapi_relay_balance_refresh_uses_adapter_logic_instead_of_fixtures -- --exact`
 Expected: FAIL or reveal that refresh still reads `relay_balance_fixture_payload`.
 
-- [ ] **Step 3: Extend the managed-relay model to carry an API-key credential reference**
+- [x] **Step 3: Extend the managed-relay model to carry an API-key credential reference**
 
 ```rust
 // src-tauri/src/models.rs
@@ -79,7 +79,7 @@ pub struct ManagedRelay {
 }
 ```
 
-- [ ] **Step 4: Add a real NewAPI balance adapter entrypoint**
+- [x] **Step 4: Add a real NewAPI balance adapter entrypoint**
 
 ```rust
 // src-tauri/src/providers/relay.rs
@@ -105,7 +105,7 @@ pub async fn query_newapi_balance(
 }
 ```
 
-- [ ] **Step 5: Route relay balance refresh through the real adapter path**
+- [x] **Step 5: Route relay balance refresh through the real adapter path**
 
 ```rust
 // src-tauri/src/commands/relays.rs
@@ -117,7 +117,7 @@ let normalized =
     crate::providers::relay::query_newapi_balance(relay.endpoint.as_str(), api_key.as_str()).await?;
 ```
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml newapi_balance -- --nocapture`
 Expected: PASS with normalized NewAPI payload handling intact.
@@ -125,7 +125,7 @@ Expected: PASS with normalized NewAPI payload handling intact.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml balance_refresh -- --nocapture`
 Expected: PASS without fixture-only relay balance refresh.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src-tauri/src/models.rs src-tauri/src/providers/relay.rs src-tauri/src/commands/relays.rs src-tauri/tests/newapi_provider_integration.rs src-tauri/tests/newapi_balance.rs src-tauri/tests/balance_refresh.rs
@@ -139,7 +139,7 @@ git commit -m "feat: replace relay balance fixtures with real newapi adapter log
 - Modify: `src-tauri/tests/command_surface.rs`
 - Modify: `src-tauri/tests/newapi_provider_integration.rs`
 
-- [ ] **Step 1: Write the failing relay upsert contract test**
+- [x] **Step 1: Write the failing relay upsert contract test**
 
 ```rust
 // src-tauri/tests/command_surface.rs
@@ -165,12 +165,12 @@ async fn add_relay_persists_api_key_credential_reference() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted relay-upsert test to verify it fails**
+- [x] **Step 2: Run the targeted relay-upsert test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml add_relay_persists_api_key_credential_reference -- --exact`
 Expected: FAIL because relay input/model does not yet carry a credential-ref field.
 
-- [ ] **Step 3: Extend relay upsert input and validation**
+- [x] **Step 3: Extend relay upsert input and validation**
 
 ```rust
 // src-tauri/src/commands/relays.rs
@@ -193,7 +193,7 @@ validate_credential_ref(
 )?;
 ```
 
-- [ ] **Step 4: Persist the API-key credential ref into managed-relay state**
+- [x] **Step 4: Persist the API-key credential ref into managed-relay state**
 
 ```rust
 // src-tauri/src/commands/relays.rs
@@ -206,7 +206,7 @@ let relay = ManagedRelay {
 };
 ```
 
-- [ ] **Step 5: Run focused command tests**
+- [x] **Step 5: Run focused command tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml relay_crud_and_test_connection_commands_validate_unknown_ids -- --exact`
 Expected: PASS with relay CRUD still functioning.
@@ -214,7 +214,7 @@ Expected: PASS with relay CRUD still functioning.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml add_relay_persists_api_key_credential_reference -- --exact`
 Expected: PASS with credential ref now stored.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/commands/relays.rs src-tauri/tests/command_surface.rs src-tauri/tests/newapi_provider_integration.rs
@@ -231,7 +231,7 @@ git commit -m "feat: persist managed relay api key credential references"
 - Modify: `src-tauri/tests/gateway_provider_integration.rs`
 - Modify: `src-tauri/tests/newapi_provider_integration.rs`
 
-- [ ] **Step 1: Write the failing relay-provider gateway test**
+- [x] **Step 1: Write the failing relay-provider gateway test**
 
 ```rust
 // src-tauri/tests/gateway_provider_integration.rs
@@ -249,12 +249,12 @@ async fn relay_provider_path_can_be_selected_from_runtime_inventory() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted gateway/provider test to verify it still uses placeholder relay behavior**
+- [x] **Step 2: Run the targeted gateway/provider test to verify it still uses placeholder relay behavior**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml relay_provider_path_can_be_selected_from_runtime_inventory -- --exact`
 Expected: FAIL or reveal that relay execution still does not use a real relay adapter path.
 
-- [ ] **Step 3: Add a NewAPI invocation entrypoint**
+- [x] **Step 3: Add a NewAPI invocation entrypoint**
 
 ```rust
 // src-tauri/src/providers/relay.rs
@@ -284,7 +284,7 @@ pub async fn invoke_newapi_relay(
 }
 ```
 
-- [ ] **Step 4: Load relay credentials from state and dispatch relay candidates through the adapter**
+- [x] **Step 4: Load relay credentials from state and dispatch relay candidates through the adapter**
 
 ```rust
 // src-tauri/src/gateway/auth.rs
@@ -313,7 +313,7 @@ crate::providers::relay::invoke_newapi_relay(
 .await
 ```
 
-- [ ] **Step 5: Run focused relay-provider tests**
+- [x] **Step 5: Run focused relay-provider tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml newapi_provider_integration -- --nocapture`
 Expected: PASS with relay runtime/provider integration covered.
@@ -321,7 +321,7 @@ Expected: PASS with relay runtime/provider integration covered.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml gateway_provider_integration -- --nocapture`
 Expected: PASS with relay candidates flowing through the NewAPI adapter path.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/providers/mod.rs src-tauri/src/providers/relay.rs src-tauri/src/gateway/auth.rs src-tauri/src/gateway/routes.rs src-tauri/tests/gateway_provider_integration.rs src-tauri/tests/newapi_provider_integration.rs

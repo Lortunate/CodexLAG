@@ -317,7 +317,7 @@ git commit -m "feat: issue real platform key secrets"
 - Modify: `src-tauri/src/tray_summary.rs`
 - Test: `src-tauri/tests/runtime_candidate_inventory.rs`
 
-- [ ] **Step 1: Write the failing runtime candidate inventory test**
+- [x] **Step 1: Write the failing runtime candidate inventory test**
 
 ```rust
 // src-tauri/tests/runtime_candidate_inventory.rs
@@ -339,12 +339,12 @@ async fn runtime_candidates_are_built_from_persisted_accounts_and_relays() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [x] **Step 2: Run the targeted test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_candidates_are_built_from_persisted_accounts_and_relays -- --exact`
 Expected: FAIL because runtime still uses `default_candidates()`.
 
-- [ ] **Step 3: Create a candidate builder from persisted state**
+- [x] **Step 3: Create a candidate builder from persisted state**
 
 ```rust
 // src-tauri/src/routing/candidates.rs
@@ -363,7 +363,7 @@ pub fn build_runtime_candidates(state: &crate::state::AppState) -> Vec<Candidate
 }
 ```
 
-- [ ] **Step 4: Rebuild runtime routing state from `AppState` instead of `default_candidates()`**
+- [x] **Step 4: Rebuild runtime routing state from `AppState` instead of `default_candidates()`**
 
 ```rust
 // src-tauri/src/gateway/server.rs
@@ -373,7 +373,7 @@ let candidates = crate::routing::candidates::build_runtime_candidates(
 let state = GatewayState::new_with_runtime(app_state, usage_records, candidates);
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_candidate_inventory -- --nocapture`
 Expected: PASS with candidates derived from real state.
@@ -381,7 +381,7 @@ Expected: PASS with candidates derived from real state.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml tray_model_exposes_operational_summary_lines -- --exact`
 Expected: PASS with tray summary driven by real candidate inventory.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/routing/candidates.rs src-tauri/src/models.rs src-tauri/src/state.rs src-tauri/src/gateway/auth.rs src-tauri/src/gateway/server.rs src-tauri/src/gateway/runtime_routing.rs src-tauri/src/tray_summary.rs src-tauri/tests/runtime_candidate_inventory.rs
@@ -399,7 +399,7 @@ git commit -m "feat: build runtime candidates from persisted state"
 - Test: `src-tauri/tests/official_provider_integration.rs`
 - Modify: `src-tauri/tests/command_surface.rs`
 
-- [ ] **Step 1: Write the failing official provider integration test**
+- [x] **Step 1: Write the failing official provider integration test**
 
 ```rust
 // src-tauri/tests/official_provider_integration.rs
@@ -420,12 +420,12 @@ async fn imported_official_account_can_be_selected_as_a_real_provider_candidate(
 }
 ```
 
-- [ ] **Step 2: Run the targeted test to verify it fails or remains too weak**
+- [x] **Step 2: Run the targeted test to verify it fails or remains too weak**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml imported_official_account_can_be_selected_as_a_real_provider_candidate -- --exact`
 Expected: FAIL or reveal that capability detail still carries only placeholder state.
 
-- [ ] **Step 3: Replace placeholder official session metadata with imported-session runtime state**
+- [x] **Step 3: Replace placeholder official session metadata with imported-session runtime state**
 
 ```rust
 // src-tauri/src/providers/official.rs
@@ -440,7 +440,7 @@ pub struct OfficialSession {
 }
 ```
 
-- [ ] **Step 4: Read imported credentials through the secret-store path during provider selection**
+- [x] **Step 4: Read imported credentials through the secret-store path during provider selection**
 
 ```rust
 // src-tauri/src/gateway/auth.rs
@@ -458,7 +458,7 @@ pub fn official_session_for_candidate(&self, endpoint_id: &str) -> crate::error:
 }
 ```
 
-- [ ] **Step 5: Re-run official-provider tests and command-surface tests**
+- [x] **Step 5: Re-run official-provider tests and command-surface tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml official_provider_integration -- --nocapture`
 Expected: PASS with imported-session-backed account runtime state.
@@ -466,7 +466,7 @@ Expected: PASS with imported-session-backed account runtime state.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml account_import_login_command_validates_and_persists_entry -- --exact`
 Expected: PASS with expanded account runtime metadata.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/providers/mod.rs src-tauri/src/providers/official.rs src-tauri/src/commands/accounts.rs src-tauri/src/gateway/routes.rs src-tauri/src/gateway/auth.rs src-tauri/tests/official_provider_integration.rs src-tauri/tests/command_surface.rs
@@ -483,7 +483,7 @@ git commit -m "feat: route imported official sessions through real provider stat
 - Modify: `src-tauri/tests/newapi_balance.rs`
 - Modify: `src-tauri/tests/balance_refresh.rs`
 
-- [ ] **Step 1: Write the failing NewAPI relay integration test**
+- [x] **Step 1: Write the failing NewAPI relay integration test**
 
 ```rust
 // src-tauri/tests/newapi_provider_integration.rs
@@ -503,12 +503,12 @@ async fn newapi_relay_balance_refresh_uses_live_adapter_logic() {
 }
 ```
 
-- [ ] **Step 2: Run the targeted relay test to verify it still depends on fixtures**
+- [x] **Step 2: Run the targeted relay test to verify it still depends on fixtures**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml newapi_relay_balance_refresh_uses_live_adapter_logic -- --exact`
 Expected: FAIL or show fixture-backed implementation that must be replaced.
 
-- [ ] **Step 3: Move NewAPI behavior behind a real adapter entrypoint**
+- [x] **Step 3: Move NewAPI behavior behind a real adapter entrypoint**
 
 ```rust
 // src-tauri/src/providers/relay.rs
@@ -524,7 +524,7 @@ pub async fn query_newapi_balance(
 }
 ```
 
-- [ ] **Step 4: Make relay commands use the managed relay endpoint and stored credential**
+- [x] **Step 4: Make relay commands use the managed relay endpoint and stored credential**
 
 ```rust
 // src-tauri/src/commands/relays.rs
@@ -533,7 +533,7 @@ let api_key = state.secret(&crate::secret_store::SecretKey::new(relay.api_key_cr
 let normalized = crate::providers::relay::query_newapi_balance(relay.endpoint.as_str(), api_key.as_str()).await?;
 ```
 
-- [ ] **Step 5: Run focused relay tests**
+- [x] **Step 5: Run focused relay tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml newapi_balance -- --nocapture`
 Expected: PASS with normalized NewAPI payloads.
@@ -541,7 +541,7 @@ Expected: PASS with normalized NewAPI payloads.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml balance_refresh -- --nocapture`
 Expected: PASS without fixture-only refresh behavior.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/providers/relay.rs src-tauri/src/commands/relays.rs src-tauri/src/gateway/routes.rs src-tauri/tests/newapi_provider_integration.rs src-tauri/tests/newapi_balance.rs src-tauri/tests/balance_refresh.rs
@@ -654,7 +654,7 @@ git commit -m "feat: drive routing from persisted policy state"
 - Modify: `src-tauri/tests/request_attempt_logging.rs`
 - Modify: `src-tauri/tests/observability_e2e.rs`
 
-- [ ] **Step 1: Write the failing request lifecycle persistence test**
+- [x] **Step 1: Write the failing request lifecycle persistence test**
 
 ```rust
 // src-tauri/tests/request_lifecycle_persistence.rs
@@ -669,12 +669,12 @@ async fn runtime_gateway_requests_are_persisted_to_request_logs_and_attempt_logs
 }
 ```
 
-- [ ] **Step 2: Run the targeted persistence test to verify it fails**
+- [x] **Step 2: Run the targeted persistence test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml runtime_gateway_requests_are_persisted_to_request_logs_and_attempt_logs -- --exact`
 Expected: FAIL because runtime still queries only in-memory `usage_records`.
 
-- [ ] **Step 3: Persist request main/attempt records inside the gateway route**
+- [x] **Step 3: Persist request main/attempt records inside the gateway route**
 
 ```rust
 // src-tauri/src/gateway/routes.rs
@@ -684,7 +684,7 @@ runtime
     .append_request_with_attempts(&request_log, &attempt_logs)?;
 ```
 
-- [ ] **Step 4: Change log commands to read persisted request lifecycle data**
+- [x] **Step 4: Change log commands to read persisted request lifecycle data**
 
 ```rust
 // src-tauri/src/commands/logs.rs
@@ -700,7 +700,7 @@ pub fn usage_request_history_from_runtime(
 }
 ```
 
-- [ ] **Step 5: Re-run persistence and observability tests**
+- [x] **Step 5: Re-run persistence and observability tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml request_lifecycle_persistence -- --nocapture`
 Expected: PASS with request and attempt rows written from the runtime path.
@@ -708,7 +708,7 @@ Expected: PASS with request and attempt rows written from the runtime path.
 Run: `cargo test --manifest-path src-tauri/Cargo.toml observability_e2e -- --nocapture`
 Expected: PASS with request IDs and attempt IDs correlating across persisted and runtime surfaces.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/db/repositories.rs src-tauri/src/logging/usage.rs src-tauri/src/gateway/routes.rs src-tauri/src/commands/logs.rs src-tauri/src/state.rs src-tauri/tests/request_lifecycle_persistence.rs src-tauri/tests/request_attempt_logging.rs src-tauri/tests/observability_e2e.rs
