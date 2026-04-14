@@ -26,6 +26,7 @@ async fn openai_auth_session_round_trips_through_runtime_storage() {
         account_id: "openai-primary".into(),
         display_name: "OpenAI Primary".into(),
         auth_state: "active".into(),
+        refreshable: true,
         expires_at_ms: Some(1_731_111_111_000),
         last_refresh_at_ms: Some(1_731_111_000_500),
         last_refresh_error: None,
@@ -71,7 +72,7 @@ async fn starting_openai_browser_login_returns_a_pending_loopback_auth_session()
         })
         .expect("start browser login");
 
-    assert_eq!(pending.summary.provider_id, "openai");
+    assert_eq!(pending.summary.provider_id, "openai_official");
     assert_eq!(pending.summary.account_id, "openai-primary");
     assert_eq!(pending.summary.display_name, "OpenAI Primary");
     assert_eq!(pending.summary.auth_state, "pending");
