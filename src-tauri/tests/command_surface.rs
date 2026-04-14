@@ -111,6 +111,11 @@ async fn account_and_relay_capability_details_expose_balance_metadata() {
         account.balance_capability,
         OfficialBalanceCapability::NonQueryable
     );
+    assert_eq!(account.status, "active");
+    assert_eq!(
+        account.account_identity,
+        Some("user@example.com".to_string())
+    );
 
     let relay = get_relay_capability_detail_from_runtime(&runtime, "relay-newapi".to_string())
         .expect("relay should succeed");
@@ -239,6 +244,29 @@ async fn account_import_login_command_validates_and_persists_entry() {
         ErrorCategory::ConfigError,
         "account_id is reserved and cannot be imported: official-primary",
         "command=account_import_validation;field=account_id;value=official-primary;reason=reserved",
+    );
+
+    let relay_conflict_error = import_official_account_login_from_runtime(
+        &first_runtime,
+        OfficialAccountImportInput {
+            account_id: "relay-newapi".to_string(),
+            name: "Relay Conflict".to_string(),
+            provider: "openai".to_string(),
+            session_credential_ref: format!(
+                "credential://official/session/{suffix}-relay-conflict"
+            ),
+            token_credential_ref: format!("credential://official/token/{suffix}-relay-conflict"),
+            account_identity: None,
+            auth_mode: None,
+        },
+    )
+    .expect_err("account ids that collide with relay ids should be rejected");
+    assert_structured_command_error(
+        relay_conflict_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "account_id conflicts with existing relay id: relay-newapi",
+        "command=account_import_validation;field=account_id;value=relay-newapi;reason=relay_conflict",
     );
 
     drop(first_runtime);
@@ -370,6 +398,7 @@ async fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
             name: "Managed Relay".to_string(),
             endpoint: first_endpoint,
             adapter: Some("newapi".to_string()),
+            api_key_credential_ref: None,
         },
     )
     .expect("relay add should succeed");
@@ -389,6 +418,7 @@ async fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
             name: "Managed Relay Updated".to_string(),
             endpoint: updated_endpoint.clone(),
             adapter: Some("newapi".to_string()),
+            api_key_credential_ref: None,
         },
     )
     .expect("relay update should succeed");
@@ -440,6 +470,7 @@ async fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
             name: "Invalid Relay".to_string(),
             endpoint: "ftp://relay.example.test".to_string(),
             adapter: Some("newapi".to_string()),
+            api_key_credential_ref: None,
         },
     )
     .expect_err("invalid endpoint scheme should be rejected");
@@ -450,6 +481,57 @@ async fn relay_crud_and_test_connection_commands_validate_unknown_ids() {
         "Relay endpoint must start with 'http://' or 'https://'.",
         "command=relay_validation;field=endpoint;value=ftp://relay.example.test",
     );
+
+    let account_conflict_error = add_relay_from_runtime(
+        &third_runtime,
+        RelayUpsertInput {
+            relay_id: "official-primary".to_string(),
+            name: "Account Collision Relay".to_string(),
+            endpoint: "http://127.0.0.1:1".to_string(),
+            adapter: Some("newapi".to_string()),
+            api_key_credential_ref: None,
+        },
+    )
+    .expect_err("relay ids that collide with account ids should be rejected");
+    assert_structured_command_error(
+        account_conflict_error,
+        "config.invalid_payload",
+        ErrorCategory::ConfigError,
+        "relay_id conflicts with existing account id: official-primary",
+        "command=relay_validation;field=relay_id;value=official-primary;reason=account_conflict",
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn add_relay_persists_api_key_credential_reference() {
+    let isolated_root = isolated_test_root("command-relay-credential-ref");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let created = add_relay_from_runtime(
+        &runtime,
+        RelayUpsertInput {
+            relay_id: "relay-newapi-extra".to_string(),
+            name: "Relay Extra".to_string(),
+            endpoint: "https://relay.example".to_string(),
+            adapter: Some("newapi".to_string()),
+            api_key_credential_ref: Some(
+                "credential://relay/api-key/relay-newapi-extra".to_string(),
+            ),
+        },
+    )
+    .expect("create relay");
+    assert_eq!(created.relay_id, "relay-newapi-extra");
+
+    let stored = runtime
+        .app_state()
+        .managed_relay("relay-newapi-extra")
+        .expect("managed relay")
+        .api_key_credential_ref
+        .clone();
+    assert_eq!(stored, "credential://relay/api-key/relay-newapi-extra");
 
     let _ = std::fs::remove_dir_all(&isolated_root);
 }
@@ -488,6 +570,7 @@ async fn relay_probe_does_not_block_writes_while_connection_probe_times_out() {
             name: "Slow Probe Relay".to_string(),
             endpoint: slow_endpoint,
             adapter: Some("newapi".to_string()),
+            api_key_credential_ref: None,
         },
     )
     .expect("relay add should succeed");
@@ -519,6 +602,7 @@ async fn relay_probe_does_not_block_writes_while_connection_probe_times_out() {
                 name: "Updated During Probe".to_string(),
                 endpoint: "http://127.0.0.1:1".to_string(),
                 adapter: Some("newapi".to_string()),
+                api_key_credential_ref: None,
             },
         )
         .expect("relay update should succeed while probe is in-flight");

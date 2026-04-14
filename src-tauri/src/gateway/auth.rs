@@ -15,7 +15,7 @@ use crate::{
         RuntimeRoutingState,
     },
     logging::usage::{append_usage_record, UsageRecord, UsageRecordInput},
-    models::{PlatformKey, RoutingPolicy},
+    models::{relay_api_key_credential_ref, PlatformKey, RoutingPolicy},
     providers::invocation::{
         InvocationAttemptRecord, InvocationFailureClass, InvocationOutcome,
         ProviderInvocationPipeline,
@@ -148,6 +148,15 @@ impl GatewayState {
         let _token_secret = state.secret(&SecretKey::new(imported.token_credential_ref.clone()))?;
 
         Ok(imported.session.clone())
+    }
+
+    pub fn relay_api_key_for_candidate(&self, endpoint_id: &str) -> crate::error::Result<String> {
+        let state = self.app_state();
+        if let Some(relay) = state.managed_relay(endpoint_id) {
+            return state.secret(&SecretKey::new(relay.api_key_credential_ref.clone()));
+        }
+
+        state.secret(&SecretKey::new(relay_api_key_credential_ref(endpoint_id)))
     }
 
     pub fn current_candidates(&self) -> Vec<CandidateEndpoint> {

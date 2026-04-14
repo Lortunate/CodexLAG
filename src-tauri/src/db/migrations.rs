@@ -77,7 +77,8 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
                 relay_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 endpoint TEXT NOT NULL,
-                adapter TEXT NOT NULL
+                adapter TEXT NOT NULL,
+                api_key_credential_ref TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS request_logs (
@@ -168,6 +169,12 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     add_column_if_missing(connection, "platform_keys", "last_used_at_ms", "INTEGER")?;
+    add_column_if_missing(
+        connection,
+        "managed_relays",
+        "api_key_credential_ref",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
 
     connection
         .execute_batch(
@@ -187,6 +194,9 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
             UPDATE platform_keys
             SET created_at_ms = 0
             WHERE created_at_ms IS NULL;
+            UPDATE managed_relays
+            SET api_key_credential_ref = 'credential://relay/api-key/' || relay_id
+            WHERE api_key_credential_ref IS NULL OR api_key_credential_ref = '';
             ",
         )
         .map_err(|error| {

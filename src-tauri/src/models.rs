@@ -105,6 +105,11 @@ pub struct ManagedRelay {
     pub name: String,
     pub endpoint: String,
     pub adapter: RelayBalanceAdapter,
+    pub api_key_credential_ref: String,
+}
+
+pub fn relay_api_key_credential_ref(relay_id: &str) -> String {
+    format!("credential://relay/api-key/{relay_id}")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

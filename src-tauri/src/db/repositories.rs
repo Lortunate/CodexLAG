@@ -344,15 +344,23 @@ impl Repositories {
                     relay_id,
                     name,
                     endpoint,
-                    adapter
+                    adapter,
+                    api_key_credential_ref
                 )
-                VALUES (?1, ?2, ?3, ?4)
+                VALUES (?1, ?2, ?3, ?4, ?5)
                 ON CONFLICT(relay_id) DO UPDATE SET
                     name = excluded.name,
                     endpoint = excluded.endpoint,
-                    adapter = excluded.adapter
+                    adapter = excluded.adapter,
+                    api_key_credential_ref = excluded.api_key_credential_ref
                 ",
-                params![&relay.relay_id, &relay.name, &relay.endpoint, adapter],
+                params![
+                    &relay.relay_id,
+                    &relay.name,
+                    &relay.endpoint,
+                    adapter,
+                    &relay.api_key_credential_ref
+                ],
             )
             .map_err(|error| {
                 CodexLagError::new(format!(
@@ -911,7 +919,8 @@ impl Repositories {
                     relay_id,
                     name,
                     endpoint,
-                    adapter
+                    adapter,
+                    api_key_credential_ref
                 FROM managed_relays
                 ",
             )
@@ -947,6 +956,11 @@ impl Repositories {
                     "failed to decode managed relay adapter for '{relay_id}': {error}"
                 ))
             })?;
+            let api_key_credential_ref: String = row.get(4).map_err(|error| {
+                CodexLagError::new(format!(
+                    "failed to decode relay api-key credential ref for '{relay_id}': {error}"
+                ))
+            })?;
             let adapter = decode_json(&adapter_raw, "relay_adapter")?;
 
             relays.insert(
@@ -956,6 +970,7 @@ impl Repositories {
                     name,
                     endpoint,
                     adapter,
+                    api_key_credential_ref,
                 },
             );
         }

@@ -185,7 +185,32 @@ async fn codex_request(
                     endpoint.id.as_str(),
                 )
             }
-            PoolKind::Relay => gateway_state.invoke_provider(endpoint, context),
+            PoolKind::Relay => {
+                if let Err(failure) = gateway_state.invoke_provider(endpoint, context) {
+                    return Err(failure);
+                }
+                let api_key = match gateway_state.relay_api_key_for_candidate(endpoint.id.as_str())
+                {
+                    Ok(api_key) => api_key,
+                    Err(_) => {
+                        return Err(InvocationFailure {
+                            request_id: context.request_id.clone(),
+                            attempt_id: context.attempt_id.clone(),
+                            endpoint_id: endpoint.id.clone(),
+                            pool: endpoint.pool.clone(),
+                            class: InvocationFailureClass::Config,
+                            upstream_status: None,
+                        });
+                    }
+                };
+                crate::providers::relay::invoke_newapi_relay(
+                    endpoint.id.as_str(),
+                    api_key.as_str(),
+                    context.request_id.as_str(),
+                    context.attempt_id.as_str(),
+                    endpoint.id.as_str(),
+                )
+            }
         },
     ) {
         Ok(selection) => selection,

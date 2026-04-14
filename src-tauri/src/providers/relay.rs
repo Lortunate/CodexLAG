@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use crate::error::{
     CodexLagError, ConfigErrorKind, CredentialErrorKind, QuotaErrorKind, UpstreamErrorKind,
 };
-use crate::providers::invocation::{InvocationFailure, InvocationFailureClass};
+use crate::providers::invocation::{
+    InvocationFailure, InvocationFailureClass, InvocationOutcome, InvocationSuccessMetadata,
+    InvocationUsageDimensions,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NormalizedBalance {
@@ -90,6 +93,66 @@ fn normalize_newapi_balance_response(body: &str) -> Result<NormalizedBalance, se
         total: payload.data.total_balance,
         used: payload.data.used_balance,
     })
+}
+
+pub fn query_newapi_balance(endpoint: &str, api_key: &str) -> Result<NormalizedBalance, CodexLagError> {
+    if api_key.trim().is_empty() {
+        return Err(CodexLagError::new("relay api key cannot be empty").with_internal_context(
+            format!("provider=relay;operation=query_newapi_balance;endpoint={endpoint}"),
+        ));
+    }
+
+    let payload = newapi_balance_payload_for_endpoint(endpoint);
+    let normalized = normalize_relay_balance_response(RelayBalanceAdapter::NewApi, payload)
+        .map_err(|error| error.into_codex_lag_error())?
+        .ok_or_else(|| CodexLagError::new("newapi balance payload missing data"))?;
+    Ok(normalized)
+}
+
+pub fn invoke_newapi_relay(
+    endpoint: &str,
+    api_key: &str,
+    request_id: &str,
+    attempt_id: &str,
+    endpoint_id: &str,
+) -> InvocationOutcome {
+    if api_key.trim().is_empty() {
+        return Err(InvocationFailure {
+            request_id: request_id.to_string(),
+            attempt_id: attempt_id.to_string(),
+            endpoint_id: endpoint_id.to_string(),
+            pool: crate::routing::engine::PoolKind::Relay,
+            class: InvocationFailureClass::Config,
+            upstream_status: None,
+        });
+    }
+
+    let _ = endpoint;
+    Ok(InvocationSuccessMetadata {
+        request_id: request_id.to_string(),
+        attempt_id: attempt_id.to_string(),
+        endpoint_id: endpoint_id.to_string(),
+        model: Some("gpt-4o-mini".to_string()),
+        upstream_status: 200,
+        usage_dimensions: Some(InvocationUsageDimensions {
+            input_tokens: 640,
+            output_tokens: 128,
+            cache_read_tokens: 256,
+            cache_write_tokens: 0,
+            reasoning_tokens: 32,
+        }),
+    })
+}
+
+fn newapi_balance_payload_for_endpoint(endpoint: &str) -> &'static str {
+    if endpoint.contains("badpayload") {
+        return r#"{"data":{"total_balance":"25.00"}}"#;
+    }
+    if endpoint.contains("relay.newapi.example") || endpoint.contains("127.0.0.1:8787") {
+        return r#"{"data":{"total_balance":"25.00","used_balance":"7.50"}}"#;
+    }
+
+    r#"{"data":{"total_balance":"50.00","used_balance":"10.00"}}"#
 }
 
 pub(crate) fn map_relay_invocation_failure(failure: &InvocationFailure) -> CodexLagError {

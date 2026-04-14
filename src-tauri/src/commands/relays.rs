@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
-use crate::models::ManagedRelay;
+use crate::models::{relay_api_key_credential_ref, ManagedRelay};
 use crate::providers::relay::{
-    normalize_relay_balance_response, relay_balance_capability, NormalizedBalance,
+    query_newapi_balance, relay_balance_capability, NormalizedBalance,
     RelayBalanceAdapter, RelayBalanceCapability,
 };
+use crate::secret_store::SecretKey;
 use crate::state::{AppState, RuntimeState};
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +52,8 @@ pub struct RelayUpsertInput {
     pub name: String,
     pub endpoint: String,
     pub adapter: Option<String>,
+    #[serde(default)]
+    pub api_key_credential_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -75,31 +78,35 @@ pub fn refresh_relay_balance_from_runtime(
     relay_id: String,
 ) -> Result<RelayBalanceSnapshot> {
     let state = runtime.app_state();
-    let summary = relay_summary_by_id_from_state(&state, relay_id.as_str())?;
-    let adapter = relay_adapter_for_state(&state, summary.relay_id.as_str())?;
-    let payload = relay_balance_fixture_payload(&state, summary.relay_id.as_str());
-    let balance = normalize_relay_balance_response(adapter, payload).map_err(|error| {
-        with_command_context(
-            error.into_codex_lag_error(),
-            format!(
-                "command=refresh_relay_balance;relay_id={}",
-                summary.relay_id
-            ),
+    let relay = relay_by_id_from_state(&state, relay_id.as_str()).ok_or_else(|| {
+        invalid_payload_error(
+            "Unknown relay id.",
+            format!("command=relay_lookup;field=relay_id;value={relay_id}"),
         )
     })?;
-    let balance = match balance {
-        Some(value) => RelayBalanceAvailability::Queryable {
-            adapter: adapter_name(adapter),
-            balance: value,
-        },
-        None => RelayBalanceAvailability::Unsupported {
+    let balance = match relay.adapter {
+        RelayBalanceAdapter::NewApi => {
+            let api_key = state.secret(&SecretKey::new(relay.api_key_credential_ref.clone()))?;
+            let normalized =
+                query_newapi_balance(relay.endpoint.as_str(), api_key.as_str()).map_err(|error| {
+                    with_command_context(
+                        error,
+                        format!("command=refresh_relay_balance;relay_id={}", relay.relay_id),
+                    )
+                })?;
+            RelayBalanceAvailability::Queryable {
+                adapter: adapter_name(relay.adapter),
+                balance: normalized,
+            }
+        }
+        RelayBalanceAdapter::NoBalance => RelayBalanceAvailability::Unsupported {
             reason: "relay does not provide a balance endpoint".into(),
         },
     };
 
     Ok(RelayBalanceSnapshot {
-        relay_id: summary.relay_id,
-        endpoint: summary.endpoint,
+        relay_id: relay.relay_id,
+        endpoint: relay.endpoint,
         balance,
     })
     .inspect(|snapshot| {
@@ -148,6 +155,10 @@ pub fn add_relay_from_runtime(
     input: RelayUpsertInput,
 ) -> Result<RelaySummary> {
     let relay_id = validate_identifier(input.relay_id.clone(), "relay_id")?;
+    {
+        let state = runtime.app_state();
+        validate_not_conflicting_with_account_id(&state, relay_id.as_str())?;
+    }
     if list_relays_from_runtime(runtime)
         .iter()
         .any(|relay| relay.relay_id == relay_id)
@@ -168,6 +179,15 @@ pub fn add_relay_from_runtime(
                 created.relay_id
             ))
         })?;
+    runtime.on_inventory_changed().map_err(|error| {
+        with_command_context(
+            error,
+            format!(
+                "command=add_relay;operation=on_inventory_changed;relay_id={}",
+                created.relay_id
+            ),
+        )
+    })?;
     Ok(relay_summary(&created))
 }
 
@@ -181,6 +201,10 @@ pub fn update_relay_from_runtime(
     input: RelayUpsertInput,
 ) -> Result<RelaySummary> {
     let relay_id = validate_identifier(input.relay_id.clone(), "relay_id")?;
+    {
+        let state = runtime.app_state();
+        validate_not_conflicting_with_account_id(&state, relay_id.as_str())?;
+    }
     if runtime
         .app_state()
         .managed_relay(relay_id.as_str())
@@ -202,6 +226,15 @@ pub fn update_relay_from_runtime(
                 updated.relay_id
             ))
         })?;
+    runtime.on_inventory_changed().map_err(|error| {
+        with_command_context(
+            error,
+            format!(
+                "command=update_relay;operation=on_inventory_changed;relay_id={}",
+                updated.relay_id
+            ),
+        )
+    })?;
     Ok(relay_summary(&updated))
 }
 
@@ -224,6 +257,12 @@ pub fn delete_relay_from_runtime(runtime: &RuntimeState, relay_id: String) -> Re
             ))
         })?;
     if removed {
+        runtime.on_inventory_changed().map_err(|error| {
+            with_command_context(
+                error,
+                format!("command=delete_relay;operation=on_inventory_changed;relay_id={relay_id}"),
+            )
+        })?;
         Ok(())
     } else {
         Err(invalid_payload_error(
@@ -299,18 +338,21 @@ fn default_relays() -> Vec<ManagedRelay> {
             name: "Local Gateway".into(),
             endpoint: "http://127.0.0.1:8787".into(),
             adapter: RelayBalanceAdapter::NewApi,
+            api_key_credential_ref: relay_api_key_credential_ref("relay-newapi"),
         },
         ManagedRelay {
             relay_id: "relay-nobalance".into(),
             name: "Upstream Proxy".into(),
             endpoint: "https://relay.example.test".into(),
             adapter: RelayBalanceAdapter::NoBalance,
+            api_key_credential_ref: relay_api_key_credential_ref("relay-nobalance"),
         },
         ManagedRelay {
             relay_id: "relay-badpayload".into(),
             name: "Broken Upstream".into(),
             endpoint: "https://badpayload.example.test".into(),
             adapter: RelayBalanceAdapter::NewApi,
+            api_key_credential_ref: relay_api_key_credential_ref("relay-badpayload"),
         },
     ]
 }
@@ -351,19 +393,6 @@ fn relay_adapter_for_state(state: &AppState, relay_id: &str) -> Result<RelayBala
         })
 }
 
-fn relay_balance_fixture_payload(state: &AppState, relay_id: &str) -> &'static str {
-    if state.managed_relay(relay_id).is_some() {
-        return r#"{"data":{"total_balance":"50.00","used_balance":"10.00"}}"#;
-    }
-
-    match relay_id {
-        "relay-newapi" => r#"{"data":{"total_balance":"25.00","used_balance":"7.50"}}"#,
-        "relay-badpayload" => r#"{"data":{"total_balance":"25.00"}}"#,
-        "relay-nobalance" => r#"{"ignored":true}"#,
-        _ => r#"{"ignored":true}"#,
-    }
-}
-
 fn adapter_name(adapter: RelayBalanceAdapter) -> String {
     match adapter {
         RelayBalanceAdapter::NewApi => "newapi".into(),
@@ -389,13 +418,32 @@ fn build_managed_relay(relay_id: String, input: RelayUpsertInput) -> Result<Mana
         ));
     }
     let adapter = parse_adapter(input.adapter.as_deref())?;
+    let api_key_credential_ref =
+        resolve_api_key_credential_ref(input.api_key_credential_ref, relay_id.as_str())?;
 
     Ok(ManagedRelay {
         relay_id,
         name,
         endpoint,
         adapter,
+        api_key_credential_ref,
     })
+}
+
+fn resolve_api_key_credential_ref(
+    raw: Option<String>,
+    relay_id: &str,
+) -> Result<String> {
+    let value = raw
+        .map(|candidate| candidate.trim().to_string())
+        .filter(|candidate| !candidate.is_empty())
+        .unwrap_or_else(|| relay_api_key_credential_ref(relay_id));
+    validate_credential_ref(
+        value.as_str(),
+        "credential://relay/api-key/",
+        "relay api-key credential ref",
+    )?;
+    Ok(value)
 }
 
 fn probe_relay_endpoint(endpoint: &str) -> Result<u64> {
@@ -522,6 +570,22 @@ fn validate_identifier(raw: String, field_name: &str) -> Result<String> {
     }
 }
 
+fn validate_not_conflicting_with_account_id(state: &AppState, relay_id: &str) -> Result<()> {
+    if crate::commands::accounts::list_accounts_from_state(state)
+        .iter()
+        .any(|account| account.account_id == relay_id)
+    {
+        Err(invalid_payload_error(
+            format!("relay_id conflicts with existing account id: {relay_id}"),
+            format!(
+                "command=relay_validation;field=relay_id;value={relay_id};reason=account_conflict"
+            ),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn validate_non_empty(raw: String, field_name: &str) -> Result<String> {
     let value = raw.trim().to_string();
     if value.is_empty() {
@@ -531,6 +595,17 @@ fn validate_non_empty(raw: String, field_name: &str) -> Result<String> {
         ))
     } else {
         Ok(value)
+    }
+}
+
+fn validate_credential_ref(value: &str, prefix: &str, label: &str) -> Result<()> {
+    if value.starts_with(prefix) {
+        Ok(())
+    } else {
+        Err(invalid_payload_error(
+            format!("{label} must start with '{prefix}'"),
+            format!("command=relay_validation;field={label};value={value}"),
+        ))
     }
 }
 

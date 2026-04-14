@@ -6,7 +6,7 @@ use rand::{rngs::OsRng, RngCore};
 use crate::{
     db::repositories::Repositories,
     error::{CodexLagError, Result},
-    models::{FailureRules, PlatformKey, RecoveryRules, RoutingPolicy},
+    models::{relay_api_key_credential_ref, FailureRules, PlatformKey, RecoveryRules, RoutingPolicy},
     routing::policy::HYBRID,
     secret_store::{SecretKey, SecretStore},
     state::{AppState, RuntimeLogConfig, RuntimeState},
@@ -66,6 +66,7 @@ fn build_default_app_state(
     if secret_store.get_optional(&default_key_secret)?.is_none() {
         secret_store.set(&default_key_secret, generate_platform_key_secret())?;
     }
+    ensure_default_relay_secrets(&secret_store)?;
 
     Ok(AppState::new(repositories, secret_store))
 }
@@ -161,4 +162,14 @@ fn random_suffix() -> String {
         encoded.push_str(&format!("{byte:02x}"));
     }
     encoded
+}
+
+fn ensure_default_relay_secrets(secret_store: &SecretStore) -> Result<()> {
+    for relay_id in ["relay-newapi", "relay-badpayload", "relay-nobalance"] {
+        let key = SecretKey::new(relay_api_key_credential_ref(relay_id));
+        if secret_store.get_optional(&key)?.is_none() {
+            secret_store.set(&key, format!("rk_local_{relay_id}"))?;
+        }
+    }
+    Ok(())
 }

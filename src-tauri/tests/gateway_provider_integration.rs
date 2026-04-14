@@ -28,6 +28,21 @@ async fn official_provider_path_can_be_selected_from_runtime_inventory() {
 }
 
 #[tokio::test]
+async fn relay_provider_path_can_be_selected_from_runtime_inventory() {
+    let runtime = bootstrap_runtime_for_test()
+        .await
+        .expect("bootstrap runtime");
+
+    let candidates = runtime.loopback_gateway().state().current_candidates();
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.id == "relay-newapi"),
+        "relay runtime inventory should include relay-newapi"
+    );
+}
+
+#[tokio::test]
 async fn request_and_attempt_ids_are_carried_across_failover_attempts() {
     let runtime = bootstrap_runtime_for_test()
         .await
