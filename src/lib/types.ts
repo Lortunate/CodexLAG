@@ -33,6 +33,22 @@ export interface AccountSummary {
   provider: string;
 }
 
+export interface ProviderSessionSummary {
+  provider_id: string;
+  account_id: string;
+  display_name: string;
+  auth_state: string;
+  expires_at_ms: number | null;
+  last_refresh_at_ms: number | null;
+  last_refresh_error: string | null;
+}
+
+export interface PendingOpenAiBrowserLogin {
+  summary: ProviderSessionSummary;
+  authorization_url: string;
+  callback_url: string;
+}
+
 export interface OfficialAccountImportInput {
   account_id: string;
   name: string;

@@ -6,8 +6,8 @@ pub mod relays;
 
 pub use accounts::{
     get_account_capability_detail, import_official_account_login, refresh_account_balance,
-    AccountBalanceAvailability, AccountBalanceSnapshot, AccountCapabilityDetail, AccountSummary,
-    OfficialAccountImportInput,
+    start_openai_browser_login, AccountBalanceAvailability, AccountBalanceSnapshot,
+    AccountCapabilityDetail, AccountSummary, OfficialAccountImportInput,
 };
 pub use keys::{
     create_platform_key, disable_platform_key, enable_platform_key, get_default_key_summary,
