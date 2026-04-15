@@ -38,9 +38,19 @@ export interface ProviderSessionSummary {
   account_id: string;
   display_name: string;
   auth_state: string;
+  auth_profile?: string;
   expires_at_ms: number | null;
   last_refresh_at_ms: number | null;
   last_refresh_error: string | null;
+  last_error_message?: string | null;
+}
+
+export interface ProviderAccountHealth {
+  provider_id: string;
+  account_id: string;
+  auth_state: string;
+  auth_profile: string;
+  last_error_message: string | null;
 }
 
 export interface ProviderAccountSummary {

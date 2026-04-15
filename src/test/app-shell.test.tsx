@@ -658,9 +658,25 @@ describe("App shell", () => {
       fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
     });
 
-    expect(await screen.findByRole("heading", { name: /openai browser session/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /import official account/i })).not.toBeInTheDocument();
     expect(importOfficialAccountLogin).not.toHaveBeenCalled();
+  });
+
+  it("shows provider-specific onboarding actions for browser and api-key accounts", async () => {
+    listAccounts.mockResolvedValue([
+      { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
+      { account_id: "anthropic-direct", name: "Anthropic Direct", provider: "anthropic" },
+    ]);
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
+    expect(await screen.findByText(/auth profile: api key/i)).toBeInTheDocument();
   });
 
   it("starts browser login and manages persisted OpenAI provider sessions", async () => {
@@ -733,7 +749,7 @@ describe("App shell", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /accounts/i }));
     });
-    expect(await screen.findByRole("heading", { name: /openai browser session/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /import official account/i })).not.toBeInTheDocument();
 
     await act(async () => {

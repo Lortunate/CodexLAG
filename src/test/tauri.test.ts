@@ -114,9 +114,11 @@ describe("tauri wrappers", () => {
         account_id: "openai-primary",
         display_name: "OpenAI Primary",
         auth_state: "active",
+        auth_profile: "browser",
         expires_at_ms: 1_731_111_111_000,
         last_refresh_at_ms: 1_731_111_000_500,
         last_refresh_error: null,
+        last_error_message: null,
       },
     ]);
 
@@ -124,6 +126,8 @@ describe("tauri wrappers", () => {
 
     expect(invokeMock).toHaveBeenCalledWith("list_provider_sessions");
     expect(sessions[0]?.account_id).toBe("openai-primary");
+    expect(sessions[0]?.auth_profile).toBe("browser");
+    expect(sessions[0]?.last_error_message).toBeNull();
   });
 
   it("lists normalized provider inventory through the dedicated command surface", async () => {

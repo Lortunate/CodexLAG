@@ -12,6 +12,7 @@ import type {
   AccountBalanceSnapshot,
   AccountCapabilityDetail,
   AccountSummary,
+  ProviderAccountHealth,
   ProviderSessionSummary,
 } from "../../lib/types";
 
@@ -21,6 +22,15 @@ interface AccountPanelState {
   balanceSnapshot: AccountBalanceSnapshot | null;
   capabilityDetail: AccountCapabilityDetail | null;
   capabilityError: string | null;
+  providerHealth: ProviderAccountHealth;
+}
+
+function authProfileLabel(authProfile: string) {
+  return authProfile === "browser" ? "Browser sign-in" : "API key";
+}
+
+function resolveProviderAuthProfile(provider: string) {
+  return provider === "openai" ? "browser" : "api_key";
 }
 
 export function AccountsPage() {
@@ -42,6 +52,13 @@ export function AccountsPage() {
             balanceSnapshot: null,
             capabilityDetail: null,
             capabilityError: null,
+            providerHealth: {
+              provider_id: account.provider,
+              account_id: account.account_id,
+              auth_state: "ready",
+              auth_profile: resolveProviderAuthProfile(account.provider),
+              last_error_message: null,
+            },
           };
 
           try {
@@ -153,7 +170,7 @@ export function AccountsPage() {
       <p>Review provider identity, launch browser login, and inspect capability status.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <div className="detail-card">
-        <h3>OpenAI browser session</h3>
+        <h3>Browser sign-in</h3>
         <p>Launch the official OpenAI login flow and manage persisted desktop sessions.</p>
         <button onClick={() => void handleStartOpenAiLogin()} type="button">
           Sign in with OpenAI
@@ -169,7 +186,8 @@ export function AccountsPage() {
                 <h4>{session.display_name}</h4>
                 <p>Provider session: {session.account_id}</p>
                 <p>Auth state: {session.auth_state}</p>
-                <p>Last refresh error: {session.last_refresh_error ?? "none"}</p>
+                <p>Auth profile: {authProfileLabel(session.auth_profile ?? "browser")}</p>
+                <p>Last auth error: {session.last_error_message ?? session.last_refresh_error ?? "none"}</p>
                 <button
                   onClick={() => void handleRefreshProviderSession(session.account_id)}
                   type="button"
@@ -192,6 +210,7 @@ export function AccountsPage() {
           <article className="detail-card" key={panel.account.account_id}>
             <h3>{panel.account.name}</h3>
             <p>Provider: {panel.account.provider}</p>
+            <p>Auth profile: {authProfileLabel(panel.providerHealth.auth_profile)}</p>
             {panel.balanceSnapshot ? (
               <>
                 <p>Balance state: {panel.balanceSnapshot.balance.kind}</p>
