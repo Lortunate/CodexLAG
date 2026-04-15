@@ -9,6 +9,33 @@ use crate::providers::invocation::{
     InvocationFailure, InvocationFailureClass, InvocationOutcome, InvocationSuccessMetadata,
     InvocationUsageDimensions,
 };
+use crate::providers::registry::ProviderAdapter;
+
+pub const OFFICIAL_OPENAI_PROVIDER_ID: &str = "openai_official";
+pub const OFFICIAL_DEFAULT_MODELS: &[&str] = &["gpt-5-mini"];
+
+#[derive(Debug)]
+pub struct OfficialOpenAiAdapter;
+
+impl ProviderAdapter for OfficialOpenAiAdapter {
+    fn provider_id(&self) -> &'static str {
+        OFFICIAL_OPENAI_PROVIDER_ID
+    }
+
+    fn supports_browser_login(&self) -> bool {
+        true
+    }
+
+    fn supports_balance(&self) -> bool {
+        false
+    }
+}
+
+static OFFICIAL_OPENAI_ADAPTER: OfficialOpenAiAdapter = OfficialOpenAiAdapter;
+
+pub fn provider_adapter() -> &'static dyn ProviderAdapter {
+    &OFFICIAL_OPENAI_ADAPTER
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(from = "String", into = "String")]
@@ -147,7 +174,14 @@ pub async fn invoke_official_session(
     let status = response.status();
     let body = match response.bytes().await {
         Ok(body) => body,
-        Err(_) => return Err(http_failure(request_id, attempt_id, endpoint_id, Some(status))),
+        Err(_) => {
+            return Err(http_failure(
+                request_id,
+                attempt_id,
+                endpoint_id,
+                Some(status),
+            ))
+        }
     };
     if !status.is_success() {
         return Err(map_http_status_to_failure(
@@ -160,7 +194,14 @@ pub async fn invoke_official_session(
 
     let payload: OfficialResponsePayload = match serde_json::from_slice(&body) {
         Ok(payload) => payload,
-        Err(_) => return Err(config_failure(request_id, attempt_id, endpoint_id, Some(status))),
+        Err(_) => {
+            return Err(config_failure(
+                request_id,
+                attempt_id,
+                endpoint_id,
+                Some(status),
+            ))
+        }
     };
     let usage = payload.usage.unwrap_or_default();
 

@@ -10,8 +10,11 @@ import type {
   DefaultKeyMode,
   DefaultKeySummary,
   ErrorCategory,
+  ProviderDiagnosticsSummary,
   LogSummary,
-  OfficialAccountImportInput,
+  PendingOpenAiBrowserLogin,
+  ProviderInventorySummary,
+  ProviderSessionSummary,
   PlatformKeyInventoryEntry,
   PolicyUpdateInput,
   PolicySummary,
@@ -267,8 +270,28 @@ export function listAccounts() {
   return invokeWithContract<AccountSummary[]>("list_accounts");
 }
 
-export function importOfficialAccountLogin(input: OfficialAccountImportInput) {
-  return invokeWithContract<AccountSummary>("import_official_account_login", { input });
+export function startOpenAiBrowserLogin() {
+  return invokeWithContract<PendingOpenAiBrowserLogin>("start_openai_browser_login");
+}
+
+export function listProviderSessions() {
+  return invokeWithContract<ProviderSessionSummary[]>("list_provider_sessions");
+}
+
+export function listProviderInventory() {
+  return invokeWithContract<ProviderInventorySummary>("list_provider_inventory");
+}
+
+export function refreshOpenAiSession(accountId: string) {
+  return invokeWithContract<ProviderSessionSummary>("refresh_openai_session", {
+    account_id: accountId,
+  });
+}
+
+export function logoutOpenAiSession(accountId: string) {
+  return invokeWithContract<boolean>("logout_openai_session", {
+    account_id: accountId,
+  });
 }
 
 export function refreshAccountBalance(accountId: string) {
@@ -355,6 +378,10 @@ export function getLogSummary() {
 
 export function getRuntimeLogMetadata() {
   return invokeWithContract<RuntimeLogMetadata>("get_runtime_log_metadata");
+}
+
+export function getProviderDiagnostics() {
+  return invokeWithContract<ProviderDiagnosticsSummary>("get_provider_diagnostics");
 }
 
 export function exportRuntimeDiagnostics() {

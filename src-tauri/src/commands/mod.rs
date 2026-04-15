@@ -5,9 +5,10 @@ pub mod policies;
 pub mod relays;
 
 pub use accounts::{
-    get_account_capability_detail, import_official_account_login, refresh_account_balance,
-    AccountBalanceAvailability, AccountBalanceSnapshot, AccountCapabilityDetail, AccountSummary,
-    OfficialAccountImportInput,
+    get_account_capability_detail, import_official_account_login, list_provider_sessions,
+    logout_openai_session, refresh_account_balance, refresh_openai_session,
+    start_openai_browser_login, AccountBalanceAvailability, AccountBalanceSnapshot,
+    AccountCapabilityDetail, AccountSummary, OfficialAccountImportInput,
 };
 pub use keys::{
     create_platform_key, disable_platform_key, enable_platform_key, get_default_key_summary,
@@ -15,10 +16,11 @@ pub use keys::{
     PlatformKeyInventoryEntry,
 };
 pub use logs::{
-    get_runtime_log_metadata, get_usage_request_detail, list_usage_request_history,
-    query_usage_ledger, runtime_log_metadata_from_runtime, usage_ledger_from_runtime,
-    usage_request_detail_from_runtime, usage_request_history_from_runtime, LogSummary,
-    RuntimeLogMetadata,
+    get_provider_diagnostics, get_runtime_log_metadata, get_usage_request_detail,
+    list_usage_request_history, provider_diagnostics_from_runtime, query_usage_ledger,
+    runtime_log_metadata_from_runtime, usage_ledger_from_runtime,
+    usage_request_detail_from_runtime, usage_request_history_from_runtime, DiagnosticsDetail,
+    DiagnosticsRow, DiagnosticsSection, LogSummary, ProviderDiagnosticsSummary, RuntimeLogMetadata,
 };
 pub use policies::{list_policies, update_policy, PolicySummary, PolicyUpdateInput};
 pub use relays::{

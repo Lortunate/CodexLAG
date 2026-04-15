@@ -1,13 +1,18 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 
+use crate::auth::openai::{PendingOpenAiLoopbackAuthSession, ReqwestOpenAiSessionRefresher};
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
-use crate::models::ImportedOfficialAccount;
+use crate::models::{ImportedOfficialAccount, ProviderSessionSummary};
 use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
+use crate::providers::inventory::{project_provider_inventory_summary, ProviderInventorySummary};
 use crate::state::{AppState, RuntimeState};
 
 const OFFICIAL_PRIMARY_ACCOUNT_ID: &str = "official-primary";
+const OPENAI_AUTH_ACCOUNT_ID: &str = "openai-primary";
+const OPENAI_AUTH_DISPLAY_NAME: &str = "OpenAI Primary";
 const RESERVED_BUILTIN_ACCOUNT_IDS: &[&str] = &[OFFICIAL_PRIMARY_ACCOUNT_ID];
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,6 +78,28 @@ pub fn list_accounts_from_runtime(runtime: &RuntimeState) -> Vec<AccountSummary>
 #[tauri::command]
 pub fn list_accounts(state: State<'_, RuntimeState>) -> Vec<AccountSummary> {
     list_accounts_from_runtime(&state)
+}
+
+pub fn list_provider_sessions_from_runtime(
+    runtime: &RuntimeState,
+) -> Result<Vec<ProviderSessionSummary>> {
+    runtime.list_provider_sessions()
+}
+
+#[tauri::command]
+pub fn list_provider_sessions(
+    state: State<'_, RuntimeState>,
+) -> Result<Vec<ProviderSessionSummary>> {
+    list_provider_sessions_from_runtime(&state)
+}
+
+pub fn list_provider_inventory_from_runtime(runtime: &RuntimeState) -> ProviderInventorySummary {
+    project_provider_inventory_summary(&runtime.app_state())
+}
+
+#[tauri::command]
+pub fn list_provider_inventory(state: State<'_, RuntimeState>) -> ProviderInventorySummary {
+    list_provider_inventory_from_runtime(&state)
 }
 
 pub fn refresh_account_balance_from_runtime(
@@ -241,6 +268,66 @@ pub fn import_official_account_login(
     state: State<'_, RuntimeState>,
 ) -> Result<AccountSummary> {
     import_official_account_login_from_runtime(&state, input)
+}
+
+pub fn start_openai_browser_login_from_runtime(
+    runtime: &RuntimeState,
+    app: &AppHandle,
+) -> Result<PendingOpenAiLoopbackAuthSession> {
+    let pending = runtime.openai_auth_mut().start_default_browser_login(
+        OPENAI_AUTH_ACCOUNT_ID.to_string(),
+        OPENAI_AUTH_DISPLAY_NAME.to_string(),
+    )?;
+
+    app.opener()
+        .open_url(pending.authorization_url.as_str(), None::<&str>)
+        .map_err(|error| {
+            CodexLagError::new(format!("Failed to open OpenAI browser login URL: {error}"))
+                .with_internal_context("command=start_openai_browser_login;operation=open_url")
+        })?;
+
+    Ok(pending)
+}
+
+#[tauri::command]
+pub fn start_openai_browser_login(
+    app: AppHandle,
+    state: State<'_, RuntimeState>,
+) -> Result<PendingOpenAiLoopbackAuthSession> {
+    start_openai_browser_login_from_runtime(&state, &app)
+}
+
+pub fn refresh_openai_session_from_runtime(
+    runtime: &RuntimeState,
+    account_id: String,
+) -> Result<ProviderSessionSummary> {
+    let refresher = ReqwestOpenAiSessionRefresher::new();
+    let session = runtime
+        .openai_auth_mut()
+        .refresh_session(account_id.as_str(), &refresher)?;
+    Ok(session.summary)
+}
+
+#[tauri::command]
+pub fn refresh_openai_session(
+    state: State<'_, RuntimeState>,
+    account_id: String,
+) -> Result<ProviderSessionSummary> {
+    refresh_openai_session_from_runtime(&state, account_id)
+}
+
+pub fn logout_openai_session_from_runtime(
+    runtime: &RuntimeState,
+    account_id: String,
+) -> Result<bool> {
+    runtime
+        .openai_auth_mut()
+        .logout_session(account_id.as_str())
+}
+
+#[tauri::command]
+pub fn logout_openai_session(state: State<'_, RuntimeState>, account_id: String) -> Result<bool> {
+    logout_openai_session_from_runtime(&state, account_id)
 }
 
 fn official_primary_session() -> OfficialSession {

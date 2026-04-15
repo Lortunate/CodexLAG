@@ -73,6 +73,17 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
                 token_credential_ref TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS provider_sessions (
+                provider_id TEXT NOT NULL,
+                account_id TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                auth_state TEXT NOT NULL,
+                expires_at_ms INTEGER,
+                last_refresh_at_ms INTEGER,
+                last_refresh_error TEXT,
+                PRIMARY KEY(provider_id, account_id)
+            );
+
             CREATE TABLE IF NOT EXISTS managed_relays (
                 relay_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -175,7 +186,6 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
         "api_key_credential_ref",
         "TEXT NOT NULL DEFAULT ''",
     )?;
-
     connection
         .execute_batch(
             "

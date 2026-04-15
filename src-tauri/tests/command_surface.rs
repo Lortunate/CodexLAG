@@ -29,9 +29,7 @@ use codexlag_lib::models::{RequestAttemptLog, RequestLog};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
 use codexlag_lib::{
-    bootstrap::{
-        bootstrap_runtime_for_test, bootstrap_state_with_provider_inventory_for_test_at,
-    },
+    bootstrap::{bootstrap_runtime_for_test, bootstrap_state_with_provider_inventory_for_test_at},
     routing::policy::RoutingMode,
     secret_store::SecretKey,
     state::{RuntimeLogConfig, RuntimeState},

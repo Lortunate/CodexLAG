@@ -100,6 +100,17 @@ pub struct ImportedOfficialAccount {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderSessionSummary {
+    pub provider_id: String,
+    pub account_id: String,
+    pub display_name: String,
+    pub auth_state: String,
+    pub expires_at_ms: Option<i64>,
+    pub last_refresh_at_ms: Option<i64>,
+    pub last_refresh_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagedRelay {
     pub relay_id: String,
     pub name: String,

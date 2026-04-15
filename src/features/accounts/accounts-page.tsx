@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
 import {
   getAccountCapabilityDetail,
-  importOfficialAccountLogin,
   listAccounts,
+  listProviderSessions,
+  logoutOpenAiSession,
   refreshAccountBalance,
+  refreshOpenAiSession,
+  startOpenAiBrowserLogin,
 } from "../../lib/tauri";
 import type {
   AccountBalanceSnapshot,
   AccountCapabilityDetail,
   AccountSummary,
-  OfficialAccountImportInput,
+  ProviderSessionSummary,
 } from "../../lib/types";
-import { AccountImportForm } from "./account-import-form";
 
 interface AccountPanelState {
   account: AccountSummary;
@@ -23,14 +25,15 @@ interface AccountPanelState {
 
 export function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountPanelState[]>([]);
+  const [providerSessions, setProviderSessions] = useState<ProviderSessionSummary[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
-  const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
-  const [isImportingAccount, setIsImportingAccount] = useState(false);
+  const [authActionMessage, setAuthActionMessage] = useState<string | null>(null);
+  const [sessionActionError, setSessionActionError] = useState<string | null>(null);
+  const [sessionActionPending, setSessionActionPending] = useState<string | null>(null);
 
   async function loadAccounts(isMounted: () => boolean = () => true) {
     try {
-      const summaries = await listAccounts();
+      const [summaries, sessions] = await Promise.all([listAccounts(), listProviderSessions()]);
       const accountPanels = await Promise.all(
         summaries.map(async (account) => {
           const panelState: AccountPanelState = {
@@ -61,12 +64,37 @@ export function AccountsPage() {
 
       if (isMounted()) {
         setAccounts(accountPanels);
+        setProviderSessions(sessions);
         setErrorMessage(null);
       }
     } catch {
       if (isMounted()) {
         setErrorMessage("Failed to load accounts.");
       }
+    }
+  }
+
+  async function handleStartOpenAiLogin() {
+    if (sessionActionPending) {
+      return;
+    }
+
+    setAuthActionMessage(null);
+    setSessionActionError(null);
+    setSessionActionPending("browser-login");
+
+    try {
+      const pending = await startOpenAiBrowserLogin();
+      await loadAccounts();
+      setAuthActionMessage(
+        `Browser login started for ${pending.summary.display_name}. Callback: ${pending.callback_url}`,
+      );
+    } catch (error) {
+      setSessionActionError(
+        error instanceof Error ? error.message : "Failed to start OpenAI browser login.",
+      );
+    } finally {
+      setSessionActionPending(null);
     }
   }
 
@@ -79,40 +107,86 @@ export function AccountsPage() {
     };
   }, []);
 
-  async function handleImportAccount(input: OfficialAccountImportInput): Promise<boolean> {
-    if (isImportingAccount) {
-      return false;
+  async function handleRefreshProviderSession(accountId: string) {
+    if (sessionActionPending) {
+      return;
     }
 
-    setIsImportingAccount(true);
-    setImportErrorMessage(null);
-    setImportSuccessMessage(null);
+    setAuthActionMessage(null);
+    setSessionActionError(null);
+    setSessionActionPending(`refresh:${accountId}`);
 
     try {
-      const imported = await importOfficialAccountLogin(input);
+      await refreshOpenAiSession(accountId);
       await loadAccounts();
-      setImportSuccessMessage(`Imported account: ${imported.account_id}`);
-      setErrorMessage(null);
-      return true;
+      setAuthActionMessage(`Refreshed OpenAI session: ${accountId}`);
     } catch (error) {
-      setImportErrorMessage(error instanceof Error ? error.message : "Failed to import account.");
-      return false;
+      setSessionActionError(error instanceof Error ? error.message : "Failed to refresh session.");
     } finally {
-      setIsImportingAccount(false);
+      setSessionActionPending(null);
+    }
+  }
+
+  async function handleLogoutProviderSession(accountId: string) {
+    if (sessionActionPending) {
+      return;
+    }
+
+    setAuthActionMessage(null);
+    setSessionActionError(null);
+    setSessionActionPending(`logout:${accountId}`);
+
+    try {
+      await logoutOpenAiSession(accountId);
+      await loadAccounts();
+      setAuthActionMessage(`Signed out OpenAI session: ${accountId}`);
+    } catch (error) {
+      setSessionActionError(error instanceof Error ? error.message : "Failed to sign out session.");
+    } finally {
+      setSessionActionPending(null);
     }
   }
 
   return (
     <section aria-labelledby="accounts-heading">
       <h2 id="accounts-heading">Official Accounts</h2>
-      <p>Import existing login state, review provider identity, and inspect capability status.</p>
+      <p>Review provider identity, launch browser login, and inspect capability status.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      <AccountImportForm
-        errorMessage={importErrorMessage}
-        isSubmitting={isImportingAccount}
-        successMessage={importSuccessMessage}
-        onSubmit={handleImportAccount}
-      />
+      <div className="detail-card">
+        <h3>OpenAI browser session</h3>
+        <p>Launch the official OpenAI login flow and manage persisted desktop sessions.</p>
+        <button onClick={() => void handleStartOpenAiLogin()} type="button">
+          Sign in with OpenAI
+        </button>
+        {authActionMessage ? <p>{authActionMessage}</p> : null}
+        {sessionActionError ? <p role="alert">{sessionActionError}</p> : null}
+        {providerSessions.length === 0 ? (
+          <p>No OpenAI provider sessions stored.</p>
+        ) : (
+          <div className="detail-grid">
+            {providerSessions.map((session) => (
+              <article className="detail-card" key={`${session.provider_id}:${session.account_id}`}>
+                <h4>{session.display_name}</h4>
+                <p>Provider session: {session.account_id}</p>
+                <p>Auth state: {session.auth_state}</p>
+                <p>Last refresh error: {session.last_refresh_error ?? "none"}</p>
+                <button
+                  onClick={() => void handleRefreshProviderSession(session.account_id)}
+                  type="button"
+                >
+                  Refresh
+                </button>
+                <button
+                  onClick={() => void handleLogoutProviderSession(session.account_id)}
+                  type="button"
+                >
+                  Sign out
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="detail-grid">
         {accounts.map((panel) => (
           <article className="detail-card" key={panel.account.account_id}>

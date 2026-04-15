@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createQueryClient } from "../lib/query-client";
 
 const {
   addRelay,
@@ -12,19 +14,25 @@ const {
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
+  getProviderDiagnostics,
   getRuntimeLogMetadata,
   getRelayCapabilityDetail,
   getUsageRequestDetail,
   importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listProviderInventory,
+  listProviderSessions,
   listPlatformKeys,
   listPolicies,
   listRelays,
+  logoutOpenAiSession,
   listUsageRequestHistory,
   queryUsageLedger,
   refreshAccountBalance,
+  refreshOpenAiSession,
   refreshRelayBalance,
+  startOpenAiBrowserLogin,
   testRelayConnection,
   setDefaultKeyMode,
   updatePolicy,
@@ -55,6 +63,7 @@ const {
     getAccountCapabilityDetail: vi.fn(),
     getDefaultKeySummary: vi.fn(),
     getLogSummary: vi.fn(),
+    getProviderDiagnostics: vi.fn(),
     getRuntimeLogMetadata: vi.fn(),
     getRelayCapabilityDetail: vi.fn(),
     getUsageRequestDetail: vi.fn(),
@@ -66,13 +75,18 @@ const {
       };
     }),
     listAccounts: vi.fn(),
+    listProviderInventory: vi.fn(),
+    listProviderSessions: vi.fn(),
     listPlatformKeys: vi.fn(),
     listPolicies: vi.fn(),
     listRelays: vi.fn(),
+    logoutOpenAiSession: vi.fn(),
     listUsageRequestHistory: vi.fn(),
     queryUsageLedger: vi.fn(),
     refreshAccountBalance: vi.fn(),
+    refreshOpenAiSession: vi.fn(),
     refreshRelayBalance: vi.fn(),
+    startOpenAiBrowserLogin: vi.fn(),
     testRelayConnection: vi.fn(),
     setDefaultKeyMode: vi.fn(),
     updatePolicy: vi.fn(),
@@ -87,6 +101,7 @@ vi.mock("../lib/tauri", () => ({
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
+  getProviderDiagnostics,
   getRuntimeLogMetadata,
   exportRuntimeDiagnostics,
   getRelayCapabilityDetail,
@@ -94,19 +109,34 @@ vi.mock("../lib/tauri", () => ({
   importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listProviderInventory,
+  listProviderSessions,
   listPlatformKeys,
   listPolicies,
   listRelays,
+  logoutOpenAiSession,
   listUsageRequestHistory,
   queryUsageLedger,
   refreshAccountBalance,
+  refreshOpenAiSession,
   refreshRelayBalance,
+  startOpenAiBrowserLogin,
   testRelayConnection,
   setDefaultKeyMode,
   updatePolicy,
 }));
 
 import App from "../App";
+
+function renderApp() {
+  return rtlRender(
+    <QueryClientProvider client={createQueryClient()}>
+      <App />
+    </QueryClientProvider>,
+  );
+}
+
+const render = () => renderApp();
 
 describe("App shell", () => {
   beforeEach(() => {
@@ -118,19 +148,25 @@ describe("App shell", () => {
     getAccountCapabilityDetail.mockReset();
     getDefaultKeySummary.mockReset();
     getLogSummary.mockReset();
+    getProviderDiagnostics.mockReset();
     getRuntimeLogMetadata.mockReset();
     getRelayCapabilityDetail.mockReset();
     getUsageRequestDetail.mockReset();
     importOfficialAccountLogin.mockReset();
     listenForDefaultKeySummaryChanged.mockClear();
     listAccounts.mockReset();
+    listProviderInventory.mockReset();
+    listProviderSessions.mockReset();
     listPlatformKeys.mockReset();
     listPolicies.mockReset();
     listRelays.mockReset();
+    logoutOpenAiSession.mockReset();
     listUsageRequestHistory.mockReset();
     queryUsageLedger.mockReset();
     refreshAccountBalance.mockReset();
+    refreshOpenAiSession.mockReset();
     refreshRelayBalance.mockReset();
+    startOpenAiBrowserLogin.mockReset();
     testRelayConnection.mockReset();
     setDefaultKeyMode.mockReset();
     updatePolicy.mockReset();
@@ -144,6 +180,43 @@ describe("App shell", () => {
     getLogSummary.mockResolvedValue({
       level: "info",
       last_event: "Loopback gateway ready for key 'default' in hybrid mode",
+    });
+    getProviderDiagnostics.mockResolvedValue({
+      sections: [
+        {
+          id: "auth_health",
+          title: "Auth health",
+          status: "healthy",
+          summary: "1 provider session available.",
+          rows: [
+            {
+              key: "openai-primary",
+              label: "OpenAI Primary",
+              status: "healthy",
+              value: "state=active | expires_at_ms=none | provider=openai_official",
+              details: [
+                { label: "account_id", value: "openai-primary" },
+                { label: "last_refresh_at_ms", value: "none" },
+              ],
+            },
+          ],
+        },
+        {
+          id: "provider_health",
+          title: "Provider health",
+          status: "healthy",
+          summary: "2 runtime endpoint projections available.",
+          rows: [
+            {
+              key: "official-primary",
+              label: "Primary Publisher",
+              status: "healthy",
+              value: "pool=official | available=true | priority=10 | health=Healthy",
+              details: [{ label: "provider_id", value: "openai" }],
+            },
+          ],
+        },
+      ],
     });
     getRuntimeLogMetadata.mockResolvedValue({
       log_dir: "<app-local-data>/logs",
@@ -168,6 +241,59 @@ describe("App shell", () => {
     listAccounts.mockResolvedValue([
       { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
     ]);
+    listProviderInventory.mockResolvedValue({
+      accounts: [
+        {
+          provider_id: "openai_official",
+          account_id: "official-primary",
+          display_name: "Primary Publisher",
+          auth_state: "active",
+          available: true,
+          registered: true,
+          base_url: null,
+        },
+        {
+          provider_id: "generic_openai_compatible",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "expired",
+          available: false,
+          registered: true,
+          base_url: "https://gateway.example.test/v1",
+        },
+      ],
+      models: [
+        {
+          provider_id: "openai_official",
+          account_id: "official-primary",
+          model_id: "gpt-5-mini",
+          supports_tools: true,
+          supports_streaming: true,
+          supports_reasoning: true,
+          source: "default",
+        },
+        {
+          provider_id: "generic_openai_compatible",
+          account_id: "openai-primary",
+          model_id: "gpt-4.1-mini",
+          supports_tools: true,
+          supports_streaming: true,
+          supports_reasoning: false,
+          source: "manual",
+        },
+      ],
+    });
+    listProviderSessions.mockResolvedValue([
+      {
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "active",
+        expires_at_ms: null,
+        last_refresh_at_ms: null,
+        last_refresh_error: null,
+      },
+    ]);
     importOfficialAccountLogin.mockResolvedValue({
       account_id: "imported-openai",
       name: "Imported OpenAI",
@@ -188,6 +314,29 @@ describe("App shell", () => {
       refresh_capability: true,
       balance_capability: "non_queryable",
     }));
+    refreshOpenAiSession.mockResolvedValue({
+      provider_id: "openai_official",
+      account_id: "openai-primary",
+      display_name: "OpenAI Primary",
+      auth_state: "active",
+      expires_at_ms: 1_731_111_111_000,
+      last_refresh_at_ms: 1_731_111_000_500,
+      last_refresh_error: null,
+    });
+    startOpenAiBrowserLogin.mockResolvedValue({
+      summary: {
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "pending",
+        expires_at_ms: null,
+        last_refresh_at_ms: null,
+        last_refresh_error: null,
+      },
+      authorization_url: "https://auth.openai.com/oauth/authorize?response_type=code",
+      callback_url: "http://127.0.0.1:1455/auth/openai/callback",
+    });
+    logoutOpenAiSession.mockResolvedValue(true);
     listPolicies.mockResolvedValue([
       {
         policy_id: "default-policy",
@@ -459,6 +608,31 @@ describe("App shell", () => {
     expect(screen.getByText("Tracked log files: 0")).toBeInTheDocument();
   });
 
+  it("renders a query-backed capability matrix with filters and column visibility", async () => {
+    render(<App />);
+
+    const capabilityMatrix = await screen.findByRole("table", { name: /capability matrix/i });
+    expect(capabilityMatrix).toBeInTheDocument();
+    expect(screen.getAllByText("OpenAI Primary").length).toBeGreaterThan(0);
+    expect(screen.getByText(/expired \(degraded\)/i)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Provider scope"), {
+        target: { value: "generic_openai_compatible" },
+      });
+    });
+    expect(screen.queryByRole("cell", { name: "Primary Publisher" })).not.toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "OpenAI Primary" })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /columns/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Source"));
+    });
+    expect(screen.queryByText("manual")).not.toBeInTheDocument();
+  });
+
   it("loads account balances and capability details", async () => {
     render(<App />);
 
@@ -477,15 +651,54 @@ describe("App shell", () => {
     expect(getAccountCapabilityDetail).toHaveBeenCalledWith("official-primary");
   });
 
-  it("submits account import flow and reloads account cards", async () => {
-    listAccounts
+  it("keeps official accounts focused on browser login instead of manual import", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /openai browser session/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /import official account/i })).not.toBeInTheDocument();
+    expect(importOfficialAccountLogin).not.toHaveBeenCalled();
+  });
+
+  it("starts browser login and manages persisted OpenAI provider sessions", async () => {
+    listProviderSessions
       .mockResolvedValueOnce([
-        { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "active",
+          expires_at_ms: null,
+          last_refresh_at_ms: null,
+          last_refresh_error: null,
+        },
       ])
       .mockResolvedValueOnce([
-        { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
-        { account_id: "imported-openai", name: "Imported OpenAI", provider: "openai" },
-      ]);
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "pending",
+          expires_at_ms: null,
+          last_refresh_at_ms: null,
+          last_refresh_error: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "active",
+          expires_at_ms: 1_731_111_111_000,
+          last_refresh_at_ms: 1_731_111_000_500,
+          last_refresh_error: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
 
     render(<App />);
 
@@ -493,38 +706,35 @@ describe("App shell", () => {
       fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
     });
 
-    fireEvent.change(screen.getByLabelText("Account ID"), { target: { value: "imported-openai" } });
-    fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Imported OpenAI" } });
-    fireEvent.change(screen.getByLabelText("Session Credential Ref"), {
-      target: { value: "credential://official/session/imported-openai" },
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sign in with OpenAI" }));
     });
-    fireEvent.change(screen.getByLabelText("Token Credential Ref"), {
-      target: { value: "credential://official/token/imported-openai" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Import account" }));
+    expect(startOpenAiBrowserLogin).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText(/Browser login started for OpenAI Primary/),
+    ).toBeInTheDocument();
 
-    expect(importOfficialAccountLogin).toHaveBeenCalledWith({
-      account_id: "imported-openai",
-      name: "Imported OpenAI",
-      provider: "openai",
-      session_credential_ref: "credential://official/session/imported-openai",
-      token_credential_ref: "credential://official/token/imported-openai",
-      account_identity: null,
-      auth_mode: null,
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     });
-    expect(await screen.findByText("Imported account: imported-openai")).toBeInTheDocument();
-    expect(listAccounts).toHaveBeenCalled();
+    expect(refreshOpenAiSession).toHaveBeenCalledWith("openai-primary");
+    expect(await screen.findByText("Refreshed OpenAI session: openai-primary")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    });
+    expect(logoutOpenAiSession).toHaveBeenCalledWith("openai-primary");
+    expect(await screen.findByText("Signed out OpenAI session: openai-primary")).toBeInTheDocument();
   });
 
-  it("renders account import and relay creation as structured operations panels", async () => {
+  it("renders OpenAI session and relay creation as structured operations panels", async () => {
     render(<App />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /accounts/i }));
     });
-    expect(
-      await screen.findByRole("heading", { name: /import official account/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /openai browser session/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /import official account/i })).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /relays/i }));
@@ -659,9 +869,8 @@ describe("App shell", () => {
 
     expect(await screen.findByLabelText("Policy Name")).toHaveValue("default");
     fireEvent.change(screen.getByLabelText("Policy Name"), { target: { value: "default-updated" } });
-    fireEvent.change(screen.getByLabelText("Selection Order"), {
-      target: { value: "official-primary, relay-newapi" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Add relay-nobalance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move relay-nobalance up" }));
     fireEvent.change(screen.getByLabelText("Cross Pool Fallback"), {
       target: { value: "false" },
     });
@@ -678,7 +887,7 @@ describe("App shell", () => {
     expect(updatePolicy).toHaveBeenCalledWith({
       policy_id: "default-policy",
       name: "default-updated",
-      selection_order: ["official-primary", "relay-newapi"],
+      selection_order: ["official-primary", "relay-nobalance", "relay-newapi"],
       cross_pool_fallback: false,
       retry_budget: 2,
       timeout_open_after: 3,
@@ -698,9 +907,41 @@ describe("App shell", () => {
     });
 
     expect(await screen.findByLabelText(/retry budget/i)).toHaveValue("1");
-    expect(screen.getByLabelText(/selection order/i)).toHaveValue(
+    expect(screen.getByLabelText(/^Selection Order$/)).toHaveValue(
       "official-primary, relay-newapi",
     );
+  });
+
+  it("shows validation feedback before saving an invalid policy", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /policies/i }));
+    });
+
+    const retryBudget = await screen.findByLabelText(/retry budget/i);
+    fireEvent.change(retryBudget, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save policy/i }));
+
+    expect(await screen.findByText("Retry budget must be a positive integer.")).toBeInTheDocument();
+    expect(updatePolicy).not.toHaveBeenCalled();
+  });
+
+  it("shows candidate preview and ordering controls while editing policies", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /policies/i }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /candidate preview/i })).toBeInTheDocument();
+    expect(screen.getByText(/eligible candidates: official-primary, relay-newapi/i)).toBeInTheDocument();
+    expect(screen.getByText(/rejected candidates: relay-nobalance/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add relay-nobalance" }));
+    expect(
+      screen.getByText(/eligible candidates: official-primary, relay-newapi, relay-nobalance/i),
+    ).toBeInTheDocument();
   });
 
   it("shows request history and request-detail affordances", async () => {
@@ -729,6 +970,36 @@ describe("App shell", () => {
 
     expect(await screen.findByRole("heading", { name: /request history/i })).toBeInTheDocument();
     expect(screen.getByText(/usage provenance/i)).toBeInTheDocument();
+  });
+
+  it("renders auth and provider diagnostics inside the logs console", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /logs/i }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /provider diagnostics/i })).toBeInTheDocument();
+    expect(screen.getByText(/auth health/i)).toBeInTheDocument();
+    expect(screen.getByText(/provider health/i)).toBeInTheDocument();
+  });
+
+  it("reveals diagnostics detail rows when an operator expands a section row", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /logs/i }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /provider diagnostics/i })).toBeInTheDocument();
+
+    const detailToggles = screen.getAllByText(/view details/i);
+    await act(async () => {
+      fireEvent.click(detailToggles[0]);
+    });
+
+    expect(screen.getByText("account_id")).toBeInTheDocument();
+    expect(screen.getByText("openai-primary")).toBeInTheDocument();
   });
 
   it("clears stale request detail when detail loading fails", async () => {

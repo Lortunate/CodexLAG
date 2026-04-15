@@ -4,6 +4,10 @@ use std::time::SystemTime;
 use tauri::State;
 
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
+use crate::logging::diagnostics::build_provider_diagnostics_summary;
+pub use crate::logging::diagnostics::{
+    DiagnosticsDetail, DiagnosticsRow, DiagnosticsSection, ProviderDiagnosticsSummary,
+};
 use crate::logging::redaction::redact_sensitive_value;
 use crate::logging::usage::{
     UsageCost, UsageLedger, UsageLedgerQuery, UsageProvenance, UsageRequestDetail,
@@ -97,12 +101,26 @@ pub fn get_runtime_log_metadata(state: State<'_, RuntimeState>) -> Result<Runtim
 }
 
 #[tauri::command]
+pub fn get_provider_diagnostics(
+    state: State<'_, RuntimeState>,
+) -> Result<ProviderDiagnosticsSummary> {
+    provider_diagnostics_from_runtime(&state)
+}
+
+#[tauri::command]
 pub fn export_runtime_diagnostics(state: State<'_, RuntimeState>) -> Result<String> {
     export_runtime_diagnostics_from_runtime(&state)
 }
 
+pub fn provider_diagnostics_from_runtime(
+    runtime: &RuntimeState,
+) -> Result<ProviderDiagnosticsSummary> {
+    Ok(build_provider_diagnostics_summary(runtime))
+}
+
 pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result<String> {
     let metadata = runtime_log_metadata_from_runtime(runtime)?;
+    let diagnostics = provider_diagnostics_from_runtime(runtime)?;
     let log_dir = runtime.runtime_log().log_dir.clone();
     let diagnostics_dir = log_dir.join("diagnostics");
     std::fs::create_dir_all(&diagnostics_dir).map_err(|error| {
@@ -138,9 +156,18 @@ pub fn export_runtime_diagnostics_from_runtime(runtime: &RuntimeState) -> Result
             "command=export_runtime_diagnostics;operation=serialize_manifest_files;cause={error}"
         ))
     })?;
+    let provider_diagnostics_payload = serde_json::to_string(&diagnostics).map_err(|error| {
+        CodexLagError::config(
+            ConfigErrorKind::Unknown,
+            "Failed to serialize provider diagnostics summary.",
+        )
+        .with_internal_context(format!(
+            "command=export_runtime_diagnostics;operation=serialize_provider_diagnostics;cause={error}"
+        ))
+    })?;
     let manifest_path = diagnostics_dir.join("diagnostics-manifest.txt");
     let manifest = redact_sensitive_value(&format!(
-        "generated_at_unix={generated_at_unix}\nlog_dir={}\nfiles_count={}\nfiles={files_payload}\n",
+        "generated_at_unix={generated_at_unix}\nlog_dir={}\nfiles_count={}\nfiles={files_payload}\nprovider_diagnostics={provider_diagnostics_payload}\n",
         metadata.log_dir,
         metadata.files.len()
     ));

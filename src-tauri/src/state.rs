@@ -4,6 +4,9 @@ use std::{
     time::SystemTime,
 };
 
+use crate::auth::openai::{
+    OpenAiAuthRuntime, OpenAiSessionRefresher, ReqwestOpenAiSessionRefresher,
+};
 use crate::db::repositories::{Repositories, UsageCostEstimate};
 use crate::error::CodexLagError;
 use crate::gateway::{
@@ -11,7 +14,9 @@ use crate::gateway::{
     server::LoopbackGateway,
 };
 use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
-use crate::models::{ImportedOfficialAccount, ManagedRelay, PlatformKey, RoutingPolicy};
+use crate::models::{
+    ImportedOfficialAccount, ManagedRelay, PlatformKey, ProviderSessionSummary, RoutingPolicy,
+};
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
 use crate::tray::{build_tray_model_for_runtime, TrayModel};
@@ -101,11 +106,22 @@ impl AppState {
         self.repositories.iter_imported_official_accounts()
     }
 
+    pub fn iter_provider_sessions(&self) -> impl Iterator<Item = &ProviderSessionSummary> {
+        self.repositories.iter_provider_sessions()
+    }
+
     pub fn save_imported_official_account(
         &mut self,
         account: ImportedOfficialAccount,
     ) -> crate::error::Result<()> {
         self.repositories.save_imported_official_account(account)
+    }
+
+    pub fn save_provider_session(
+        &mut self,
+        session: ProviderSessionSummary,
+    ) -> crate::error::Result<()> {
+        self.repositories.save_provider_session(session)
     }
 
     pub fn managed_relay(&self, relay_id: &str) -> Option<&ManagedRelay> {
@@ -277,6 +293,7 @@ fn is_runtime_log_file_name(file_name: &str) -> bool {
 #[derive(Clone)]
 pub struct RuntimeState {
     app_state: Arc<RwLock<AppState>>,
+    openai_auth: Arc<RwLock<OpenAiAuthRuntime>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     loopback_gateway: Arc<RwLock<LoopbackGateway>>,
     gateway_host: Arc<RwLock<Option<GatewayHost>>>,
@@ -288,12 +305,16 @@ pub struct RuntimeState {
 impl RuntimeState {
     pub fn new(app_state: AppState, runtime_log: RuntimeLogConfig) -> Self {
         let app_state = Arc::new(RwLock::new(app_state));
+        let openai_auth = Arc::new(RwLock::new(OpenAiAuthRuntime::from_shared_app_state(
+            Arc::clone(&app_state),
+        )));
         let usage_records = Arc::new(RwLock::new(Vec::new()));
         let loopback_gateway =
             LoopbackGateway::new(Arc::clone(&app_state), Arc::clone(&usage_records));
 
         Self {
             app_state,
+            openai_auth,
             usage_records,
             loopback_gateway: Arc::new(RwLock::new(loopback_gateway)),
             gateway_host: Arc::new(RwLock::new(None)),
@@ -304,7 +325,40 @@ impl RuntimeState {
     }
 
     pub fn start(app_state: AppState, runtime_log: RuntimeLogConfig) -> crate::error::Result<Self> {
+        let refresher = ReqwestOpenAiSessionRefresher::new();
+        Self::start_with_openai_refresher(app_state, runtime_log, &refresher)
+    }
+
+    pub fn start_with_openai_refresher<R: OpenAiSessionRefresher>(
+        app_state: AppState,
+        runtime_log: RuntimeLogConfig,
+        refresher: &R,
+    ) -> crate::error::Result<Self> {
         let runtime = Self::new(app_state, runtime_log);
+        let account_ids = runtime
+            .list_provider_sessions()?
+            .into_iter()
+            .map(|session| session.account_id)
+            .collect::<Vec<_>>();
+        let now_ms = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+            .unwrap_or_default();
+
+        for account_id in account_ids {
+            let refresh_result = {
+                let mut auth = runtime.openai_auth_mut();
+                auth.refresh_session_if_needed(account_id.as_str(), now_ms, refresher)
+            };
+            if let Err(error) = refresh_result {
+                log::warn!(
+                    "failed to refresh openai session '{}' during runtime startup: {}",
+                    account_id,
+                    error
+                );
+            }
+        }
+
         let host = GatewayHost::start(runtime.loopback_gateway().router())?;
         runtime.set_gateway_host(Some(host))?;
         Ok(runtime)
@@ -320,6 +374,12 @@ impl RuntimeState {
         self.app_state
             .write()
             .expect("runtime app state lock poisoned")
+    }
+
+    pub fn openai_auth_mut(&self) -> RwLockWriteGuard<'_, OpenAiAuthRuntime> {
+        self.openai_auth
+            .write()
+            .expect("runtime openai auth lock poisoned")
     }
 
     pub fn loopback_gateway(&self) -> LoopbackGateway {
@@ -371,6 +431,20 @@ impl RuntimeState {
 
     pub fn set_current_mode(&self, mode: RoutingMode) -> crate::error::Result<()> {
         self.app_state_mut().set_default_key_allowed_mode(mode)
+    }
+
+    pub fn list_provider_sessions(&self) -> crate::error::Result<Vec<ProviderSessionSummary>> {
+        let mut sessions = self
+            .app_state()
+            .iter_provider_sessions()
+            .cloned()
+            .collect::<Vec<_>>();
+        sessions.sort_by(|left, right| {
+            left.provider_id
+                .cmp(&right.provider_id)
+                .then_with(|| left.account_id.cmp(&right.account_id))
+        });
+        Ok(sessions)
     }
 
     pub fn rebuild_gateway_candidates(&self) -> crate::error::Result<()> {

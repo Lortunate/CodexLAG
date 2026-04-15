@@ -69,7 +69,10 @@ async fn post_loopback_request_with_retry(platform_key_secret: &str) -> reqwest:
                 drop(response);
             }
             Ok(response) => {
-                panic!("gateway request should return 200, got: {}", response.status())
+                panic!(
+                    "gateway request should return 200, got: {}",
+                    response.status()
+                )
             }
             Err(_) if attempt < 9 => tokio::time::sleep(Duration::from_millis(200)).await,
             Err(error) => panic!("send gateway request: {error}"),

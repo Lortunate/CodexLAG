@@ -17,12 +17,18 @@ import {
   CodexLagInvokeError,
   createPlatformKey,
   getAccountCapabilityDetail,
+  getProviderDiagnostics,
   getRelayCapabilityDetail,
   listAccounts,
+  listProviderInventory,
+  listProviderSessions,
   listPolicies,
   getUsageRequestDetail,
+  logoutOpenAiSession,
   refreshAccountBalance,
+  refreshOpenAiSession,
   refreshRelayBalance,
+  startOpenAiBrowserLogin,
 } from "../lib/tauri";
 
 async function expectInvokeError(operation: Promise<unknown>): Promise<CodexLagInvokeError> {
@@ -48,6 +54,7 @@ describe("tauri wrappers", () => {
     await getAccountCapabilityDetail("acc-2");
     await refreshRelayBalance("relay-1");
     await getUsageRequestDetail("req-7");
+    await getProviderDiagnostics();
     await createPlatformKey({
       key_id: "key-new",
       name: "new key",
@@ -67,7 +74,8 @@ describe("tauri wrappers", () => {
     expect(invokeMock).toHaveBeenNthCalledWith(4, "get_usage_request_detail", {
       request_id: "req-7",
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(5, "create_platform_key", {
+    expect(invokeMock).toHaveBeenNthCalledWith(5, "get_provider_diagnostics");
+    expect(invokeMock).toHaveBeenNthCalledWith(6, "create_platform_key", {
       input: {
         key_id: "key-new",
         name: "new key",
@@ -75,6 +83,106 @@ describe("tauri wrappers", () => {
         allowed_mode: "hybrid",
       },
     });
+  });
+
+  it("starts OpenAI browser login through the dedicated command surface", async () => {
+    invokeMock.mockResolvedValue({
+      summary: {
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "pending",
+        expires_at_ms: null,
+        last_refresh_at_ms: null,
+        last_refresh_error: null,
+      },
+      authorization_url: "https://auth.openai.com/oauth/authorize?response_type=code",
+      callback_url: "http://127.0.0.1:1455/auth/openai/callback",
+    });
+
+    const pending = await startOpenAiBrowserLogin();
+
+    expect(invokeMock).toHaveBeenCalledWith("start_openai_browser_login");
+    expect(pending.summary.provider_id).toBe("openai_official");
+    expect(pending.callback_url).toContain("127.0.0.1");
+  });
+
+  it("lists provider sessions through the dedicated command surface", async () => {
+    invokeMock.mockResolvedValue([
+      {
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "active",
+        expires_at_ms: 1_731_111_111_000,
+        last_refresh_at_ms: 1_731_111_000_500,
+        last_refresh_error: null,
+      },
+    ]);
+
+    const sessions = await listProviderSessions();
+
+    expect(invokeMock).toHaveBeenCalledWith("list_provider_sessions");
+    expect(sessions[0]?.account_id).toBe("openai-primary");
+  });
+
+  it("lists normalized provider inventory through the dedicated command surface", async () => {
+    invokeMock.mockResolvedValue({
+      accounts: [
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "active",
+          available: true,
+          registered: true,
+          base_url: null,
+        },
+      ],
+      models: [
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          model_id: "gpt-5-mini",
+          supports_tools: true,
+          supports_streaming: true,
+          supports_reasoning: true,
+          source: "session",
+        },
+      ],
+    });
+
+    const inventory = await listProviderInventory();
+
+    expect(invokeMock).toHaveBeenCalledWith("list_provider_inventory");
+    expect(inventory.accounts[0]?.display_name).toBe("OpenAI Primary");
+    expect(inventory.models[0]?.model_id).toBe("gpt-5-mini");
+  });
+
+  it("refreshes and logs out an OpenAI provider session through the dedicated command surface", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "active",
+        expires_at_ms: 1_731_111_222_000,
+        last_refresh_at_ms: 1_731_111_111_000,
+        last_refresh_error: null,
+      })
+      .mockResolvedValueOnce(true);
+
+    const refreshed = await refreshOpenAiSession("openai-primary");
+    const loggedOut = await logoutOpenAiSession("openai-primary");
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "refresh_openai_session", {
+      account_id: "openai-primary",
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "logout_openai_session", {
+      account_id: "openai-primary",
+    });
+    expect(refreshed.last_refresh_at_ms).toBe(1_731_111_111_000);
+    expect(loggedOut).toBe(true);
   });
 
   it("normalizes relay capability queryable adapter values from backend shape", async () => {

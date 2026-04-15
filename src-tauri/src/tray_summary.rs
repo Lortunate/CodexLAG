@@ -44,6 +44,13 @@ pub fn build_tray_summary_for_runtime(runtime: &RuntimeState) -> TraySummaryMode
         gateway_status_label.push_str(" | last restart: ");
         gateway_status_label.push_str(&feedback);
     }
+    if let Some(last_route) = gateway_state.last_route_debug() {
+        gateway_status_label.push_str(" | last route: ");
+        gateway_status_label.push_str(&last_route.selected_endpoint_id);
+        gateway_status_label.push_str(" (attempts ");
+        gateway_status_label.push_str(&last_route.attempt_count.to_string());
+        gateway_status_label.push(')');
+    }
 
     let now_ms = wall_clock_now_ms();
     let mut available_official = 0usize;

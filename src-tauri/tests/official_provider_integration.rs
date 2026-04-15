@@ -15,7 +15,9 @@ use codexlag_lib::bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_te
 use codexlag_lib::commands::accounts::{
     import_official_account_login_from_runtime, OfficialAccountImportInput,
 };
-use codexlag_lib::commands::logs::{usage_request_detail_from_runtime, usage_request_history_from_runtime};
+use codexlag_lib::commands::logs::{
+    usage_request_detail_from_runtime, usage_request_history_from_runtime,
+};
 use codexlag_lib::secret_store::SecretKey;
 use codexlag_lib::state::{RuntimeLogConfig, RuntimeState};
 use serde_json::{json, Value};
@@ -253,5 +255,8 @@ async fn official_provider_invokes_real_upstream_request_from_imported_login_sta
     assert_eq!(detail.output_tokens, 7);
     assert_eq!(detail.cache_read_tokens, 2);
     assert_eq!(detail.reasoning_tokens, 3);
-    assert_eq!(captured.values(), vec!["Bearer official-live-key".to_string()]);
+    assert_eq!(
+        captured.values(),
+        vec!["Bearer official-live-key".to_string()]
+    );
 }

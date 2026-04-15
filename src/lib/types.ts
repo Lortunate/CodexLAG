@@ -33,6 +33,47 @@ export interface AccountSummary {
   provider: string;
 }
 
+export interface ProviderSessionSummary {
+  provider_id: string;
+  account_id: string;
+  display_name: string;
+  auth_state: string;
+  expires_at_ms: number | null;
+  last_refresh_at_ms: number | null;
+  last_refresh_error: string | null;
+}
+
+export interface ProviderAccountSummary {
+  provider_id: string;
+  account_id: string;
+  display_name: string;
+  auth_state: string;
+  available: boolean;
+  registered: boolean;
+  base_url: string | null;
+}
+
+export interface ModelCapabilitySummary {
+  provider_id: string;
+  account_id: string;
+  model_id: string;
+  supports_tools: boolean;
+  supports_streaming: boolean;
+  supports_reasoning: boolean;
+  source: string;
+}
+
+export interface ProviderInventorySummary {
+  accounts: ProviderAccountSummary[];
+  models: ModelCapabilitySummary[];
+}
+
+export interface PendingOpenAiBrowserLogin {
+  summary: ProviderSessionSummary;
+  authorization_url: string;
+  callback_url: string;
+}
+
 export interface OfficialAccountImportInput {
   account_id: string;
   name: string;
@@ -221,6 +262,11 @@ export interface PolicyUpdateInput {
   success_close_after: number;
 }
 
+export interface PolicyPreviewSummary {
+  eligible_candidates: string[];
+  rejected_candidates: string[];
+}
+
 export interface LogSummary {
   last_event: string;
   level: string;
@@ -236,4 +282,29 @@ export interface RuntimeLogFileMetadata {
 export interface RuntimeLogMetadata {
   log_dir: string;
   files: RuntimeLogFileMetadata[];
+}
+
+export interface DiagnosticsDetail {
+  label: string;
+  value: string;
+}
+
+export interface DiagnosticsRow {
+  key: string;
+  label: string;
+  status: string;
+  value: string;
+  details: DiagnosticsDetail[];
+}
+
+export interface DiagnosticsSection {
+  id: string;
+  title: string;
+  status: string;
+  summary: string;
+  rows: DiagnosticsRow[];
+}
+
+export interface ProviderDiagnosticsSummary {
+  sections: DiagnosticsSection[];
 }

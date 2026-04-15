@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { PolicySummary, PolicyUpdateInput } from "../../lib/types";
+import { z } from "zod";
+import type { PolicyPreviewSummary, PolicySummary, PolicyUpdateInput } from "../../lib/types";
 
 interface PolicyEditorProps {
   endpointIds: string[];
@@ -23,6 +24,46 @@ interface PolicyDraft {
   success_close_after: string;
 }
 
+const PolicySchema = z.object({
+  name: z.string().trim().min(1, { error: "Policy name is required." }),
+  selection_order: z.array(z.string()).min(1, {
+    error: "Selection order must include at least one endpoint.",
+  }),
+  cross_pool_fallback: z.boolean({
+    error: "Select a cross-pool fallback behavior.",
+  }),
+  retry_budget: z.number({ error: "Retry budget must be a positive integer." }).int().positive({
+    error: "Retry budget must be a positive integer.",
+  }),
+  timeout_open_after: z
+    .number({ error: "Timeout open after must be a positive integer." })
+    .int()
+    .positive({
+      error: "Timeout open after must be a positive integer.",
+    }),
+  server_error_open_after: z
+    .number({ error: "Server error open after must be a positive integer." })
+    .int()
+    .positive({
+      error: "Server error open after must be a positive integer.",
+    }),
+  cooldown_ms: z.number({ error: "Cooldown must be a positive integer." }).int().positive({
+    error: "Cooldown must be a positive integer.",
+  }),
+  half_open_after_ms: z
+    .number({ error: "Half open after must be a positive integer." })
+    .int()
+    .positive({
+      error: "Half open after must be a positive integer.",
+    }),
+  success_close_after: z
+    .number({ error: "Success close after must be a positive integer." })
+    .int()
+    .positive({
+      error: "Success close after must be a positive integer.",
+    }),
+});
+
 function policyToDraft(policy: PolicySummary): PolicyDraft {
   return {
     policy_id: policy.policy_id,
@@ -43,6 +84,17 @@ function parsePositiveInteger(raw: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function buildPolicyPreviewSummary(
+  selectionOrder: string[],
+  endpointIds: string[],
+): PolicyPreviewSummary {
+  const endpointSet = new Set(endpointIds);
+  return {
+    eligible_candidates: selectionOrder.filter((endpointId) => endpointSet.has(endpointId)),
+    rejected_candidates: endpointIds.filter((endpointId) => !selectionOrder.includes(endpointId)),
+  };
+}
+
 export function PolicyEditor({
   endpointIds,
   errorMessage,
@@ -53,6 +105,7 @@ export function PolicyEditor({
 }: PolicyEditorProps) {
   const [activePolicyId, setActivePolicyId] = useState("");
   const [draftsByPolicyId, setDraftsByPolicyId] = useState<Record<string, PolicyDraft>>({});
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
 
   useEffect(() => {
     if (policies.length === 0) {
@@ -77,6 +130,7 @@ export function PolicyEditor({
       }
       return policies[0].policy_id;
     });
+    setShowValidationErrors(false);
   }, [policies]);
 
   const activePolicy = useMemo(
@@ -98,17 +152,37 @@ export function PolicyEditor({
   const cooldownMs = activeDraft ? parsePositiveInteger(activeDraft.cooldown_ms) : null;
   const halfOpenAfterMs = activeDraft ? parsePositiveInteger(activeDraft.half_open_after_ms) : null;
   const successCloseAfter = activeDraft ? parsePositiveInteger(activeDraft.success_close_after) : null;
-  const canSave =
-    !!activeDraft &&
-    activeDraft.name.trim().length > 0 &&
-    selectionOrder.length > 0 &&
-    activeDraft.cross_pool_fallback !== null &&
-    retryBudget !== null &&
-    timeoutOpenAfter !== null &&
-    serverErrorOpenAfter !== null &&
-    cooldownMs !== null &&
-    halfOpenAfterMs !== null &&
-    successCloseAfter !== null;
+  const validationResult = useMemo(() => {
+    if (!activeDraft) {
+      return null;
+    }
+
+    return PolicySchema.safeParse({
+      name: activeDraft.name.trim(),
+      selection_order: selectionOrder,
+      cross_pool_fallback: activeDraft.cross_pool_fallback ?? undefined,
+      retry_budget: retryBudget ?? undefined,
+      timeout_open_after: timeoutOpenAfter ?? undefined,
+      server_error_open_after: serverErrorOpenAfter ?? undefined,
+      cooldown_ms: cooldownMs ?? undefined,
+      half_open_after_ms: halfOpenAfterMs ?? undefined,
+      success_close_after: successCloseAfter ?? undefined,
+    });
+  }, [
+    activeDraft,
+    cooldownMs,
+    halfOpenAfterMs,
+    retryBudget,
+    selectionOrder,
+    serverErrorOpenAfter,
+    successCloseAfter,
+    timeoutOpenAfter,
+  ]);
+  const fieldErrors =
+    showValidationErrors && validationResult && !validationResult.success
+      ? validationResult.error.flatten().fieldErrors
+      : {};
+  const canSave = !!validationResult?.success;
   const crossPoolFallbackValue = activeDraft
     ? activeDraft.cross_pool_fallback === null
       ? ""
@@ -116,19 +190,26 @@ export function PolicyEditor({
         ? "true"
         : "false"
     : "";
+  const availableEndpointIds = endpointIds.filter((endpointId) => !selectionOrder.includes(endpointId));
+  const previewSummary = buildPolicyPreviewSummary(selectionOrder, endpointIds);
+
+  function updateSelectionOrder(nextSelectionOrder: string[]) {
+    if (!activeDraft) {
+      return;
+    }
+    setDraftsByPolicyId((current) => ({
+      ...current,
+      [activeDraft.policy_id]: {
+        ...activeDraft,
+        selection_order: nextSelectionOrder.join(", "),
+      },
+    }));
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (
-      !activeDraft ||
-      activeDraft.cross_pool_fallback === null ||
-      retryBudget === null ||
-      timeoutOpenAfter === null ||
-      serverErrorOpenAfter === null ||
-      cooldownMs === null ||
-      halfOpenAfterMs === null ||
-      successCloseAfter === null
-    ) {
+    setShowValidationErrors(true);
+    if (!activeDraft || !validationResult?.success) {
       return;
     }
 
@@ -144,6 +225,7 @@ export function PolicyEditor({
       half_open_after_ms: halfOpenAfterMs,
       success_close_after: successCloseAfter,
     });
+    setShowValidationErrors(false);
   }
 
   return (
@@ -190,27 +272,83 @@ export function PolicyEditor({
               }}
             />
           </label>
+          {fieldErrors.name?.[0] ? <span role="alert">{fieldErrors.name[0]}</span> : null}
         </p>
         <p>
           <label>
             Selection Order
             <input
-              value={activeDraft?.selection_order ?? ""}
-              onChange={(event) => {
-                if (!activeDraft) {
-                  return;
-                }
-                setDraftsByPolicyId((current) => ({
-                  ...current,
-                  [activeDraft.policy_id]: {
-                    ...activeDraft,
-                    selection_order: event.target.value,
-                  },
-                }));
-              }}
+              readOnly
+              value={selectionOrder.join(", ")}
             />
           </label>
+          {fieldErrors.selection_order?.[0] ? (
+            <span role="alert">{fieldErrors.selection_order[0]}</span>
+          ) : null}
         </p>
+        <div aria-label="Selection order controls">
+          <p className="text-sm text-muted-foreground">
+            Reorder candidates explicitly instead of editing a comma-separated string.
+          </p>
+          <ul>
+            {selectionOrder.map((endpointId, index) => (
+              <li key={endpointId}>
+                <span>{endpointId}</span>{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (index === 0) {
+                      return;
+                    }
+                    const next = [...selectionOrder];
+                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                    updateSelectionOrder(next);
+                  }}
+                >
+                  Move {endpointId} up
+                </button>{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (index === selectionOrder.length - 1) {
+                      return;
+                    }
+                    const next = [...selectionOrder];
+                    [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                    updateSelectionOrder(next);
+                  }}
+                >
+                  Move {endpointId} down
+                </button>{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSelectionOrder(selectionOrder.filter((candidate) => candidate !== endpointId))
+                  }
+                >
+                  Remove {endpointId}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {availableEndpointIds.length > 0 ? (
+            <div>
+              <p>Available endpoints</p>
+              <ul>
+                {availableEndpointIds.map((endpointId) => (
+                  <li key={endpointId}>
+                    <button
+                      type="button"
+                      onClick={() => updateSelectionOrder([...selectionOrder, endpointId])}
+                    >
+                      Add {endpointId}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
         <p>
           <label>
             Cross Pool Fallback
@@ -236,6 +374,9 @@ export function PolicyEditor({
               <option value="true">true</option>
             </select>
           </label>
+          {fieldErrors.cross_pool_fallback?.[0] ? (
+            <span role="alert">{fieldErrors.cross_pool_fallback[0]}</span>
+          ) : null}
         </p>
         <p>
           <label>
@@ -253,6 +394,9 @@ export function PolicyEditor({
               }}
             />
           </label>
+          {fieldErrors.retry_budget?.[0] ? (
+            <span role="alert">{fieldErrors.retry_budget[0]}</span>
+          ) : null}
         </p>
         <p>
           <label>
@@ -273,6 +417,9 @@ export function PolicyEditor({
               }}
             />
           </label>
+          {fieldErrors.timeout_open_after?.[0] ? (
+            <span role="alert">{fieldErrors.timeout_open_after[0]}</span>
+          ) : null}
         </p>
         <p>
           <label>
@@ -293,6 +440,9 @@ export function PolicyEditor({
               }}
             />
           </label>
+          {fieldErrors.server_error_open_after?.[0] ? (
+            <span role="alert">{fieldErrors.server_error_open_after[0]}</span>
+          ) : null}
         </p>
         <p>
           <label>
@@ -313,6 +463,9 @@ export function PolicyEditor({
               }}
             />
           </label>
+          {fieldErrors.cooldown_ms?.[0] ? (
+            <span role="alert">{fieldErrors.cooldown_ms[0]}</span>
+          ) : null}
         </p>
         <p>
           <label>
@@ -333,6 +486,9 @@ export function PolicyEditor({
               }}
             />
           </label>
+          {fieldErrors.half_open_after_ms?.[0] ? (
+            <span role="alert">{fieldErrors.half_open_after_ms[0]}</span>
+          ) : null}
         </p>
         <p>
           <label>
@@ -353,11 +509,19 @@ export function PolicyEditor({
               }}
             />
           </label>
+          {fieldErrors.success_close_after?.[0] ? (
+            <span role="alert">{fieldErrors.success_close_after[0]}</span>
+          ) : null}
         </p>
-        <button type="submit" disabled={isSaving || policies.length === 0 || !canSave}>
+        <button type="submit" disabled={isSaving || policies.length === 0}>
           Save policy
         </button>
       </form>
+      <section aria-labelledby="policy-preview-heading">
+        <h4 id="policy-preview-heading">Candidate preview</h4>
+        <p>Eligible candidates: {previewSummary.eligible_candidates.join(", ") || "none"}</p>
+        <p>Rejected candidates: {previewSummary.rejected_candidates.join(", ") || "none"}</p>
+      </section>
       {endpointIds.length > 0 ? (
         <p>Known endpoint ids: {endpointIds.join(", ")}</p>
       ) : null}

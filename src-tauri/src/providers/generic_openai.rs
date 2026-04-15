@@ -1,5 +1,6 @@
-use reqwest::StatusCode;
-use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+use serde::Deserialize;
 use serde_json::json;
 
 use crate::error::{
@@ -9,111 +10,51 @@ use crate::providers::invocation::{
     InvocationFailure, InvocationFailureClass, InvocationOutcome, InvocationSuccessMetadata,
     InvocationUsageDimensions,
 };
+use crate::providers::registry::ProviderAdapter;
+use reqwest::StatusCode;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct NormalizedBalance {
-    pub total: String,
-    pub used: String,
-}
+pub const GENERIC_OPENAI_PROVIDER_ID: &str = "generic_openai_compatible";
+const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+pub const GENERIC_OPENAI_DEFAULT_MODELS: &[&str] = &["gpt-4o-mini"];
+const DEFAULT_MODEL: &str = GENERIC_OPENAI_DEFAULT_MODELS[0];
 
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum RelayBalanceAdapter {
-    NewApi,
-    NoBalance,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum RelayBalanceCapability {
-    Queryable { adapter: RelayBalanceAdapter },
-    Unsupported,
-}
-
-#[non_exhaustive]
 #[derive(Debug)]
-pub enum RelayBalanceError {
-    Payload(serde_json::Error),
-}
+pub struct GenericOpenAiAdapter;
 
-pub fn relay_balance_capability(adapter: RelayBalanceAdapter) -> RelayBalanceCapability {
-    match adapter {
-        RelayBalanceAdapter::NewApi => RelayBalanceCapability::Queryable { adapter },
-        RelayBalanceAdapter::NoBalance => RelayBalanceCapability::Unsupported,
+impl ProviderAdapter for GenericOpenAiAdapter {
+    fn provider_id(&self) -> &'static str {
+        GENERIC_OPENAI_PROVIDER_ID
+    }
+
+    fn supports_browser_login(&self) -> bool {
+        false
+    }
+
+    fn supports_balance(&self) -> bool {
+        false
     }
 }
 
-impl RelayBalanceError {
-    pub fn is_payload_error(&self) -> bool {
-        matches!(self, Self::Payload(_))
-    }
+static GENERIC_OPENAI_ADAPTER: GenericOpenAiAdapter = GenericOpenAiAdapter;
 
-    pub fn into_codex_lag_error(self) -> CodexLagError {
-        match self {
-            Self::Payload(error) => CodexLagError::upstream(
-                UpstreamErrorKind::RelayPayloadInvalid,
-                "Relay returned an unsupported balance payload format.",
-            )
-            .with_internal_context(format!("provider=relay;payload_parse={error}")),
-        }
-    }
+pub fn provider_adapter() -> &'static dyn ProviderAdapter {
+    &GENERIC_OPENAI_ADAPTER
 }
 
-impl From<serde_json::Error> for RelayBalanceError {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Payload(value)
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenericOpenAiConfig {
+    pub api_key: String,
+    pub base_url: String,
+    pub manual_models: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct NewApiPayload {
-    data: NewApiBalanceData,
-}
-
-#[derive(Debug, Deserialize)]
-struct NewApiBalanceData {
-    total_balance: String,
-    used_balance: String,
-}
-
-pub fn normalize_relay_balance_response(
-    adapter: RelayBalanceAdapter,
-    body: &str,
-) -> Result<Option<NormalizedBalance>, RelayBalanceError> {
-    match adapter {
-        RelayBalanceAdapter::NewApi => Ok(Some(
-            normalize_newapi_balance_response(body).map_err(RelayBalanceError::from)?,
-        )),
-        RelayBalanceAdapter::NoBalance => Ok(None),
-    }
-}
-
-fn normalize_newapi_balance_response(body: &str) -> Result<NormalizedBalance, serde_json::Error> {
-    let payload: NewApiPayload = serde_json::from_str(body)?;
-    Ok(NormalizedBalance {
-        total: payload.data.total_balance,
-        used: payload.data.used_balance,
-    })
-}
-
-pub fn query_newapi_balance(
-    endpoint: &str,
-    api_key: &str,
-) -> Result<NormalizedBalance, CodexLagError> {
-    if api_key.trim().is_empty() {
-        return Err(
-            CodexLagError::new("relay api key cannot be empty").with_internal_context(format!(
-                "provider=relay;operation=query_newapi_balance;endpoint={endpoint}"
-            )),
-        );
-    }
-
-    let payload = newapi_balance_payload_for_endpoint(endpoint);
-    let normalized = normalize_relay_balance_response(RelayBalanceAdapter::NewApi, payload)
-        .map_err(|error| error.into_codex_lag_error())?
-        .ok_or_else(|| CodexLagError::new("newapi balance payload missing data"))?;
-    Ok(normalized)
+struct GenericOpenAiCredentialSecret {
+    api_key: String,
+    #[serde(default)]
+    base_url: Option<String>,
+    #[serde(default)]
+    manual_models: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,24 +88,122 @@ struct CompletionTokenDetails {
     reasoning_tokens: u32,
 }
 
-pub async fn invoke_newapi_relay(
-    endpoint: &str,
-    api_key: &str,
+#[derive(Debug, Default, Deserialize)]
+struct ModelListResponse {
+    #[serde(default)]
+    data: Vec<ModelDescriptor>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelDescriptor {
+    id: String,
+}
+
+pub fn parse_generic_openai_config(secret: &str) -> Result<GenericOpenAiConfig, ()> {
+    if let Ok(parsed) = serde_json::from_str::<GenericOpenAiCredentialSecret>(secret) {
+        let api_key = parsed.api_key.trim().to_string();
+        if api_key.is_empty() {
+            return Err(());
+        }
+        return Ok(GenericOpenAiConfig {
+            api_key,
+            base_url: normalize_base_url(parsed.base_url.as_deref()),
+            manual_models: normalize_manual_models(parsed.manual_models),
+        });
+    }
+
+    let api_key = secret.trim().to_string();
+    if api_key.is_empty() {
+        return Err(());
+    }
+
+    Ok(GenericOpenAiConfig {
+        api_key,
+        base_url: DEFAULT_BASE_URL.to_string(),
+        manual_models: Vec::new(),
+    })
+}
+
+pub fn normalize_base_url(base_url: Option<&str>) -> String {
+    let raw = base_url.unwrap_or(DEFAULT_BASE_URL).trim();
+    let trimmed = raw.trim_end_matches('/');
+    if trimmed.ends_with("/v1") {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}/v1")
+    }
+}
+
+pub fn normalize_manual_models(models: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for model in models {
+        let model = model.trim();
+        if model.is_empty() {
+            continue;
+        }
+        if normalized.iter().any(|existing| existing == model) {
+            continue;
+        }
+        normalized.push(model.to_string());
+    }
+    normalized
+}
+
+pub fn generic_openai_inventory_models(config: &GenericOpenAiConfig) -> Vec<String> {
+    if !config.manual_models.is_empty() {
+        return config.manual_models.clone();
+    }
+
+    if let Some(discovered) = discover_generic_openai_models(config) {
+        return discovered;
+    }
+
+    GENERIC_OPENAI_DEFAULT_MODELS
+        .iter()
+        .map(|model| (*model).to_string())
+        .collect()
+}
+
+fn discover_generic_openai_models(config: &GenericOpenAiConfig) -> Option<Vec<String>> {
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .ok()?
+        .get(format!("{}/models", config.base_url))
+        .bearer_auth(config.api_key.as_str())
+        .send()
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let payload = response.json::<ModelListResponse>().ok()?;
+    let models = normalize_manual_models(payload.data.into_iter().map(|model| model.id).collect());
+    (!models.is_empty()).then_some(models)
+}
+
+pub async fn invoke_generic_openai(
+    secret: &str,
     request_id: &str,
     attempt_id: &str,
     endpoint_id: &str,
 ) -> InvocationOutcome {
-    if api_key.trim().is_empty() {
-        return Err(config_failure(request_id, attempt_id, endpoint_id, None));
-    }
+    let config = match parse_generic_openai_config(secret) {
+        Ok(config) => config,
+        Err(_) => return Err(config_failure(request_id, attempt_id, endpoint_id, None)),
+    };
 
-    let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
-    let client = reqwest::Client::new();
-    let response = match client
+    let model = config
+        .manual_models
+        .first()
+        .cloned()
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let url = format!("{}/chat/completions", config.base_url);
+    let response = match reqwest::Client::new()
         .post(url)
-        .bearer_auth(api_key)
+        .bearer_auth(config.api_key)
         .json(&json!({
-            "model": "gpt-4o-mini",
+            "model": model,
             "messages": [
                 {
                     "role": "user",
@@ -222,7 +261,7 @@ pub async fn invoke_newapi_relay(
         request_id: request_id.to_string(),
         attempt_id: attempt_id.to_string(),
         endpoint_id: endpoint_id.to_string(),
-        model: payload.model.or_else(|| Some("gpt-4o-mini".to_string())),
+        model: payload.model.or(Some(model)),
         upstream_status: status.as_u16(),
         usage_dimensions: Some(InvocationUsageDimensions {
             input_tokens: usage.prompt_tokens,
@@ -234,17 +273,6 @@ pub async fn invoke_newapi_relay(
     })
 }
 
-fn newapi_balance_payload_for_endpoint(endpoint: &str) -> &'static str {
-    if endpoint.contains("badpayload") {
-        return r#"{"data":{"total_balance":"25.00"}}"#;
-    }
-    if endpoint.contains("relay.newapi.example") || endpoint.contains("127.0.0.1:") {
-        return r#"{"data":{"total_balance":"25.00","used_balance":"7.50"}}"#;
-    }
-
-    r#"{"data":{"total_balance":"50.00","used_balance":"10.00"}}"#
-}
-
 fn map_http_status_to_failure(
     request_id: &str,
     attempt_id: &str,
@@ -254,9 +282,7 @@ fn map_http_status_to_failure(
     match status.as_u16() {
         401 | 403 => auth_failure(request_id, attempt_id, endpoint_id, status),
         429 => rate_limit_failure(request_id, attempt_id, endpoint_id, status),
-        code if (500..=599).contains(&code) => {
-            http_failure(request_id, attempt_id, endpoint_id, Some(status))
-        }
+        500..=599 => http_failure(request_id, attempt_id, endpoint_id, Some(status)),
         _ => config_failure(request_id, attempt_id, endpoint_id, Some(status)),
     }
 }
@@ -271,7 +297,7 @@ fn auth_failure(
         request_id: request_id.to_string(),
         attempt_id: attempt_id.to_string(),
         endpoint_id: endpoint_id.to_string(),
-        pool: crate::routing::engine::PoolKind::Relay,
+        pool: crate::routing::engine::PoolKind::Official,
         class: InvocationFailureClass::Auth,
         upstream_status: Some(status.as_u16()),
     }
@@ -287,7 +313,7 @@ fn rate_limit_failure(
         request_id: request_id.to_string(),
         attempt_id: attempt_id.to_string(),
         endpoint_id: endpoint_id.to_string(),
-        pool: crate::routing::engine::PoolKind::Relay,
+        pool: crate::routing::engine::PoolKind::Official,
         class: InvocationFailureClass::Http429,
         upstream_status: Some(status.as_u16()),
     }
@@ -303,9 +329,9 @@ fn http_failure(
         request_id: request_id.to_string(),
         attempt_id: attempt_id.to_string(),
         endpoint_id: endpoint_id.to_string(),
-        pool: crate::routing::engine::PoolKind::Relay,
+        pool: crate::routing::engine::PoolKind::Official,
         class: InvocationFailureClass::Http5xx,
-        upstream_status: status.map(|value| value.as_u16()),
+        upstream_status: status.map(|status| status.as_u16()),
     }
 }
 
@@ -314,7 +340,7 @@ fn timeout_failure(request_id: &str, attempt_id: &str, endpoint_id: &str) -> Inv
         request_id: request_id.to_string(),
         attempt_id: attempt_id.to_string(),
         endpoint_id: endpoint_id.to_string(),
-        pool: crate::routing::engine::PoolKind::Relay,
+        pool: crate::routing::engine::PoolKind::Official,
         class: InvocationFailureClass::Timeout,
         upstream_status: None,
     }
@@ -330,38 +356,38 @@ fn config_failure(
         request_id: request_id.to_string(),
         attempt_id: attempt_id.to_string(),
         endpoint_id: endpoint_id.to_string(),
-        pool: crate::routing::engine::PoolKind::Relay,
+        pool: crate::routing::engine::PoolKind::Official,
         class: InvocationFailureClass::Config,
-        upstream_status: status.map(|value| value.as_u16()),
+        upstream_status: status.map(|status| status.as_u16()),
     }
 }
 
-pub(crate) fn map_relay_invocation_failure(failure: &InvocationFailure) -> CodexLagError {
+pub fn map_generic_openai_invocation_failure(failure: &InvocationFailure) -> CodexLagError {
     let error = match failure.class {
-        InvocationFailureClass::Http429 => CodexLagError::quota(
-            QuotaErrorKind::ProviderRateLimited,
-            "Relay provider rate limit exceeded. Try again shortly.",
-        ),
-        InvocationFailureClass::Http5xx => CodexLagError::upstream(
-            UpstreamErrorKind::ProviderHttpFailure,
-            "Relay provider is temporarily unavailable.",
-        ),
         InvocationFailureClass::Timeout => CodexLagError::upstream(
             UpstreamErrorKind::ProviderTimeout,
-            "Relay provider timed out while handling the request.",
+            "The OpenAI-compatible provider timed out before returning a response.",
+        ),
+        InvocationFailureClass::Http429 => CodexLagError::quota(
+            QuotaErrorKind::ProviderRateLimited,
+            "The OpenAI-compatible provider rate limited the request.",
         ),
         InvocationFailureClass::Auth => CodexLagError::credential(
             CredentialErrorKind::ProviderAuthFailed,
-            "Relay rejected credentials for the selected endpoint.",
+            "The OpenAI-compatible provider rejected the stored API key.",
         ),
         InvocationFailureClass::Config => CodexLagError::config(
             ConfigErrorKind::ProviderRejectedRequest,
-            "Relay configuration is invalid for this request.",
+            "The OpenAI-compatible provider configuration is invalid.",
+        ),
+        InvocationFailureClass::Http5xx => CodexLagError::upstream(
+            UpstreamErrorKind::ProviderHttpFailure,
+            "The OpenAI-compatible provider is unavailable.",
         ),
     };
 
     error.with_internal_context(format!(
-        "provider=relay;endpoint_id={};upstream_status={:?}",
+        "provider=generic_openai;endpoint_id={};upstream_status={:?}",
         failure.endpoint_id, failure.upstream_status
     ))
 }

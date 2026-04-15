@@ -28,3 +28,20 @@ pub fn merge_cli_proxyapi_capabilities(
         supports_compact_path: overlay.supports_compact_path.or(base.supports_compact_path),
     }
 }
+
+pub fn feature_capability_defaults(model_id: impl Into<String>) -> FeatureCapability {
+    FeatureCapability {
+        model_id: model_id.into(),
+        max_context_window: None,
+        supports_context_compression: None,
+        supports_compact_path: None,
+    }
+}
+
+pub fn feature_capabilities_for_model_ids(model_ids: &[String]) -> Vec<FeatureCapability> {
+    model_ids
+        .iter()
+        .cloned()
+        .map(feature_capability_defaults)
+        .collect()
+}
