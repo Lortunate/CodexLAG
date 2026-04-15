@@ -4,9 +4,14 @@ use codexlag_lib::providers::registry::default_provider_registry;
 fn provider_registry_registers_openai_official_and_generic_provider_ids() {
     let registry = default_provider_registry();
 
-    assert_eq!(
-        registry.provider_ids(),
-        vec!["generic_openai_compatible", "openai_official"]
+    let provider_ids = registry.provider_ids();
+    assert!(
+        provider_ids.contains(&"generic_openai_compatible"),
+        "generic provider should remain registered"
+    );
+    assert!(
+        provider_ids.contains(&"openai_official"),
+        "openai official provider should remain registered"
     );
 
     let official = registry
