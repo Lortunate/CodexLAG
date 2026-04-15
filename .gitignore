@@ -1,5 +1,6 @@
 .serena/
 .worktrees/
+.gitnexus/
 src-tauri/gen/
 src-tauri/target/
 
