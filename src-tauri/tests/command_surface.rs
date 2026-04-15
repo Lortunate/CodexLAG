@@ -1157,6 +1157,16 @@ async fn usage_commands_read_from_persisted_request_lifecycle_data() {
     assert_eq!(detail.request_id, "req-1");
     assert_eq!(detail.cost.provenance, UsageProvenance::Estimated);
     assert_eq!(detail.cost.amount.as_deref(), Some("0.0123"));
+    assert_eq!(
+        detail.route_explanation,
+        Some(RequestRouteExplanation {
+            request_id: "req-1".to_string(),
+            selected_candidate_id: Some("official-default".to_string()),
+            rejected_candidates: Vec::new(),
+            final_reason: "selected candidate returned upstream status 200".to_string(),
+            fallback_trigger: None,
+        })
+    );
 
     assert!(
         usage_request_detail_from_runtime(&runtime, "req-missing").is_none(),
@@ -1165,6 +1175,16 @@ async fn usage_commands_read_from_persisted_request_lifecycle_data() {
 
     let history = usage_request_history_from_runtime(&runtime, Some(1));
     assert_eq!(history.len(), 1);
+    assert_eq!(
+        history[0].route_explanation,
+        Some(RequestRouteExplanation {
+            request_id: "req-2".to_string(),
+            selected_candidate_id: Some("relay-newapi".to_string()),
+            rejected_candidates: Vec::new(),
+            final_reason: "selected candidate returned upstream status 200".to_string(),
+            fallback_trigger: None,
+        })
+    );
 
     let ledger = usage_ledger_from_runtime(
         &runtime,
@@ -1177,6 +1197,16 @@ async fn usage_commands_read_from_persisted_request_lifecycle_data() {
     assert_eq!(ledger.entries.len(), 1);
     assert_eq!(ledger.total_cost.provenance, UsageProvenance::Unknown);
     assert_eq!(ledger.total_cost.amount, None);
+    assert_eq!(
+        ledger.entries[0].route_explanation,
+        Some(RequestRouteExplanation {
+            request_id: "req-2".to_string(),
+            selected_candidate_id: Some("relay-newapi".to_string()),
+            rejected_candidates: Vec::new(),
+            final_reason: "selected candidate returned upstream status 200".to_string(),
+            fallback_trigger: None,
+        })
+    );
 }
 
 #[tokio::test]
@@ -1251,6 +1281,19 @@ async fn usage_commands_reflect_runtime_gateway_requests_only() {
         relay_entries.entries[0].request_id.as_str()
     )
     .is_some());
+    let live_detail =
+        usage_request_detail_from_runtime(&runtime, relay_entries.entries[0].request_id.as_str())
+            .expect("live request detail");
+    assert_eq!(
+        live_detail.route_explanation,
+        Some(RequestRouteExplanation {
+            request_id: relay_entries.entries[0].request_id.clone(),
+            selected_candidate_id: Some(relay_entries.entries[0].endpoint_id.clone()),
+            rejected_candidates: Vec::new(),
+            final_reason: "selected candidate returned upstream status 200".to_string(),
+            fallback_trigger: None,
+        })
+    );
 
     runtime
         .set_current_mode(RoutingMode::Hybrid)

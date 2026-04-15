@@ -1,7 +1,7 @@
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-use crate::models::{RequestAttemptLog, RequestLog};
+use crate::models::{RequestAttemptLog, RequestLog, RequestRouteExplanation};
 
 pub const USAGE_RECORD_RETENTION_CAP: usize = 10_000;
 
@@ -98,6 +98,8 @@ pub struct UsageRequestDetail {
     pub final_upstream_status: Option<u16>,
     pub final_upstream_error_code: Option<String>,
     pub final_upstream_error_reason: Option<String>,
+    #[serde(default)]
+    pub route_explanation: Option<RequestRouteExplanation>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -312,6 +314,9 @@ pub fn usage_request_detail_from_persisted_rows(
             .map(|status| status as u16),
         final_upstream_error_code: request.error_code.clone(),
         final_upstream_error_reason: request.error_reason.clone(),
+        route_explanation: Some(crate::state::project_request_route_explanation(
+            request, attempts,
+        )),
     }
 }
 
@@ -367,6 +372,7 @@ fn usage_request_detail_from_record(record: &UsageRecord) -> UsageRequestDetail 
         final_upstream_status: record.final_upstream_status,
         final_upstream_error_code: record.final_upstream_error_code.clone(),
         final_upstream_error_reason: record.final_upstream_error_reason.clone(),
+        route_explanation: None,
     }
 }
 
