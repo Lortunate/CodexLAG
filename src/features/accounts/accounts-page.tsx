@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   getAccountCapabilityDetail,
   listAccounts,
+  listProviderDescriptors,
   listProviderSessions,
   logoutOpenAiSession,
   refreshAccountBalance,
@@ -12,6 +13,7 @@ import type {
   AccountBalanceSnapshot,
   AccountCapabilityDetail,
   AccountSummary,
+  ProviderDescriptor,
   ProviderAccountHealth,
   ProviderSessionSummary,
 } from "../../lib/types";
@@ -25,16 +27,26 @@ interface AccountPanelState {
   providerHealth: ProviderAccountHealth;
 }
 
-function authProfileLabel(authProfile: string) {
-  return authProfile === "browser" ? "Browser sign-in" : "API key";
+function authProfileLabel(authProfile: string | null | undefined) {
+  switch (authProfile) {
+    case "browser":
+    case "browser_oauth_pkce":
+      return "Browser sign-in";
+    case "api_key":
+    case "static_api_key":
+      return "API key required";
+    default:
+      return "Authentication required";
+  }
 }
 
 function resolveProviderAuthProfile(provider: string) {
-  return provider === "openai" ? "browser" : "api_key";
+  return provider === "openai" ? "browser_oauth_pkce" : "static_api_key";
 }
 
 export function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountPanelState[]>([]);
+  const [providerDescriptors, setProviderDescriptors] = useState<ProviderDescriptor[]>([]);
   const [providerSessions, setProviderSessions] = useState<ProviderSessionSummary[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [authActionMessage, setAuthActionMessage] = useState<string | null>(null);
@@ -43,9 +55,30 @@ export function AccountsPage() {
 
   async function loadAccounts(isMounted: () => boolean = () => true) {
     try {
-      const [summaries, sessions] = await Promise.all([listAccounts(), listProviderSessions()]);
+      const [summaries, sessions, descriptors] = await Promise.all([
+        listAccounts(),
+        listProviderSessions(),
+        listProviderDescriptors(),
+      ]);
+      const sessionHealthByAccountId = new Map(
+        sessions.map((session) => [
+          session.account_id,
+          {
+            provider_id: session.provider_id,
+            account_id: session.account_id,
+            auth_state: session.auth_state,
+            auth_profile: session.auth_profile ?? null,
+            last_error_message: session.last_error_message ?? session.last_refresh_error ?? null,
+          },
+        ]),
+      );
+      const descriptorByProviderId = new Map(
+        descriptors.map((descriptor) => [descriptor.provider_id, descriptor]),
+      );
       const accountPanels = await Promise.all(
         summaries.map(async (account) => {
+          const matchedHealth = sessionHealthByAccountId.get(account.account_id);
+          const descriptor = descriptorByProviderId.get(account.provider);
           const panelState: AccountPanelState = {
             account,
             balanceError: null,
@@ -53,11 +86,14 @@ export function AccountsPage() {
             capabilityDetail: null,
             capabilityError: null,
             providerHealth: {
-              provider_id: account.provider,
+              provider_id: matchedHealth?.provider_id ?? account.provider,
               account_id: account.account_id,
-              auth_state: "ready",
-              auth_profile: resolveProviderAuthProfile(account.provider),
-              last_error_message: null,
+              auth_state: matchedHealth?.auth_state ?? "ready",
+              auth_profile:
+                matchedHealth?.auth_profile ??
+                descriptor?.auth_profile ??
+                resolveProviderAuthProfile(account.provider),
+              last_error_message: matchedHealth?.last_error_message ?? null,
             },
           };
 
@@ -81,6 +117,7 @@ export function AccountsPage() {
 
       if (isMounted()) {
         setAccounts(accountPanels);
+        setProviderDescriptors(descriptors);
         setProviderSessions(sessions);
         setErrorMessage(null);
       }
@@ -169,48 +206,62 @@ export function AccountsPage() {
       <h2 id="accounts-heading">Official Accounts</h2>
       <p>Review provider identity, launch browser login, and inspect capability status.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      <div className="detail-card">
-        <h3>Browser sign-in</h3>
-        <p>Launch the official OpenAI login flow and manage persisted desktop sessions.</p>
-        <button onClick={() => void handleStartOpenAiLogin()} type="button">
-          Sign in with OpenAI
-        </button>
-        {authActionMessage ? <p>{authActionMessage}</p> : null}
-        {sessionActionError ? <p role="alert">{sessionActionError}</p> : null}
-        {providerSessions.length === 0 ? (
-          <p>No OpenAI provider sessions stored.</p>
-        ) : (
-          <div className="detail-grid">
-            {providerSessions.map((session) => (
-              <article className="detail-card" key={`${session.provider_id}:${session.account_id}`}>
-                <h4>{session.display_name}</h4>
-                <p>Provider session: {session.account_id}</p>
-                <p>Auth state: {session.auth_state}</p>
-                <p>Auth profile: {authProfileLabel(session.auth_profile ?? "browser")}</p>
-                <p>Last auth error: {session.last_error_message ?? session.last_refresh_error ?? "none"}</p>
-                <button
-                  onClick={() => void handleRefreshProviderSession(session.account_id)}
-                  type="button"
-                >
-                  Refresh
+      <div className="detail-grid">
+        {providerDescriptors.map((descriptor) => {
+          const supportsBrowserLogin = descriptor.auth_profile === "browser_oauth_pkce";
+
+          return (
+            <article className="detail-card" key={descriptor.provider_id}>
+              <h3>{authProfileLabel(descriptor.auth_profile)}</h3>
+              <p>{descriptor.provider_id}</p>
+              <p>
+                {supportsBrowserLogin
+                  ? "Launch the official browser login flow and manage persisted desktop sessions."
+                  : "Authenticate this provider with a configured API key before using the account."}
+              </p>
+              {descriptor.provider_id === "openai" ? (
+                <button onClick={() => void handleStartOpenAiLogin()} type="button">
+                  Sign in with OpenAI
                 </button>
-                <button
-                  onClick={() => void handleLogoutProviderSession(session.account_id)}
-                  type="button"
-                >
-                  Sign out
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
+              ) : null}
+            </article>
+          );
+        })}
       </div>
+      {authActionMessage ? <p>{authActionMessage}</p> : null}
+      {sessionActionError ? <p role="alert">{sessionActionError}</p> : null}
+      {providerSessions.length === 0 ? (
+        <p>No provider sessions stored.</p>
+      ) : (
+        <div className="detail-grid">
+          {providerSessions.map((session) => (
+            <article className="detail-card" key={`${session.provider_id}:${session.account_id}`}>
+              <h4>{session.display_name}</h4>
+              <p>Provider session: {session.account_id}</p>
+              <p>Auth state: {session.auth_state}</p>
+              <p>Auth profile: {authProfileLabel(session.auth_profile)}</p>
+              <p>Last auth error: {session.last_error_message ?? session.last_refresh_error ?? "none"}</p>
+              <button onClick={() => void handleRefreshProviderSession(session.account_id)} type="button">
+                Refresh
+              </button>
+              <button onClick={() => void handleLogoutProviderSession(session.account_id)} type="button">
+                Sign out
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
       <div className="detail-grid">
         {accounts.map((panel) => (
           <article className="detail-card" key={panel.account.account_id}>
             <h3>{panel.account.name}</h3>
             <p>Provider: {panel.account.provider}</p>
+            <p>Auth state: {panel.providerHealth.auth_state}</p>
             <p>Auth profile: {authProfileLabel(panel.providerHealth.auth_profile)}</p>
+            <p>
+              Last auth error:{" "}
+              {panel.providerHealth.last_error_message ?? "No active auth errors."}
+            </p>
             {panel.balanceSnapshot ? (
               <>
                 <p>Balance state: {panel.balanceSnapshot.balance.kind}</p>

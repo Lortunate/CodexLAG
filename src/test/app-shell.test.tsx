@@ -71,6 +71,7 @@ function createMockState() {
       };
     }),
     listAccounts: vi.fn(),
+    listProviderDescriptors: vi.fn(),
     listProviderInventory: vi.fn(),
     listProviderSessions: vi.fn(),
     listPlatformKeys: vi.fn(),
@@ -120,6 +121,7 @@ const {
   importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listProviderDescriptors,
   listProviderInventory,
   listProviderSessions,
   listPlatformKeys,
@@ -165,6 +167,7 @@ describe("App shell", () => {
     importOfficialAccountLogin.mockReset();
     listenForDefaultKeySummaryChanged.mockClear();
     listAccounts.mockReset();
+    listProviderDescriptors.mockReset();
     listProviderInventory.mockReset();
     listProviderSessions.mockReset();
     listPlatformKeys.mockReset();
@@ -250,6 +253,20 @@ describe("App shell", () => {
     );
     listAccounts.mockResolvedValue([
       { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
+    ]);
+    listProviderDescriptors.mockResolvedValue([
+      {
+        provider_id: "openai",
+        auth_profile: "browser_oauth_pkce",
+        supports_model_discovery: true,
+        supports_capability_probe: true,
+      },
+      {
+        provider_id: "claude_official",
+        auth_profile: "static_api_key",
+        supports_model_discovery: true,
+        supports_capability_probe: true,
+      },
     ]);
     listProviderInventory.mockResolvedValue({
       accounts: [
@@ -687,6 +704,73 @@ describe("App shell", () => {
 
     expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
     expect(await screen.findByText(/auth profile: api key/i)).toBeInTheDocument();
+  });
+
+  it("renders onboarding guidance per provider descriptor", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
+    expect(screen.getByText("claude_official")).toBeInTheDocument();
+    expect(screen.getByText("API key required")).toBeInTheDocument();
+  });
+
+  it("shows degraded account health and last error guidance", async () => {
+    listAccounts.mockResolvedValue([
+      { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
+      { account_id: "claude-primary", name: "Claude Primary", provider: "claude_official" },
+    ]);
+    refreshAccountBalance.mockImplementation(async (accountId: string) => ({
+      account_id: accountId,
+      provider: accountId === "claude-primary" ? "claude_official" : "openai",
+      refreshed_at: "1713370000",
+      balance: {
+        kind: "non_queryable",
+        reason: "balance endpoint unavailable",
+      },
+    }));
+    getAccountCapabilityDetail.mockImplementation(async (accountId: string) => ({
+      account_id: accountId,
+      provider: accountId === "claude-primary" ? "claude_official" : "openai",
+      refresh_capability: accountId !== "claude-primary",
+      balance_capability: "non_queryable",
+    }));
+    listProviderSessions.mockResolvedValue([
+      {
+        provider_id: "openai",
+        account_id: "official-primary",
+        display_name: "Primary Publisher",
+        auth_state: "active",
+        auth_profile: "browser_oauth_pkce",
+        expires_at_ms: null,
+        last_refresh_at_ms: null,
+        last_refresh_error: null,
+        last_error_message: null,
+      },
+      {
+        provider_id: "claude_official",
+        account_id: "claude-primary",
+        display_name: "Claude Primary",
+        auth_state: "expired",
+        auth_profile: "static_api_key",
+        expires_at_ms: null,
+        last_refresh_at_ms: null,
+        last_refresh_error: "Session expired",
+        last_error_message: "Re-authenticate with a new API key.",
+      },
+    ]);
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
+    });
+
+    expect(await screen.findAllByText(/expired/i)).not.toHaveLength(0);
+    expect(screen.getAllByText(/re-authenticate with a new api key/i)).not.toHaveLength(0);
   });
 
   it("starts browser login and manages persisted OpenAI provider sessions", async () => {
