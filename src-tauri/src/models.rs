@@ -126,6 +126,16 @@ pub struct ProviderDescriptor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestRouteExplanation {
+    pub request_id: String,
+    pub selected_candidate_id: Option<String>,
+    #[serde(default)]
+    pub rejected_candidates: Vec<String>,
+    pub final_reason: String,
+    pub fallback_trigger: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagedRelay {
     pub relay_id: String,
     pub name: String,

@@ -16,7 +16,8 @@ use crate::gateway::{
 use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
 use crate::models::{
     ImportedOfficialAccount, ManagedRelay, PlatformKey, ProviderDescriptor,
-    ProviderSessionSummary, RoutingPolicy,
+    ProviderSessionSummary, RequestAttemptLog, RequestLog, RequestRouteExplanation,
+    RoutingPolicy,
 };
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
@@ -293,6 +294,64 @@ fn is_runtime_log_file_name(file_name: &str) -> bool {
     }
 
     false
+}
+
+pub fn project_request_route_explanation(
+    request: &RequestLog,
+    attempts: &[RequestAttemptLog],
+) -> RequestRouteExplanation {
+    let selected_candidate_id = request.selected_endpoint_id.clone();
+
+    let mut rejected_candidates = Vec::new();
+    if let Some(selected_candidate_id) = selected_candidate_id.as_deref() {
+        for attempt in attempts {
+            if attempt.endpoint_id == selected_candidate_id
+                || rejected_candidates.contains(&attempt.endpoint_id)
+            {
+                continue;
+            }
+            rejected_candidates.push(attempt.endpoint_id.clone());
+        }
+    }
+
+    let fallback_trigger = attempts
+        .iter()
+        .rev()
+        .find_map(|attempt| match attempt.trigger_reason.trim() {
+            "" | "initial" | "primary" => None,
+            reason => Some(reason.to_string()),
+        });
+
+    let final_reason = match request.final_status.as_str() {
+        "success" => {
+            if selected_candidate_id.is_some() {
+                match attempts.last().and_then(|attempt| attempt.upstream_status) {
+                    Some(status) => format!("selected candidate returned upstream status {status}"),
+                    None => "selected candidate completed the request".to_string(),
+                }
+            } else {
+                "request succeeded but no final selected route was persisted".to_string()
+            }
+        }
+        _ => request.error_reason.clone().unwrap_or_else(|| {
+            if selected_candidate_id.is_some() {
+                format!("request finished with status {}", request.final_status)
+            } else {
+                format!(
+                    "request finished with status {} before a final route was persisted",
+                    request.final_status
+                )
+            }
+        }),
+    };
+
+    RequestRouteExplanation {
+        request_id: request.request_id.clone(),
+        selected_candidate_id,
+        rejected_candidates,
+        final_reason,
+        fallback_trigger,
+    }
 }
 
 #[derive(Clone)]

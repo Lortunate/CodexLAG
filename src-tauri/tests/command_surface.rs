@@ -4,7 +4,8 @@ use axum::{
 };
 use codexlag_lib::commands::accounts::{
     get_account_capability_detail_from_runtime, import_official_account_login_from_runtime,
-    list_accounts_from_runtime, list_provider_descriptors_from_runtime, OfficialAccountImportInput,
+    list_accounts_from_runtime, list_provider_descriptors_from_runtime,
+    project_request_route_explanation_from_runtime, OfficialAccountImportInput,
 };
 use codexlag_lib::commands::keys::{
     create_platform_key_from_runtime, disable_platform_key_from_runtime,
@@ -25,7 +26,9 @@ use codexlag_lib::commands::relays::{
 };
 use codexlag_lib::error::{CodexLagError, ErrorCategory};
 use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance};
-use codexlag_lib::models::{ProviderAuthProfile, RequestAttemptLog, RequestLog};
+use codexlag_lib::models::{
+    ProviderAuthProfile, RequestAttemptLog, RequestLog, RequestRouteExplanation,
+};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
 use codexlag_lib::{
@@ -78,6 +81,59 @@ fn append_persisted_request_bundle(
         .repositories()
         .append_request_with_attempts(&request, &attempts)
         .expect("append persisted request lifecycle bundle");
+}
+
+fn request_log_fixture(
+    request_id: &str,
+    selected_endpoint_id: Option<&str>,
+    final_status: &str,
+    http_status: Option<i64>,
+    error_reason: Option<&str>,
+    attempt_count: u32,
+) -> RequestLog {
+    RequestLog {
+        request_id: request_id.to_string(),
+        platform_key_id: "default".to_string(),
+        request_type: "chat.completions".to_string(),
+        model: "gpt-5".to_string(),
+        selected_endpoint_id: selected_endpoint_id.map(str::to_string),
+        attempt_count,
+        final_status: final_status.to_string(),
+        http_status,
+        started_at_ms: 1_710_000_000_000,
+        finished_at_ms: Some(1_710_000_000_450),
+        latency_ms: Some(450),
+        error_code: None,
+        error_reason: error_reason.map(str::to_string),
+        requested_context_window: None,
+        requested_context_compression: None,
+        effective_context_window: None,
+        effective_context_compression: None,
+    }
+}
+
+fn request_attempt_fixture(
+    request_id: &str,
+    attempt_index: u32,
+    endpoint_id: &str,
+    trigger_reason: &str,
+    upstream_status: Option<i64>,
+) -> RequestAttemptLog {
+    RequestAttemptLog {
+        attempt_id: format!("{request_id}:{attempt_index}"),
+        request_id: request_id.to_string(),
+        attempt_index,
+        endpoint_id: endpoint_id.to_string(),
+        pool_type: "official".to_string(),
+        trigger_reason: trigger_reason.to_string(),
+        upstream_status,
+        timeout_ms: Some(30_000),
+        latency_ms: Some(100 + i64::from(attempt_index)),
+        token_usage_snapshot: None,
+        estimated_cost_snapshot: None,
+        balance_snapshot_id: None,
+        feature_resolution_snapshot: None,
+    }
 }
 
 fn spawn_single_accept_listener() -> (String, std::thread::JoinHandle<()>) {
@@ -174,6 +230,164 @@ async fn provider_descriptor_command_lists_bounded_auth_profiles() {
         descriptor.provider_id == "gemini_official"
             && descriptor.auth_profile == ProviderAuthProfile::StaticApiKey
     }));
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn route_explanation_groundwork_projects_final_choice_rejections_and_fallback() {
+    let isolated_root = isolated_test_root("command-route-explanation");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let request =
+        request_log_fixture("req-route-1", Some("relay-newapi"), "success", Some(200), None, 2);
+    let attempts = vec![
+        request_attempt_fixture("req-route-1", 0, "official-primary", "initial", Some(429)),
+        request_attempt_fixture("req-route-1", 1, "relay-newapi", "fallback_after_429", Some(200)),
+    ];
+
+    append_persisted_request_bundle(&runtime, request.clone(), attempts.clone());
+
+    let explanation = project_request_route_explanation_from_runtime(&runtime, &request, &attempts);
+
+    assert_eq!(
+        explanation,
+        RequestRouteExplanation {
+            request_id: "req-route-1".to_string(),
+            selected_candidate_id: Some("relay-newapi".to_string()),
+            rejected_candidates: vec!["official-primary".to_string()],
+            final_reason: "selected candidate returned upstream status 200".to_string(),
+            fallback_trigger: Some("fallback_after_429".to_string()),
+        }
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn route_explanation_groundwork_keeps_final_selection_unknown_when_not_persisted() {
+    let isolated_root = isolated_test_root("command-route-explanation-unknown-selected");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let request = request_log_fixture("req-route-unknown", None, "success", Some(200), None, 2);
+    let attempts = vec![
+        request_attempt_fixture("req-route-unknown", 0, "official-primary", "initial", Some(429)),
+        request_attempt_fixture(
+            "req-route-unknown",
+            1,
+            "relay-newapi",
+            "fallback_after_429",
+            Some(200),
+        ),
+    ];
+
+    let explanation = project_request_route_explanation_from_runtime(&runtime, &request, &attempts);
+
+    assert_eq!(
+        explanation,
+        RequestRouteExplanation {
+            request_id: "req-route-unknown".to_string(),
+            selected_candidate_id: None,
+            rejected_candidates: Vec::new(),
+            final_reason: "request succeeded but no final selected route was persisted".to_string(),
+            fallback_trigger: Some("fallback_after_429".to_string()),
+        }
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn route_explanation_groundwork_handles_empty_attempts_without_selection() {
+    let isolated_root = isolated_test_root("command-route-explanation-empty");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let request = request_log_fixture("req-route-empty", None, "success", Some(200), None, 0);
+    let explanation = project_request_route_explanation_from_runtime(&runtime, &request, &[]);
+
+    assert_eq!(
+        explanation,
+        RequestRouteExplanation {
+            request_id: "req-route-empty".to_string(),
+            selected_candidate_id: None,
+            rejected_candidates: Vec::new(),
+            final_reason: "request succeeded but no final selected route was persisted".to_string(),
+            fallback_trigger: None,
+        }
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn route_explanation_groundwork_deduplicates_retries_for_the_selected_endpoint() {
+    let isolated_root = isolated_test_root("command-route-explanation-retries");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let request =
+        request_log_fixture("req-route-retries", Some("official-primary"), "success", Some(200), None, 2);
+    let attempts = vec![
+        request_attempt_fixture("req-route-retries", 0, "official-primary", "initial", Some(504)),
+        request_attempt_fixture(
+            "req-route-retries",
+            1,
+            "official-primary",
+            "retry_after_timeout",
+            Some(200),
+        ),
+    ];
+
+    let explanation = project_request_route_explanation_from_runtime(&runtime, &request, &attempts);
+
+    assert_eq!(
+        explanation,
+        RequestRouteExplanation {
+            request_id: "req-route-retries".to_string(),
+            selected_candidate_id: Some("official-primary".to_string()),
+            rejected_candidates: Vec::new(),
+            final_reason: "selected candidate returned upstream status 200".to_string(),
+            fallback_trigger: Some("retry_after_timeout".to_string()),
+        }
+    );
+
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn route_explanation_groundwork_preserves_terminal_failure_without_final_selection() {
+    let isolated_root = isolated_test_root("command-route-explanation-terminal-failure");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let request = request_log_fixture("req-route-failed", None, "failed", None, None, 2);
+    let attempts = vec![
+        request_attempt_fixture("req-route-failed", 0, "official-primary", "initial", Some(429)),
+        request_attempt_fixture(
+            "req-route-failed",
+            1,
+            "relay-newapi",
+            "fallback_after_429",
+            Some(503),
+        ),
+    ];
+
+    let explanation = project_request_route_explanation_from_runtime(&runtime, &request, &attempts);
+
+    assert_eq!(
+        explanation,
+        RequestRouteExplanation {
+            request_id: "req-route-failed".to_string(),
+            selected_candidate_id: None,
+            rejected_candidates: Vec::new(),
+            final_reason: "request finished with status failed before a final route was persisted"
+                .to_string(),
+            fallback_trigger: Some("fallback_after_429".to_string()),
+        }
+    );
 
     let _ = std::fs::remove_dir_all(&isolated_root);
 }

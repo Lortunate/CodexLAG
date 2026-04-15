@@ -221,6 +221,14 @@ export interface UsageCost {
   is_estimated: boolean;
 }
 
+export interface RequestRouteExplanation {
+  request_id: string;
+  selected_candidate_id: string | null;
+  rejected_candidates: string[];
+  final_reason: string;
+  fallback_trigger: string | null;
+}
+
 export interface UsageRequestDetail {
   request_id: string;
   endpoint_id: string;
@@ -238,6 +246,7 @@ export interface UsageRequestDetail {
   final_upstream_status: number | null;
   final_upstream_error_code: string | null;
   final_upstream_error_reason: string | null;
+  route_explanation?: RequestRouteExplanation | null;
 }
 
 export interface UsageLedgerQuery {
