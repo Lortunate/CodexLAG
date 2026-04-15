@@ -5,7 +5,10 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::auth::openai::{PendingOpenAiLoopbackAuthSession, ReqwestOpenAiSessionRefresher};
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
-use crate::models::{ImportedOfficialAccount, ProviderDescriptor, ProviderSessionSummary};
+use crate::models::{
+    ImportedOfficialAccount, ProviderDescriptor, ProviderSessionSummary, RequestAttemptLog,
+    RequestLog, RequestRouteExplanation,
+};
 use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
 use crate::providers::inventory::{project_provider_inventory_summary, ProviderInventorySummary};
 use crate::state::{AppState, RuntimeState};
@@ -109,6 +112,14 @@ pub fn list_provider_descriptors_from_runtime(runtime: &RuntimeState) -> Vec<Pro
 #[tauri::command]
 pub fn list_provider_descriptors(state: State<'_, RuntimeState>) -> Vec<ProviderDescriptor> {
     list_provider_descriptors_from_runtime(&state)
+}
+
+pub fn project_request_route_explanation_from_runtime(
+    _runtime: &RuntimeState,
+    request: &RequestLog,
+    attempts: &[RequestAttemptLog],
+) -> RequestRouteExplanation {
+    crate::state::project_request_route_explanation(request, attempts)
 }
 
 pub fn refresh_account_balance_from_runtime(
