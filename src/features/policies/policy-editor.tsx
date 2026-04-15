@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { z } from "zod";
-import type { PolicySummary, PolicyUpdateInput } from "../../lib/types";
+import type { PolicyPreviewSummary, PolicySummary, PolicyUpdateInput } from "../../lib/types";
 
 interface PolicyEditorProps {
   endpointIds: string[];
@@ -82,6 +82,17 @@ function policyToDraft(policy: PolicySummary): PolicyDraft {
 function parsePositiveInteger(raw: string): number | null {
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function buildPolicyPreviewSummary(
+  selectionOrder: string[],
+  endpointIds: string[],
+): PolicyPreviewSummary {
+  const endpointSet = new Set(endpointIds);
+  return {
+    eligible_candidates: selectionOrder.filter((endpointId) => endpointSet.has(endpointId)),
+    rejected_candidates: endpointIds.filter((endpointId) => !selectionOrder.includes(endpointId)),
+  };
 }
 
 export function PolicyEditor({
@@ -179,6 +190,21 @@ export function PolicyEditor({
         ? "true"
         : "false"
     : "";
+  const availableEndpointIds = endpointIds.filter((endpointId) => !selectionOrder.includes(endpointId));
+  const previewSummary = buildPolicyPreviewSummary(selectionOrder, endpointIds);
+
+  function updateSelectionOrder(nextSelectionOrder: string[]) {
+    if (!activeDraft) {
+      return;
+    }
+    setDraftsByPolicyId((current) => ({
+      ...current,
+      [activeDraft.policy_id]: {
+        ...activeDraft,
+        selection_order: nextSelectionOrder.join(", "),
+      },
+    }));
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,25 +278,77 @@ export function PolicyEditor({
           <label>
             Selection Order
             <input
-              value={activeDraft?.selection_order ?? ""}
-              onChange={(event) => {
-                if (!activeDraft) {
-                  return;
-                }
-                setDraftsByPolicyId((current) => ({
-                  ...current,
-                  [activeDraft.policy_id]: {
-                    ...activeDraft,
-                    selection_order: event.target.value,
-                  },
-                }));
-              }}
+              readOnly
+              value={selectionOrder.join(", ")}
             />
           </label>
           {fieldErrors.selection_order?.[0] ? (
             <span role="alert">{fieldErrors.selection_order[0]}</span>
           ) : null}
         </p>
+        <div aria-label="Selection order controls">
+          <p className="text-sm text-muted-foreground">
+            Reorder candidates explicitly instead of editing a comma-separated string.
+          </p>
+          <ul>
+            {selectionOrder.map((endpointId, index) => (
+              <li key={endpointId}>
+                <span>{endpointId}</span>{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (index === 0) {
+                      return;
+                    }
+                    const next = [...selectionOrder];
+                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                    updateSelectionOrder(next);
+                  }}
+                >
+                  Move {endpointId} up
+                </button>{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (index === selectionOrder.length - 1) {
+                      return;
+                    }
+                    const next = [...selectionOrder];
+                    [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                    updateSelectionOrder(next);
+                  }}
+                >
+                  Move {endpointId} down
+                </button>{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSelectionOrder(selectionOrder.filter((candidate) => candidate !== endpointId))
+                  }
+                >
+                  Remove {endpointId}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {availableEndpointIds.length > 0 ? (
+            <div>
+              <p>Available endpoints</p>
+              <ul>
+                {availableEndpointIds.map((endpointId) => (
+                  <li key={endpointId}>
+                    <button
+                      type="button"
+                      onClick={() => updateSelectionOrder([...selectionOrder, endpointId])}
+                    >
+                      Add {endpointId}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
         <p>
           <label>
             Cross Pool Fallback
@@ -439,6 +517,11 @@ export function PolicyEditor({
           Save policy
         </button>
       </form>
+      <section aria-labelledby="policy-preview-heading">
+        <h4 id="policy-preview-heading">Candidate preview</h4>
+        <p>Eligible candidates: {previewSummary.eligible_candidates.join(", ") || "none"}</p>
+        <p>Rejected candidates: {previewSummary.rejected_candidates.join(", ") || "none"}</p>
+      </section>
       {endpointIds.length > 0 ? (
         <p>Known endpoint ids: {endpointIds.join(", ")}</p>
       ) : null}

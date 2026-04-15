@@ -12,8 +12,8 @@ import type {
   ErrorCategory,
   ProviderDiagnosticsSummary,
   LogSummary,
-  OfficialAccountImportInput,
   PendingOpenAiBrowserLogin,
+  ProviderInventorySummary,
   ProviderSessionSummary,
   PlatformKeyInventoryEntry,
   PolicyUpdateInput,
@@ -270,16 +270,16 @@ export function listAccounts() {
   return invokeWithContract<AccountSummary[]>("list_accounts");
 }
 
-export function importOfficialAccountLogin(input: OfficialAccountImportInput) {
-  return invokeWithContract<AccountSummary>("import_official_account_login", { input });
-}
-
 export function startOpenAiBrowserLogin() {
   return invokeWithContract<PendingOpenAiBrowserLogin>("start_openai_browser_login");
 }
 
 export function listProviderSessions() {
   return invokeWithContract<ProviderSessionSummary[]>("list_provider_sessions");
+}
+
+export function listProviderInventory() {
+  return invokeWithContract<ProviderInventorySummary>("list_provider_inventory");
 }
 
 export function refreshOpenAiSession(accountId: string) {

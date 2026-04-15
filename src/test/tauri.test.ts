@@ -20,6 +20,7 @@ import {
   getProviderDiagnostics,
   getRelayCapabilityDetail,
   listAccounts,
+  listProviderInventory,
   listProviderSessions,
   listPolicies,
   getUsageRequestDetail,
@@ -123,6 +124,39 @@ describe("tauri wrappers", () => {
 
     expect(invokeMock).toHaveBeenCalledWith("list_provider_sessions");
     expect(sessions[0]?.account_id).toBe("openai-primary");
+  });
+
+  it("lists normalized provider inventory through the dedicated command surface", async () => {
+    invokeMock.mockResolvedValue({
+      accounts: [
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "active",
+          available: true,
+          registered: true,
+          base_url: null,
+        },
+      ],
+      models: [
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          model_id: "gpt-5-mini",
+          supports_tools: true,
+          supports_streaming: true,
+          supports_reasoning: true,
+          source: "session",
+        },
+      ],
+    });
+
+    const inventory = await listProviderInventory();
+
+    expect(invokeMock).toHaveBeenCalledWith("list_provider_inventory");
+    expect(inventory.accounts[0]?.display_name).toBe("OpenAI Primary");
+    expect(inventory.models[0]?.model_id).toBe("gpt-5-mini");
   });
 
   it("refreshes and logs out an OpenAI provider session through the dedicated command surface", async () => {

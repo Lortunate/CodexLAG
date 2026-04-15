@@ -43,6 +43,31 @@ export interface ProviderSessionSummary {
   last_refresh_error: string | null;
 }
 
+export interface ProviderAccountSummary {
+  provider_id: string;
+  account_id: string;
+  display_name: string;
+  auth_state: string;
+  available: boolean;
+  registered: boolean;
+  base_url: string | null;
+}
+
+export interface ModelCapabilitySummary {
+  provider_id: string;
+  account_id: string;
+  model_id: string;
+  supports_tools: boolean;
+  supports_streaming: boolean;
+  supports_reasoning: boolean;
+  source: string;
+}
+
+export interface ProviderInventorySummary {
+  accounts: ProviderAccountSummary[];
+  models: ModelCapabilitySummary[];
+}
+
 export interface PendingOpenAiBrowserLogin {
   summary: ProviderSessionSummary;
   authorization_url: string;
@@ -235,6 +260,11 @@ export interface PolicyUpdateInput {
   cooldown_ms: number;
   half_open_after_ms: number;
   success_close_after: number;
+}
+
+export interface PolicyPreviewSummary {
+  eligible_candidates: string[];
+  rejected_candidates: string[];
 }
 
 export interface LogSummary {

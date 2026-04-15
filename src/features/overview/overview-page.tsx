@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   exportRuntimeDiagnostics,
   getDefaultKeySummary,
   getLogSummary,
   getRuntimeLogMetadata,
+  listProviderInventory,
   listAccounts,
   listRelays,
   listenForDefaultKeySummaryChanged,
@@ -21,6 +23,7 @@ import type {
   UsageLedger,
 } from "../../lib/types";
 import { DefaultKeyModeToggle } from "../default-key/default-key-mode-toggle";
+import { CapabilityMatrixTable } from "./capability-matrix-table";
 import { RuntimeLogFilesTable } from "./runtime-log-files-table";
 
 const initialSummary: DefaultKeySummary = {
@@ -44,6 +47,14 @@ export function OverviewPage() {
   const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
   const [summary, setSummary] = useState<DefaultKeySummary>(initialSummary);
   const [usageLedger, setUsageLedger] = useState<UsageLedger | null>(null);
+  const {
+    data: providerInventory,
+    isPending: isProviderInventoryPending,
+    isError: isProviderInventoryError,
+  } = useQuery({
+    queryKey: ["provider-inventory"],
+    queryFn: listProviderInventory,
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -235,6 +246,17 @@ export function OverviewPage() {
         summaryName={summary.name}
         onSelectMode={handleSelectMode}
       />
+      <section className="mt-6" aria-labelledby="capability-matrix-heading">
+        <div className="mb-3">
+          <h3 id="capability-matrix-heading">Capability Matrix</h3>
+          <p>Compare provider models, auth state, and normalized capability flags from one inventory surface.</p>
+        </div>
+        {isProviderInventoryError ? <p role="alert">Failed to load capability matrix.</p> : null}
+        <CapabilityMatrixTable
+          inventory={providerInventory ?? { accounts: [], models: [] }}
+          isLoading={isProviderInventoryPending}
+        />
+      </section>
     </section>
   );
 }

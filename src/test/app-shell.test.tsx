@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createQueryClient } from "../lib/query-client";
 
 const {
   addRelay,
@@ -19,6 +21,7 @@ const {
   importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listProviderInventory,
   listProviderSessions,
   listPlatformKeys,
   listPolicies,
@@ -72,6 +75,7 @@ const {
       };
     }),
     listAccounts: vi.fn(),
+    listProviderInventory: vi.fn(),
     listProviderSessions: vi.fn(),
     listPlatformKeys: vi.fn(),
     listPolicies: vi.fn(),
@@ -105,6 +109,7 @@ vi.mock("../lib/tauri", () => ({
   importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listProviderInventory,
   listProviderSessions,
   listPlatformKeys,
   listPolicies,
@@ -123,6 +128,16 @@ vi.mock("../lib/tauri", () => ({
 
 import App from "../App";
 
+function renderApp() {
+  return rtlRender(
+    <QueryClientProvider client={createQueryClient()}>
+      <App />
+    </QueryClientProvider>,
+  );
+}
+
+const render = () => renderApp();
+
 describe("App shell", () => {
   beforeEach(() => {
     addRelay.mockReset();
@@ -140,6 +155,7 @@ describe("App shell", () => {
     importOfficialAccountLogin.mockReset();
     listenForDefaultKeySummaryChanged.mockClear();
     listAccounts.mockReset();
+    listProviderInventory.mockReset();
     listProviderSessions.mockReset();
     listPlatformKeys.mockReset();
     listPolicies.mockReset();
@@ -225,6 +241,48 @@ describe("App shell", () => {
     listAccounts.mockResolvedValue([
       { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
     ]);
+    listProviderInventory.mockResolvedValue({
+      accounts: [
+        {
+          provider_id: "openai_official",
+          account_id: "official-primary",
+          display_name: "Primary Publisher",
+          auth_state: "active",
+          available: true,
+          registered: true,
+          base_url: null,
+        },
+        {
+          provider_id: "generic_openai_compatible",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "expired",
+          available: false,
+          registered: true,
+          base_url: "https://gateway.example.test/v1",
+        },
+      ],
+      models: [
+        {
+          provider_id: "openai_official",
+          account_id: "official-primary",
+          model_id: "gpt-5-mini",
+          supports_tools: true,
+          supports_streaming: true,
+          supports_reasoning: true,
+          source: "default",
+        },
+        {
+          provider_id: "generic_openai_compatible",
+          account_id: "openai-primary",
+          model_id: "gpt-4.1-mini",
+          supports_tools: true,
+          supports_streaming: true,
+          supports_reasoning: false,
+          source: "manual",
+        },
+      ],
+    });
     listProviderSessions.mockResolvedValue([
       {
         provider_id: "openai_official",
@@ -550,6 +608,31 @@ describe("App shell", () => {
     expect(screen.getByText("Tracked log files: 0")).toBeInTheDocument();
   });
 
+  it("renders a query-backed capability matrix with filters and column visibility", async () => {
+    render(<App />);
+
+    const capabilityMatrix = await screen.findByRole("table", { name: /capability matrix/i });
+    expect(capabilityMatrix).toBeInTheDocument();
+    expect(screen.getAllByText("OpenAI Primary").length).toBeGreaterThan(0);
+    expect(screen.getByText(/expired \(degraded\)/i)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Provider scope"), {
+        target: { value: "generic_openai_compatible" },
+      });
+    });
+    expect(screen.queryByRole("cell", { name: "Primary Publisher" })).not.toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "OpenAI Primary" })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /columns/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Source"));
+    });
+    expect(screen.queryByText("manual")).not.toBeInTheDocument();
+  });
+
   it("loads account balances and capability details", async () => {
     render(<App />);
 
@@ -786,9 +869,8 @@ describe("App shell", () => {
 
     expect(await screen.findByLabelText("Policy Name")).toHaveValue("default");
     fireEvent.change(screen.getByLabelText("Policy Name"), { target: { value: "default-updated" } });
-    fireEvent.change(screen.getByLabelText("Selection Order"), {
-      target: { value: "official-primary, relay-newapi" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Add relay-nobalance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move relay-nobalance up" }));
     fireEvent.change(screen.getByLabelText("Cross Pool Fallback"), {
       target: { value: "false" },
     });
@@ -805,7 +887,7 @@ describe("App shell", () => {
     expect(updatePolicy).toHaveBeenCalledWith({
       policy_id: "default-policy",
       name: "default-updated",
-      selection_order: ["official-primary", "relay-newapi"],
+      selection_order: ["official-primary", "relay-nobalance", "relay-newapi"],
       cross_pool_fallback: false,
       retry_budget: 2,
       timeout_open_after: 3,
@@ -825,7 +907,7 @@ describe("App shell", () => {
     });
 
     expect(await screen.findByLabelText(/retry budget/i)).toHaveValue("1");
-    expect(screen.getByLabelText(/selection order/i)).toHaveValue(
+    expect(screen.getByLabelText(/^Selection Order$/)).toHaveValue(
       "official-primary, relay-newapi",
     );
   });
@@ -841,8 +923,25 @@ describe("App shell", () => {
     fireEvent.change(retryBudget, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: /save policy/i }));
 
-    expect(await screen.findByText("Required")).toBeInTheDocument();
+    expect(await screen.findByText("Retry budget must be a positive integer.")).toBeInTheDocument();
     expect(updatePolicy).not.toHaveBeenCalled();
+  });
+
+  it("shows candidate preview and ordering controls while editing policies", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /policies/i }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /candidate preview/i })).toBeInTheDocument();
+    expect(screen.getByText(/eligible candidates: official-primary, relay-newapi/i)).toBeInTheDocument();
+    expect(screen.getByText(/rejected candidates: relay-nobalance/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add relay-nobalance" }));
+    expect(
+      screen.getByText(/eligible candidates: official-primary, relay-newapi, relay-nobalance/i),
+    ).toBeInTheDocument();
   });
 
   it("shows request history and request-detail affordances", async () => {
