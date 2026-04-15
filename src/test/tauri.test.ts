@@ -1,19 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { invokeMock, listenMock } = vi.hoisted(() => ({
-  invokeMock: vi.fn(),
-  listenMock: vi.fn(),
-}));
+const invokeMock = vi.fn();
+const listenMock = vi.fn();
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: invokeMock,
-}));
+// @ts-expect-error bun:test is only available when executed via `bun test`.
+const bunMock = (await import("bun:test").catch(() => null))?.mock;
 
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: listenMock,
-}));
+if (bunMock?.module) {
+  bunMock.module("@tauri-apps/api/core", () => ({
+    invoke: invokeMock,
+  }));
+  bunMock.module("@tauri-apps/api/event", () => ({
+    listen: listenMock,
+  }));
+} else {
+  vi.doMock("@tauri-apps/api/core", () => ({
+    invoke: invokeMock,
+  }));
+  vi.doMock("@tauri-apps/api/event", () => ({
+    listen: listenMock,
+  }));
+}
 
-import {
+const tauriModule = await import("../lib/tauri?tauri-test" as string);
+
+const {
   CodexLagInvokeError,
   createPlatformKey,
   getAccountCapabilityDetail,
@@ -29,15 +40,17 @@ import {
   refreshOpenAiSession,
   refreshRelayBalance,
   startOpenAiBrowserLogin,
-} from "../lib/tauri";
+} = tauriModule as typeof import("../lib/tauri");
 
-async function expectInvokeError(operation: Promise<unknown>): Promise<CodexLagInvokeError> {
+type CodexLagInvokeErrorInstance = InstanceType<typeof CodexLagInvokeError>;
+
+async function expectInvokeError(operation: Promise<unknown>): Promise<CodexLagInvokeErrorInstance> {
   try {
     await operation;
     throw new Error("Expected CodexLagInvokeError");
   } catch (error) {
     expect(error).toBeInstanceOf(CodexLagInvokeError);
-    return error as CodexLagInvokeError;
+    return error as CodexLagInvokeErrorInstance;
   }
 }
 

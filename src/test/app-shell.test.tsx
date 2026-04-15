@@ -29,39 +29,10 @@ const {
   screen,
 } = await import("@testing-library/react");
 
-const {
-  addRelay,
-  createPlatformKey,
-  disablePlatformKey,
-  enablePlatformKey,
-  emitDefaultKeySummaryChanged,
-  exportRuntimeDiagnostics,
-  getAccountCapabilityDetail,
-  getDefaultKeySummary,
-  getLogSummary,
-  getProviderDiagnostics,
-  getRuntimeLogMetadata,
-  getRelayCapabilityDetail,
-  getUsageRequestDetail,
-  importOfficialAccountLogin,
-  listenForDefaultKeySummaryChanged,
-  listAccounts,
-  listProviderInventory,
-  listProviderSessions,
-  listPlatformKeys,
-  listPolicies,
-  listRelays,
-  logoutOpenAiSession,
-  listUsageRequestHistory,
-  queryUsageLedger,
-  refreshAccountBalance,
-  refreshOpenAiSession,
-  refreshRelayBalance,
-  startOpenAiBrowserLogin,
-  testRelayConnection,
-  setDefaultKeyMode,
-  updatePolicy,
-} = vi.hoisted(() => {
+// @ts-expect-error bun:test is only available when executed via `bun test`.
+const bunMock = (await import("bun:test").catch(() => null))?.mock;
+
+function createMockState() {
   let listener:
     | ((summary: {
         name: string;
@@ -116,19 +87,34 @@ const {
     setDefaultKeyMode: vi.fn(),
     updatePolicy: vi.fn(),
   };
-});
+}
 
-vi.mock("../lib/tauri", () => ({
+let mockState: ReturnType<typeof createMockState>;
+
+if (bunMock?.module) {
+  mockState = createMockState();
+  bunMock.module("../lib/tauri", () => ({
+    ...mockState,
+  }));
+} else {
+  vi.mock("../lib/tauri", () => ({
+    ...(mockState = createMockState()),
+  }));
+}
+
+const { default: App } = (await import("../App")) as typeof import("../App");
+const {
   addRelay,
   createPlatformKey,
   disablePlatformKey,
   enablePlatformKey,
+  emitDefaultKeySummaryChanged,
+  exportRuntimeDiagnostics,
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
   getProviderDiagnostics,
   getRuntimeLogMetadata,
-  exportRuntimeDiagnostics,
   getRelayCapabilityDetail,
   getUsageRequestDetail,
   importOfficialAccountLogin,
@@ -149,9 +135,7 @@ vi.mock("../lib/tauri", () => ({
   testRelayConnection,
   setDefaultKeyMode,
   updatePolicy,
-}));
-
-import App from "../App";
+} = mockState;
 
 function renderApp() {
   return rtlRender(
