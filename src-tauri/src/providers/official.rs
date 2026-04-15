@@ -12,14 +12,29 @@ use crate::providers::invocation::{
 use crate::providers::registry::ProviderAdapter;
 
 pub const OFFICIAL_OPENAI_PROVIDER_ID: &str = "openai_official";
+pub const OFFICIAL_DEFAULT_MODELS: &[&str] = &["gpt-5-mini"];
 
-pub fn provider_adapter() -> ProviderAdapter {
-    ProviderAdapter {
-        provider_id: OFFICIAL_OPENAI_PROVIDER_ID,
-        display_name: "OpenAI Official",
-        default_models: &["gpt-5-mini"],
-        requires_session_secret: true,
+#[derive(Debug)]
+pub struct OfficialOpenAiAdapter;
+
+impl ProviderAdapter for OfficialOpenAiAdapter {
+    fn provider_id(&self) -> &'static str {
+        OFFICIAL_OPENAI_PROVIDER_ID
     }
+
+    fn supports_browser_login(&self) -> bool {
+        true
+    }
+
+    fn supports_balance(&self) -> bool {
+        false
+    }
+}
+
+static OFFICIAL_OPENAI_ADAPTER: OfficialOpenAiAdapter = OfficialOpenAiAdapter;
+
+pub fn provider_adapter() -> &'static dyn ProviderAdapter {
+    &OFFICIAL_OPENAI_ADAPTER
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

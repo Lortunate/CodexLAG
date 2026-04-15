@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use codexlag_lib::{
     bootstrap::bootstrap_state_for_test_at,
     commands::logs::provider_diagnostics_from_runtime,
+    gateway::runtime_routing::RouteDebugSnapshot,
     models::{
         relay_api_key_credential_ref, ImportedOfficialAccount, ManagedRelay, OfficialAuthMode,
         OfficialSession, ProviderSessionSummary, RelayBalanceAdapter,
@@ -92,6 +93,44 @@ fn diagnostics_surface_includes_auth_provider_capability_and_routing_sections() 
             .to_string(),
         )
         .expect("store provider session");
+    runtime
+        .openai_auth_mut()
+        .store_session(
+            ProviderSessionSummary {
+                provider_id: "openai_official".into(),
+                account_id: "openai-stale".into(),
+                display_name: "OpenAI Stale".into(),
+                auth_state: "expired".into(),
+                expires_at_ms: Some(1_731_000_000_000),
+                last_refresh_at_ms: Some(1_731_111_100_000),
+                last_refresh_error: Some("refresh rejected by provider".into()),
+            },
+            "expired-session-cookie".into(),
+            serde_json::json!({
+                "access_token": "expired-access-token",
+                "refresh_token": "stale-refresh-token",
+            })
+            .to_string(),
+        )
+        .expect("store degraded provider session");
+    runtime.record_balance_refresh_summary(
+        "relay:relay-newapi @ 2026-04-15T08:00:00Z (queryable)".into(),
+    );
+    assert!(
+        runtime
+            .loopback_gateway()
+            .state()
+            .set_endpoint_availability("official-primary", false),
+        "official endpoint should exist in runtime candidates"
+    );
+    runtime
+        .loopback_gateway()
+        .state()
+        .set_last_route_debug_snapshot(Some(RouteDebugSnapshot {
+            request_id: "req-diagnostics".into(),
+            selected_endpoint_id: "relay-newapi".into(),
+            attempt_count: 2,
+        }));
 
     let diagnostics = provider_diagnostics_from_runtime(&runtime).expect("provider diagnostics");
     let section_ids = diagnostics
@@ -122,6 +161,24 @@ fn diagnostics_surface_includes_auth_provider_capability_and_routing_sections() 
             .any(|row| row.key == "openai-primary" && row.status == "healthy"),
         "stored OpenAI sessions should surface as healthy auth rows"
     );
+    let healthy_auth_row = find_row(auth_section, "openai-primary");
+    assert_eq!(
+        detail_value(healthy_auth_row, "refresh_outcome"),
+        Some("succeeded"),
+        "healthy sessions should report a successful refresh outcome"
+    );
+    let degraded_auth_row = find_row(auth_section, "openai-stale");
+    assert_eq!(degraded_auth_row.status, "error");
+    assert_eq!(
+        detail_value(degraded_auth_row, "refresh_outcome"),
+        Some("failed"),
+        "expired sessions with refresh failures should expose a failed outcome"
+    );
+    assert_eq!(
+        detail_value(degraded_auth_row, "last_refresh_error"),
+        Some("refresh rejected by provider"),
+        "refresh diagnostics should surface the last refresh failure reason"
+    );
 
     let provider_section = diagnostics
         .sections
@@ -141,6 +198,29 @@ fn diagnostics_surface_includes_auth_provider_capability_and_routing_sections() 
             .iter()
             .any(|row| row.key == "relay-newapi"),
         "persisted relay inventory should project into provider health diagnostics"
+    );
+    let rejected_provider_row = find_row(provider_section, "official-primary");
+    assert_eq!(rejected_provider_row.status, "error");
+    assert_eq!(
+        detail_value(rejected_provider_row, "rejection_reason"),
+        Some("unavailable"),
+        "provider diagnostics should expose candidate rejection reasons"
+    );
+    assert_eq!(
+        detail_value(rejected_provider_row, "routing_decision"),
+        Some("rejected"),
+        "provider diagnostics should structure rejected candidate decisions"
+    );
+    let selected_provider_row = find_row(provider_section, "relay-newapi");
+    assert_eq!(
+        detail_value(selected_provider_row, "routing_decision"),
+        Some("selected"),
+        "selected candidates should be marked explicitly in provider diagnostics"
+    );
+    assert_eq!(
+        detail_value(selected_provider_row, "selected_rationale"),
+        Some("selected_for_last_route"),
+        "selected candidates should expose a rationale when a last-route snapshot exists"
     );
 
     let capability_section = diagnostics
@@ -168,6 +248,45 @@ fn diagnostics_surface_includes_auth_provider_capability_and_routing_sections() 
             .any(|row| row.key == "current-mode"),
         "routing visibility should summarize the active routing mode"
     );
+    let last_route_row = find_row(routing_section, "last-route");
+    assert_eq!(last_route_row.value, "relay-newapi");
+    assert_eq!(
+        detail_value(last_route_row, "selected_pool"),
+        Some("relay"),
+        "routing visibility should expose the selected provider pool"
+    );
+    assert_eq!(
+        detail_value(last_route_row, "selected_rationale"),
+        Some("selected_for_last_route"),
+        "routing visibility should expose the selected-candidate rationale"
+    );
+    let balance_row = find_row(routing_section, "last-balance-refresh");
+    assert_eq!(
+        detail_value(balance_row, "refresh_outcome"),
+        Some("queryable"),
+        "routing visibility should preserve the parsed balance refresh outcome"
+    );
+}
+
+fn find_row<'a>(
+    section: &'a codexlag_lib::logging::diagnostics::DiagnosticsSection,
+    key: &str,
+) -> &'a codexlag_lib::logging::diagnostics::DiagnosticsRow {
+    section
+        .rows
+        .iter()
+        .find(|row| row.key == key)
+        .unwrap_or_else(|| panic!("expected diagnostics row '{key}'"))
+}
+
+fn detail_value<'a>(
+    row: &'a codexlag_lib::logging::diagnostics::DiagnosticsRow,
+    label: &str,
+) -> Option<&'a str> {
+    row.details
+        .iter()
+        .find(|detail| detail.label == label)
+        .map(|detail| detail.value.as_str())
 }
 
 fn temp_database_path(prefix: &str) -> PathBuf {

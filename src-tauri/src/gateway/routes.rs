@@ -274,20 +274,28 @@ async fn codex_request(
 
                     match imported {
                         Some(imported) => {
-                            let secrets: Result<(String, String), InvocationFailure> = {
-                                let state = gateway_state.app_state();
-                                match (
-                                    state.secret(&crate::secret_store::SecretKey::new(
-                                        imported.session_credential_ref.clone(),
-                                    )),
+                            if matches!(
+                                imported.provider.as_str(),
+                                crate::providers::generic_openai::GENERIC_OPENAI_PROVIDER_ID
+                                    | "generic_openai"
+                            ) {
+                                let token_secret = {
+                                    let state = gateway_state.app_state();
                                     state.secret(&crate::secret_store::SecretKey::new(
                                         imported.token_credential_ref.clone(),
-                                    )),
-                                ) {
-                                    (Ok(session_secret), Ok(token_secret)) => {
-                                        Ok((session_secret, token_secret))
+                                    ))
+                                };
+                                match token_secret {
+                                    Ok(token_secret) => {
+                                        crate::providers::generic_openai::invoke_generic_openai(
+                                            token_secret.as_str(),
+                                            context.request_id.as_str(),
+                                            context.attempt_id.as_str(),
+                                            selected.id.as_str(),
+                                        )
+                                        .await
                                     }
-                                    _ => Err(InvocationFailure {
+                                    Err(_) => Err(InvocationFailure {
                                         request_id: context.request_id.clone(),
                                         attempt_id: context.attempt_id.clone(),
                                         endpoint_id: selected.id.clone(),
@@ -296,20 +304,44 @@ async fn codex_request(
                                         upstream_status: None,
                                     }),
                                 }
-                            };
-                            match secrets {
-                                Ok((session_secret, token_secret)) => {
-                                    crate::providers::official::invoke_official_session(
-                                        &imported.session,
-                                        session_secret.as_str(),
-                                        token_secret.as_str(),
-                                        context.request_id.as_str(),
-                                        context.attempt_id.as_str(),
-                                        selected.id.as_str(),
-                                    )
-                                    .await
+                            } else {
+                                let secrets: Result<(String, String), InvocationFailure> = {
+                                    let state = gateway_state.app_state();
+                                    match (
+                                        state.secret(&crate::secret_store::SecretKey::new(
+                                            imported.session_credential_ref.clone(),
+                                        )),
+                                        state.secret(&crate::secret_store::SecretKey::new(
+                                            imported.token_credential_ref.clone(),
+                                        )),
+                                    ) {
+                                        (Ok(session_secret), Ok(token_secret)) => {
+                                            Ok((session_secret, token_secret))
+                                        }
+                                        _ => Err(InvocationFailure {
+                                            request_id: context.request_id.clone(),
+                                            attempt_id: context.attempt_id.clone(),
+                                            endpoint_id: selected.id.clone(),
+                                            pool: selected.pool.clone(),
+                                            class: InvocationFailureClass::Config,
+                                            upstream_status: None,
+                                        }),
+                                    }
+                                };
+                                match secrets {
+                                    Ok((session_secret, token_secret)) => {
+                                        crate::providers::official::invoke_official_session(
+                                            &imported.session,
+                                            session_secret.as_str(),
+                                            token_secret.as_str(),
+                                            context.request_id.as_str(),
+                                            context.attempt_id.as_str(),
+                                            selected.id.as_str(),
+                                        )
+                                        .await
+                                    }
+                                    Err(failure) => Err(failure),
                                 }
-                                Err(failure) => Err(failure),
                             }
                         }
                         None => Err(InvocationFailure {

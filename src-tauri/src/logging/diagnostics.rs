@@ -124,6 +124,16 @@ fn build_auth_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
                         optional_i64(session.last_refresh_at_ms),
                     ),
                     detail(
+                        "refresh_outcome",
+                        if session.last_refresh_error.is_some() {
+                            "failed"
+                        } else if session.last_refresh_at_ms.is_some() {
+                            "succeeded"
+                        } else {
+                            "unknown"
+                        },
+                    ),
+                    detail(
                         "last_refresh_error",
                         session.last_refresh_error.unwrap_or_else(|| "none".into()),
                     ),
@@ -164,6 +174,11 @@ fn build_provider_health_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
     drop(state);
 
     let now_ms = wall_clock_now_ms();
+    let selected_endpoint_id = runtime
+        .loopback_gateway()
+        .state()
+        .last_route_debug()
+        .map(|snapshot| snapshot.selected_endpoint_id);
     runtime
         .loopback_gateway()
         .state()
@@ -206,6 +221,19 @@ fn build_provider_health_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
                                 "downgrade_reason",
                                 downgrade_reason.unwrap_or("none").to_string(),
                             ),
+                            detail(
+                                "routing_decision",
+                                routing_decision(
+                                    candidate.id.as_str(),
+                                    selected_endpoint_id.as_deref(),
+                                    rejection_reason,
+                                    downgrade_reason,
+                                ),
+                            ),
+                            detail(
+                                "selected_rationale",
+                                selected_rationale(candidate.id.as_str(), selected_endpoint_id.as_deref()),
+                            ),
                         ],
                     )
                 }
@@ -227,6 +255,19 @@ fn build_provider_health_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
                             detail(
                                 "downgrade_reason",
                                 downgrade_reason.unwrap_or("none").to_string(),
+                            ),
+                            detail(
+                                "routing_decision",
+                                routing_decision(
+                                    candidate.id.as_str(),
+                                    selected_endpoint_id.as_deref(),
+                                    rejection_reason,
+                                    downgrade_reason,
+                                ),
+                            ),
+                            detail(
+                                "selected_rationale",
+                                selected_rationale(candidate.id.as_str(), selected_endpoint_id.as_deref()),
                             ),
                         ],
                     )
@@ -305,11 +346,20 @@ fn build_capability_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
     let inventory = project_provider_inventory_summary(&state);
     drop(state);
 
+    let account_models = inventory
+        .models
+        .iter()
+        .fold(std::collections::BTreeMap::<String, Vec<String>>::new(), |mut acc, model| {
+            acc.entry(model.account_id.clone())
+                .or_default()
+                .push(model.model_id.clone());
+            acc
+        });
     let mut inventory_rows = inventory
-        .providers
+        .accounts
         .into_iter()
         .map(|provider| DiagnosticsRow {
-            key: format!("inventory:{}", provider.endpoint_id),
+            key: format!("inventory:{}", provider.account_id),
             label: format!("{} inventory", provider.display_name),
             status: if provider.available {
                 "healthy".into()
@@ -321,7 +371,11 @@ fn build_capability_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
             value: format!(
                 "registered={} | models={}",
                 provider.registered,
-                provider.model_ids.join(", ")
+                account_models
+                    .get(&provider.account_id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .join(", ")
             ),
             details: vec![
                 detail("provider_id", provider.provider_id),
@@ -330,15 +384,21 @@ fn build_capability_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
                     provider.base_url.unwrap_or_else(|| "default".into()),
                 ),
                 detail(
-                    "feature_capabilities",
-                    if provider.feature_capabilities.is_empty() {
+                    "auth_state",
+                    provider.auth_state,
+                ),
+                detail(
+                    "models",
+                    if account_models
+                        .get(&provider.account_id)
+                        .is_none_or(|models| models.is_empty())
+                    {
                         "none".into()
                     } else {
-                        provider
-                            .feature_capabilities
-                            .into_iter()
-                            .map(|capability| capability.model_id)
-                            .collect::<Vec<_>>()
+                        account_models
+                            .get(&provider.account_id)
+                            .cloned()
+                            .unwrap_or_default()
                             .join(", ")
                     },
                 ),
@@ -359,6 +419,16 @@ fn build_routing_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
     let unavailable_reason = gateway_state.unavailable_reason_for_mode(current_mode.as_str());
     let policy = state.default_policy().cloned();
     let last_balance_refresh = runtime.last_balance_refresh_summary();
+    let selected_pool = gateway_state.last_route_debug().and_then(|snapshot| {
+        gateway_state
+            .current_candidates()
+            .into_iter()
+            .find(|candidate| candidate.id == snapshot.selected_endpoint_id)
+            .map(|candidate| match candidate.pool {
+                PoolKind::Official => "official".to_string(),
+                PoolKind::Relay => "relay".to_string(),
+            })
+    });
     drop(state);
 
     let mut rows = vec![DiagnosticsRow {
@@ -420,6 +490,10 @@ fn build_routing_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
             .unwrap_or_else(|| "no requests routed yet".into()),
         details: vec![
             detail(
+                "selected_pool",
+                selected_pool.unwrap_or_else(|| "none".into()),
+            ),
+            detail(
                 "request_id",
                 last_route_debug
                     .as_ref()
@@ -433,6 +507,14 @@ fn build_routing_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
                     .map(|snapshot| snapshot.attempt_count.to_string())
                     .unwrap_or_else(|| "0".into()),
             ),
+            detail(
+                "selected_rationale",
+                if last_route_debug.is_some() {
+                    "selected_for_last_route"
+                } else {
+                    "none"
+                },
+            ),
         ],
     });
 
@@ -440,8 +522,11 @@ fn build_routing_rows(runtime: &RuntimeState) -> Vec<DiagnosticsRow> {
         key: "last-balance-refresh".into(),
         label: "Last balance refresh".into(),
         status: "info".into(),
-        value: last_balance_refresh.unwrap_or_else(|| "none".into()),
-        details: Vec::new(),
+        value: last_balance_refresh.clone().unwrap_or_else(|| "none".into()),
+        details: vec![detail(
+            "refresh_outcome",
+            balance_refresh_outcome(last_balance_refresh.as_deref()),
+        )],
     });
 
     rows
@@ -499,5 +584,41 @@ fn detail(label: impl Into<String>, value: impl Into<String>) -> DiagnosticsDeta
     DiagnosticsDetail {
         label: label.into(),
         value: value.into(),
+    }
+}
+
+fn routing_decision(
+    candidate_id: &str,
+    selected_endpoint_id: Option<&str>,
+    rejection_reason: Option<&'static str>,
+    downgrade_reason: Option<&'static str>,
+) -> &'static str {
+    if selected_endpoint_id == Some(candidate_id) {
+        return "selected";
+    }
+    if rejection_reason.is_some() {
+        return "rejected";
+    }
+    if downgrade_reason.is_some() {
+        return "downgraded";
+    }
+    "eligible"
+}
+
+fn selected_rationale(candidate_id: &str, selected_endpoint_id: Option<&str>) -> &'static str {
+    if selected_endpoint_id == Some(candidate_id) {
+        "selected_for_last_route"
+    } else {
+        "none"
+    }
+}
+
+fn balance_refresh_outcome(summary: Option<&str>) -> &'static str {
+    match summary {
+        Some(value) if value.contains("(queryable)") => "queryable",
+        Some(value) if value.contains("(non_queryable)") => "non_queryable",
+        Some(value) if value.contains("(unsupported)") => "unsupported",
+        Some(_) => "recorded",
+        None => "none",
     }
 }

@@ -7,6 +7,7 @@ use crate::auth::openai::{PendingOpenAiLoopbackAuthSession, ReqwestOpenAiSession
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
 use crate::models::{ImportedOfficialAccount, ProviderSessionSummary};
 use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
+use crate::providers::inventory::{project_provider_inventory_summary, ProviderInventorySummary};
 use crate::state::{AppState, RuntimeState};
 
 const OFFICIAL_PRIMARY_ACCOUNT_ID: &str = "official-primary";
@@ -90,6 +91,15 @@ pub fn list_provider_sessions(
     state: State<'_, RuntimeState>,
 ) -> Result<Vec<ProviderSessionSummary>> {
     list_provider_sessions_from_runtime(&state)
+}
+
+pub fn list_provider_inventory_from_runtime(runtime: &RuntimeState) -> ProviderInventorySummary {
+    project_provider_inventory_summary(&runtime.app_state())
+}
+
+#[tauri::command]
+pub fn list_provider_inventory(state: State<'_, RuntimeState>) -> ProviderInventorySummary {
+    list_provider_inventory_from_runtime(&state)
 }
 
 pub fn refresh_account_balance_from_runtime(

@@ -3,31 +3,29 @@ use std::collections::BTreeMap;
 use crate::providers::generic_openai::GENERIC_OPENAI_PROVIDER_ID;
 use crate::providers::official::OFFICIAL_OPENAI_PROVIDER_ID;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProviderAdapter {
-    pub provider_id: &'static str,
-    pub display_name: &'static str,
-    pub default_models: &'static [&'static str],
-    pub requires_session_secret: bool,
+pub trait ProviderAdapter: std::fmt::Debug + Send + Sync {
+    fn provider_id(&self) -> &'static str;
+    fn supports_browser_login(&self) -> bool;
+    fn supports_balance(&self) -> bool;
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct ProviderRegistry {
-    adapters: BTreeMap<&'static str, ProviderAdapter>,
+    adapters: BTreeMap<&'static str, &'static dyn ProviderAdapter>,
 }
 
 impl ProviderRegistry {
-    pub fn register(&mut self, adapter: ProviderAdapter) {
-        self.adapters.insert(adapter.provider_id, adapter);
+    pub fn register(&mut self, adapter: &'static dyn ProviderAdapter) {
+        self.adapters.insert(adapter.provider_id(), adapter);
     }
 
-    pub fn adapter(&self, provider_id: &str) -> Option<&ProviderAdapter> {
+    pub fn adapter(&self, provider_id: &str) -> Option<&'static dyn ProviderAdapter> {
         let canonical = match provider_id {
             "openai" => OFFICIAL_OPENAI_PROVIDER_ID,
             "generic_openai" => GENERIC_OPENAI_PROVIDER_ID,
             other => other,
         };
-        self.adapters.get(canonical)
+        self.adapters.get(canonical).copied()
     }
 
     pub fn provider_ids(&self) -> Vec<&'static str> {

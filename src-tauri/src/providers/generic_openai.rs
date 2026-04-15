@@ -15,15 +15,30 @@ use reqwest::StatusCode;
 
 pub const GENERIC_OPENAI_PROVIDER_ID: &str = "generic_openai_compatible";
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
-const DEFAULT_MODEL: &str = "gpt-4o-mini";
+pub const GENERIC_OPENAI_DEFAULT_MODELS: &[&str] = &["gpt-4o-mini"];
+const DEFAULT_MODEL: &str = GENERIC_OPENAI_DEFAULT_MODELS[0];
 
-pub fn provider_adapter() -> ProviderAdapter {
-    ProviderAdapter {
-        provider_id: GENERIC_OPENAI_PROVIDER_ID,
-        display_name: "OpenAI-Compatible",
-        default_models: &[DEFAULT_MODEL],
-        requires_session_secret: false,
+#[derive(Debug)]
+pub struct GenericOpenAiAdapter;
+
+impl ProviderAdapter for GenericOpenAiAdapter {
+    fn provider_id(&self) -> &'static str {
+        GENERIC_OPENAI_PROVIDER_ID
     }
+
+    fn supports_browser_login(&self) -> bool {
+        false
+    }
+
+    fn supports_balance(&self) -> bool {
+        false
+    }
+}
+
+static GENERIC_OPENAI_ADAPTER: GenericOpenAiAdapter = GenericOpenAiAdapter;
+
+pub fn provider_adapter() -> &'static dyn ProviderAdapter {
+    &GENERIC_OPENAI_ADAPTER
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,8 +158,7 @@ pub fn generic_openai_inventory_models(config: &GenericOpenAiConfig) -> Vec<Stri
         return discovered;
     }
 
-    provider_adapter()
-        .default_models
+    GENERIC_OPENAI_DEFAULT_MODELS
         .iter()
         .map(|model| (*model).to_string())
         .collect()

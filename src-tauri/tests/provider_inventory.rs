@@ -53,9 +53,9 @@ async fn provider_inventory_projects_registered_models_for_official_and_generic_
 
     let summary = project_provider_inventory_summary(&state);
     let endpoint_ids: Vec<&str> = summary
-        .providers
+        .accounts
         .iter()
-        .map(|provider| provider.endpoint_id.as_str())
+        .map(|provider| provider.account_id.as_str())
         .collect();
     assert_eq!(
         endpoint_ids,
@@ -63,7 +63,7 @@ async fn provider_inventory_projects_registered_models_for_official_and_generic_
         "provider inventory should be sorted deterministically by display name"
     );
 
-    let generic = &summary.providers[0];
+    let generic = &summary.accounts[0];
     assert_eq!(generic.provider_id, "generic_openai_compatible");
     assert!(generic.registered);
     assert!(
@@ -74,18 +74,38 @@ async fn provider_inventory_projects_registered_models_for_official_and_generic_
         generic.base_url.as_deref(),
         Some("https://gateway.example.test/v1")
     );
+    let generic_models = summary
+        .models
+        .iter()
+        .filter(|model| model.account_id == "generic-alpha")
+        .collect::<Vec<_>>();
     assert_eq!(
-        generic.model_ids,
-        vec!["gpt-4o-mini".to_string(), "gpt-4.1-mini".to_string()]
+        generic_models
+            .iter()
+            .map(|model| model.model_id.clone())
+            .collect::<Vec<_>>(),
+        vec!["gpt-4.1-mini".to_string(), "gpt-4o-mini".to_string()]
     );
-    assert_eq!(generic.feature_capabilities.len(), 2);
+    assert!(generic_models.iter().all(|model| model.source == "manual"));
 
-    let official = &summary.providers[1];
+    let official = &summary.accounts[1];
     assert_eq!(official.provider_id, "openai_official");
     assert!(official.registered);
     assert!(official.available);
     assert_eq!(official.base_url, None);
-    assert_eq!(official.model_ids, vec!["gpt-5-mini".to_string()]);
+    let official_models = summary
+        .models
+        .iter()
+        .filter(|model| model.account_id == "official-zeta")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        official_models
+            .iter()
+            .map(|model| model.model_id.clone())
+            .collect::<Vec<_>>(),
+        vec!["gpt-5-mini".to_string()]
+    );
+    assert!(official_models.iter().all(|model| model.source == "default"));
 }
 
 #[tokio::test]
@@ -114,16 +134,28 @@ async fn provider_inventory_projects_stored_openai_provider_sessions() {
 
     let summary = project_provider_inventory_summary(&state);
     let provider = summary
-        .providers
+        .accounts
         .iter()
-        .find(|provider| provider.endpoint_id == "openai-primary")
+        .find(|provider| provider.account_id == "openai-primary")
         .expect("stored openai provider session should project into inventory");
 
     assert_eq!(provider.provider_id, "openai_official");
     assert!(provider.registered);
     assert!(provider.available);
     assert_eq!(provider.base_url, None);
-    assert_eq!(provider.model_ids, vec!["gpt-5-mini".to_string()]);
+    let models = summary
+        .models
+        .iter()
+        .filter(|model| model.account_id == "openai-primary")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        models
+            .iter()
+            .map(|model| model.model_id.clone())
+            .collect::<Vec<_>>(),
+        vec!["gpt-5-mini".to_string()]
+    );
+    assert!(models.iter().all(|model| model.source == "session"));
 }
 
 #[tokio::test]
@@ -148,9 +180,9 @@ async fn provider_inventory_marks_unregistered_providers_as_unavailable() {
 
     let summary = project_provider_inventory_summary(&state);
     let unsupported = summary
-        .providers
+        .accounts
         .iter()
-        .find(|provider| provider.endpoint_id == "unsupported-provider")
+        .find(|provider| provider.account_id == "unsupported-provider")
         .expect("unsupported provider should still be projected");
 
     assert!(!unsupported.registered);
@@ -158,7 +190,14 @@ async fn provider_inventory_marks_unregistered_providers_as_unavailable() {
         !unsupported.available,
         "unregistered providers should not project as available"
     );
-    assert!(unsupported.model_ids.is_empty());
+    assert!(
+        summary
+            .models
+            .iter()
+            .filter(|model| model.account_id == "unsupported-provider")
+            .collect::<Vec<_>>()
+            .is_empty()
+    );
 }
 
 fn account(

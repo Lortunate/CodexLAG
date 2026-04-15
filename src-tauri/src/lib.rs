@@ -57,7 +57,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::accounts::list_accounts,
             commands::accounts::list_provider_sessions,
-            commands::accounts::import_official_account_login,
+            commands::accounts::list_provider_inventory,
             commands::accounts::start_openai_browser_login,
             commands::accounts::refresh_openai_session,
             commands::accounts::logout_openai_session,

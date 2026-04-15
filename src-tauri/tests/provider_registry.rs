@@ -12,10 +12,14 @@ fn provider_registry_registers_openai_official_and_generic_provider_ids() {
     let official = registry
         .adapter("openai_official")
         .expect("openai provider should be registered");
-    assert_eq!(official.provider_id, "openai_official");
+    assert_eq!(official.provider_id(), "openai_official");
+    assert!(official.supports_browser_login());
+    assert!(!official.supports_balance());
 
     let generic = registry
         .adapter("generic_openai_compatible")
         .expect("generic openai provider should be registered");
-    assert_eq!(generic.provider_id, "generic_openai_compatible");
+    assert_eq!(generic.provider_id(), "generic_openai_compatible");
+    assert!(!generic.supports_browser_login());
+    assert!(!generic.supports_balance());
 }
