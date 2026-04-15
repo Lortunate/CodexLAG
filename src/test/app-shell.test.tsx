@@ -29,60 +29,94 @@ const {
   screen,
 } = await import("@testing-library/react");
 
-// Replace vi.hoisted-based setup with a runner-compatible module mock shape.
-let defaultKeySummaryListener:
-  | ((summary: {
+const {
+  addRelay,
+  createPlatformKey,
+  disablePlatformKey,
+  enablePlatformKey,
+  emitDefaultKeySummaryChanged,
+  exportRuntimeDiagnostics,
+  getAccountCapabilityDetail,
+  getDefaultKeySummary,
+  getLogSummary,
+  getProviderDiagnostics,
+  getRuntimeLogMetadata,
+  getRelayCapabilityDetail,
+  getUsageRequestDetail,
+  importOfficialAccountLogin,
+  listenForDefaultKeySummaryChanged,
+  listAccounts,
+  listProviderInventory,
+  listProviderSessions,
+  listPlatformKeys,
+  listPolicies,
+  listRelays,
+  logoutOpenAiSession,
+  listUsageRequestHistory,
+  queryUsageLedger,
+  refreshAccountBalance,
+  refreshOpenAiSession,
+  refreshRelayBalance,
+  startOpenAiBrowserLogin,
+  testRelayConnection,
+  setDefaultKeyMode,
+  updatePolicy,
+} = vi.hoisted(() => {
+  let listener:
+    | ((summary: {
+        name: string;
+        allowedMode: "account_only" | "relay_only" | "hybrid" | null;
+        rawAllowedMode: string;
+        unavailableReason: string | null;
+      }) => void)
+    | null = null;
+
+  return {
+    addRelay: vi.fn(),
+    createPlatformKey: vi.fn(),
+    disablePlatformKey: vi.fn(),
+    enablePlatformKey: vi.fn(),
+    emitDefaultKeySummaryChanged(summary: {
       name: string;
       allowedMode: "account_only" | "relay_only" | "hybrid" | null;
       rawAllowedMode: string;
       unavailableReason: string | null;
-    }) => void)
-  | null = null;
-
-const addRelay = vi.fn();
-const createPlatformKey = vi.fn();
-const disablePlatformKey = vi.fn();
-const enablePlatformKey = vi.fn();
-const exportRuntimeDiagnostics = vi.fn();
-const getAccountCapabilityDetail = vi.fn();
-const getDefaultKeySummary = vi.fn();
-const getLogSummary = vi.fn();
-const getProviderDiagnostics = vi.fn();
-const getRuntimeLogMetadata = vi.fn();
-const getRelayCapabilityDetail = vi.fn();
-const getUsageRequestDetail = vi.fn();
-const importOfficialAccountLogin = vi.fn();
-const listenForDefaultKeySummaryChanged = vi.fn(async (handler) => {
-  defaultKeySummaryListener = handler;
-  return () => {
-    defaultKeySummaryListener = null;
+    }) {
+      listener?.(summary);
+    },
+    exportRuntimeDiagnostics: vi.fn(),
+    getAccountCapabilityDetail: vi.fn(),
+    getDefaultKeySummary: vi.fn(),
+    getLogSummary: vi.fn(),
+    getProviderDiagnostics: vi.fn(),
+    getRuntimeLogMetadata: vi.fn(),
+    getRelayCapabilityDetail: vi.fn(),
+    getUsageRequestDetail: vi.fn(),
+    importOfficialAccountLogin: vi.fn(),
+    listenForDefaultKeySummaryChanged: vi.fn(async (handler) => {
+      listener = handler;
+      return () => {
+        listener = null;
+      };
+    }),
+    listAccounts: vi.fn(),
+    listProviderInventory: vi.fn(),
+    listProviderSessions: vi.fn(),
+    listPlatformKeys: vi.fn(),
+    listPolicies: vi.fn(),
+    listRelays: vi.fn(),
+    logoutOpenAiSession: vi.fn(),
+    listUsageRequestHistory: vi.fn(),
+    queryUsageLedger: vi.fn(),
+    refreshAccountBalance: vi.fn(),
+    refreshOpenAiSession: vi.fn(),
+    refreshRelayBalance: vi.fn(),
+    startOpenAiBrowserLogin: vi.fn(),
+    testRelayConnection: vi.fn(),
+    setDefaultKeyMode: vi.fn(),
+    updatePolicy: vi.fn(),
   };
 });
-const listAccounts = vi.fn();
-const listProviderInventory = vi.fn();
-const listProviderSessions = vi.fn();
-const listPlatformKeys = vi.fn();
-const listPolicies = vi.fn();
-const listRelays = vi.fn();
-const logoutOpenAiSession = vi.fn();
-const listUsageRequestHistory = vi.fn();
-const queryUsageLedger = vi.fn();
-const refreshAccountBalance = vi.fn();
-const refreshOpenAiSession = vi.fn();
-const refreshRelayBalance = vi.fn();
-const startOpenAiBrowserLogin = vi.fn();
-const testRelayConnection = vi.fn();
-const setDefaultKeyMode = vi.fn();
-const updatePolicy = vi.fn();
-
-function emitDefaultKeySummaryChanged(summary: {
-  name: string;
-  allowedMode: "account_only" | "relay_only" | "hybrid" | null;
-  rawAllowedMode: string;
-  unavailableReason: string | null;
-}) {
-  defaultKeySummaryListener?.(summary);
-}
 
 vi.mock("../lib/tauri", () => ({
   addRelay,
@@ -132,7 +166,6 @@ const render = (ui = <App />) =>
 
 describe("App shell", () => {
   beforeEach(() => {
-    defaultKeySummaryListener = null;
     addRelay.mockReset();
     createPlatformKey.mockReset();
     disablePlatformKey.mockReset();
