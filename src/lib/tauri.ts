@@ -13,6 +13,7 @@ import type {
   ProviderDiagnosticsSummary,
   LogSummary,
   PendingOpenAiBrowserLogin,
+  ProviderDescriptor,
   ProviderInventorySummary,
   ProviderSessionSummary,
   PlatformKeyInventoryEntry,
@@ -280,6 +281,10 @@ export function listProviderSessions() {
 
 export function listProviderInventory() {
   return invokeWithContract<ProviderInventorySummary>("list_provider_inventory");
+}
+
+export function listProviderDescriptors() {
+  return invokeWithContract<ProviderDescriptor[]>("list_provider_descriptors");
 }
 
 export function refreshOpenAiSession(accountId: string) {

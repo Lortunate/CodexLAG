@@ -5,7 +5,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::auth::openai::{PendingOpenAiLoopbackAuthSession, ReqwestOpenAiSessionRefresher};
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
-use crate::models::{ImportedOfficialAccount, ProviderSessionSummary};
+use crate::models::{ImportedOfficialAccount, ProviderDescriptor, ProviderSessionSummary};
 use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
 use crate::providers::inventory::{project_provider_inventory_summary, ProviderInventorySummary};
 use crate::state::{AppState, RuntimeState};
@@ -100,6 +100,15 @@ pub fn list_provider_inventory_from_runtime(runtime: &RuntimeState) -> ProviderI
 #[tauri::command]
 pub fn list_provider_inventory(state: State<'_, RuntimeState>) -> ProviderInventorySummary {
     list_provider_inventory_from_runtime(&state)
+}
+
+pub fn list_provider_descriptors_from_runtime(runtime: &RuntimeState) -> Vec<ProviderDescriptor> {
+    runtime.app_state().list_provider_descriptors()
+}
+
+#[tauri::command]
+pub fn list_provider_descriptors(state: State<'_, RuntimeState>) -> Vec<ProviderDescriptor> {
+    list_provider_descriptors_from_runtime(&state)
 }
 
 pub fn refresh_account_balance_from_runtime(

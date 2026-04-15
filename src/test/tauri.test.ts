@@ -23,7 +23,6 @@ if (bunMock?.module) {
 }
 
 const tauriModule = await import("../lib/tauri?tauri-test" as string);
-
 const {
   CodexLagInvokeError,
   createPlatformKey,
@@ -31,6 +30,7 @@ const {
   getProviderDiagnostics,
   getRelayCapabilityDetail,
   listAccounts,
+  listProviderDescriptors,
   listProviderInventory,
   listProviderSessions,
   listPolicies,
@@ -141,6 +141,33 @@ describe("tauri wrappers", () => {
     expect(sessions[0]?.account_id).toBe("openai-primary");
     expect(sessions[0]?.auth_profile).toBe("browser");
     expect(sessions[0]?.last_error_message).toBeNull();
+  });
+
+  it("lists provider descriptors through the dedicated command surface", async () => {
+    invokeMock.mockResolvedValue([
+      {
+        provider_id: "openai_official",
+        auth_profile: "browser_oauth_pkce",
+        supports_model_discovery: false,
+        supports_capability_probe: false,
+      },
+      {
+        provider_id: "claude_official",
+        auth_profile: "static_api_key",
+        supports_model_discovery: false,
+        supports_capability_probe: false,
+      },
+    ]);
+
+    const descriptors = await listProviderDescriptors();
+
+    expect(invokeMock).toHaveBeenCalledWith("list_provider_descriptors");
+    expect(descriptors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ provider_id: "openai_official", auth_profile: "browser_oauth_pkce" }),
+        expect.objectContaining({ provider_id: "claude_official", auth_profile: "static_api_key" }),
+      ]),
+    );
   });
 
   it("lists normalized provider inventory through the dedicated command surface", async () => {

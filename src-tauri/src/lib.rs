@@ -58,6 +58,7 @@ pub fn run() {
             commands::accounts::list_accounts,
             commands::accounts::list_provider_sessions,
             commands::accounts::list_provider_inventory,
+            commands::accounts::list_provider_descriptors,
             commands::accounts::start_openai_browser_login,
             commands::accounts::refresh_openai_session,
             commands::accounts::logout_openai_session,

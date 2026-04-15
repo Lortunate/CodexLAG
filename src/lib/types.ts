@@ -45,6 +45,13 @@ export interface ProviderSessionSummary {
   last_error_message?: string | null;
 }
 
+export interface ProviderDescriptor {
+  provider_id: string;
+  auth_profile: "browser_oauth_pkce" | "static_api_key";
+  supports_model_discovery: boolean;
+  supports_capability_probe: boolean;
+}
+
 export interface ProviderAccountHealth {
   provider_id: string;
   account_id: string;

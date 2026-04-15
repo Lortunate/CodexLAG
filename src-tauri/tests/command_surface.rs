@@ -4,7 +4,7 @@ use axum::{
 };
 use codexlag_lib::commands::accounts::{
     get_account_capability_detail_from_runtime, import_official_account_login_from_runtime,
-    list_accounts_from_runtime, OfficialAccountImportInput,
+    list_accounts_from_runtime, list_provider_descriptors_from_runtime, OfficialAccountImportInput,
 };
 use codexlag_lib::commands::keys::{
     create_platform_key_from_runtime, disable_platform_key_from_runtime,
@@ -25,7 +25,7 @@ use codexlag_lib::commands::relays::{
 };
 use codexlag_lib::error::{CodexLagError, ErrorCategory};
 use codexlag_lib::logging::usage::{UsageLedgerQuery, UsageProvenance};
-use codexlag_lib::models::{RequestAttemptLog, RequestLog};
+use codexlag_lib::models::{ProviderAuthProfile, RequestAttemptLog, RequestLog};
 use codexlag_lib::providers::official::OfficialBalanceCapability;
 use codexlag_lib::providers::relay::{RelayBalanceAdapter, RelayBalanceCapability};
 use codexlag_lib::{
@@ -151,6 +151,30 @@ async fn account_and_relay_capability_details_expose_balance_metadata() {
             balance_capability: RelayBalanceCapability::Unsupported,
         }
     );
+    let _ = std::fs::remove_dir_all(&isolated_root);
+}
+
+#[tokio::test]
+async fn provider_descriptor_command_lists_bounded_auth_profiles() {
+    let isolated_root = isolated_test_root("command-provider-descriptors");
+    let database_path = isolated_root.join("state.sqlite3");
+    let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
+
+    let descriptors = list_provider_descriptors_from_runtime(&runtime);
+
+    assert!(descriptors.iter().any(|descriptor| {
+        descriptor.provider_id == "openai_official"
+            && descriptor.auth_profile == ProviderAuthProfile::BrowserOauthPkce
+    }));
+    assert!(descriptors.iter().any(|descriptor| {
+        descriptor.provider_id == "claude_official"
+            && descriptor.auth_profile == ProviderAuthProfile::StaticApiKey
+    }));
+    assert!(descriptors.iter().any(|descriptor| {
+        descriptor.provider_id == "gemini_official"
+            && descriptor.auth_profile == ProviderAuthProfile::StaticApiKey
+    }));
+
     let _ = std::fs::remove_dir_all(&isolated_root);
 }
 
