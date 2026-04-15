@@ -869,7 +869,7 @@ describe("App shell", () => {
     fireEvent.change(retryBudget, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: /save policy/i }));
 
-    expect(await screen.findByText("Retry budget must be a positive integer.")).toBeInTheDocument();
+    expect(await screen.findByText("Required")).toBeInTheDocument();
     expect(updatePolicy).not.toHaveBeenCalled();
   });
 
