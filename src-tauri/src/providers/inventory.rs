@@ -1,4 +1,6 @@
+use crate::providers::claude::{CLAUDE_DEFAULT_MODELS, CLAUDE_PROVIDER_ID};
 use crate::auth::session_store::ProviderSessionStore;
+use crate::providers::gemini::{GEMINI_DEFAULT_MODELS, GEMINI_PROVIDER_ID};
 use crate::providers::generic_openai::{
     generic_openai_inventory_models, parse_generic_openai_config, GENERIC_OPENAI_DEFAULT_MODELS,
     GENERIC_OPENAI_PROVIDER_ID,
@@ -175,6 +177,8 @@ fn inventory_models_for_account(provider_id: &str, token_secret: Option<&str>) -
 
 fn default_models_for_provider(provider_id: &str) -> &'static [&'static str] {
     match provider_id {
+        CLAUDE_PROVIDER_ID | "claude" | "anthropic" => CLAUDE_DEFAULT_MODELS,
+        GEMINI_PROVIDER_ID | "gemini" => GEMINI_DEFAULT_MODELS,
         OFFICIAL_OPENAI_PROVIDER_ID | "openai" => OFFICIAL_DEFAULT_MODELS,
         GENERIC_OPENAI_PROVIDER_ID | "generic_openai" => GENERIC_OPENAI_DEFAULT_MODELS,
         _ => &[],

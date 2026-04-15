@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
+use crate::providers::claude::CLAUDE_PROVIDER_ID;
 use crate::providers::generic_openai::GENERIC_OPENAI_PROVIDER_ID;
+use crate::providers::gemini::GEMINI_PROVIDER_ID;
 use crate::providers::official::OFFICIAL_OPENAI_PROVIDER_ID;
 
 pub trait ProviderAdapter: std::fmt::Debug + Send + Sync {
@@ -21,6 +23,8 @@ impl ProviderRegistry {
 
     pub fn adapter(&self, provider_id: &str) -> Option<&'static dyn ProviderAdapter> {
         let canonical = match provider_id {
+            "claude" | "anthropic" => CLAUDE_PROVIDER_ID,
+            "gemini" => GEMINI_PROVIDER_ID,
             "openai" => OFFICIAL_OPENAI_PROVIDER_ID,
             "generic_openai" => GENERIC_OPENAI_PROVIDER_ID,
             other => other,
@@ -35,7 +39,9 @@ impl ProviderRegistry {
 
 pub fn default_provider_registry() -> ProviderRegistry {
     let mut registry = ProviderRegistry::default();
+    registry.register(crate::providers::claude::provider_adapter());
     registry.register(crate::providers::generic_openai::provider_adapter());
+    registry.register(crate::providers::gemini::provider_adapter());
     registry.register(crate::providers::official::provider_adapter());
     registry
 }

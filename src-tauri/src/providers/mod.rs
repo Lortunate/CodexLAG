@@ -1,4 +1,6 @@
+pub mod claude;
 pub mod capabilities;
+pub mod gemini;
 pub mod generic_openai;
 pub mod inventory;
 pub mod invocation;
