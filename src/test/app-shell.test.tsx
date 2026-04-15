@@ -984,6 +984,24 @@ describe("App shell", () => {
     expect(screen.getByText(/provider health/i)).toBeInTheDocument();
   });
 
+  it("reveals diagnostics detail rows when an operator expands a section row", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /logs/i }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /provider diagnostics/i })).toBeInTheDocument();
+
+    const detailToggles = screen.getAllByText(/view details/i);
+    await act(async () => {
+      fireEvent.click(detailToggles[0]);
+    });
+
+    expect(screen.getByText("account_id")).toBeInTheDocument();
+    expect(screen.getByText("openai-primary")).toBeInTheDocument();
+  });
+
   it("clears stale request detail when detail loading fails", async () => {
     getUsageRequestDetail
       .mockResolvedValueOnce({
