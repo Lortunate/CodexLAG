@@ -192,6 +192,22 @@ export function PolicyEditor({
     : "";
   const availableEndpointIds = endpointIds.filter((endpointId) => !selectionOrder.includes(endpointId));
   const previewSummary = buildPolicyPreviewSummary(selectionOrder, endpointIds);
+  const orderedAttemptPath =
+    previewSummary.eligible_candidates.length > 0
+      ? previewSummary.eligible_candidates.join(" -> ")
+      : "none";
+  const rejectionReason =
+    previewSummary.rejected_candidates.length > 0
+      ? "These endpoints are excluded from the current route because they are not present in the ordered selection list."
+      : "All known endpoints are represented in the current ordered selection list.";
+  const fallbackBehaviorSummary =
+    activeDraft?.cross_pool_fallback === true
+      ? "If every ordered candidate fails, the runtime may continue into cross-pool fallback instead of stopping at the current lane."
+      : "If every ordered candidate fails, the runtime stops at the configured lane and will not spill into cross-pool fallback.";
+  const firstAttemptSummary =
+    previewSummary.eligible_candidates.length > 0
+      ? `First attempt starts with ${previewSummary.eligible_candidates[0]}. Retries stay within the ordered path before fallback rules apply.`
+      : "No request path can be evaluated until at least one eligible candidate is ordered.";
 
   function updateSelectionOrder(nextSelectionOrder: string[]) {
     if (!activeDraft) {
@@ -521,6 +537,10 @@ export function PolicyEditor({
         <h4 id="policy-preview-heading">Candidate preview</h4>
         <p>Eligible candidates: {previewSummary.eligible_candidates.join(", ") || "none"}</p>
         <p>Rejected candidates: {previewSummary.rejected_candidates.join(", ") || "none"}</p>
+        <p>Ordered attempt path: {orderedAttemptPath}</p>
+        <p>{firstAttemptSummary}</p>
+        <p>{fallbackBehaviorSummary}</p>
+        <p>{rejectionReason}</p>
       </section>
       {endpointIds.length > 0 ? (
         <p>Known endpoint ids: {endpointIds.join(", ")}</p>
