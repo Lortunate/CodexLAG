@@ -256,7 +256,9 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
                         {!row.original.available ? " (degraded)" : ""}
                       </span>
                     ) : (
-                      flexRender(cell.column.columnDef.cell ?? cell.column.columnDef.header, cell.getContext())
+                      cell.column.columnDef.cell
+                        ? flexRender(cell.column.columnDef.cell, cell.getContext())
+                        : String(cell.getValue() ?? "")
                     )}
                   </td>
                 ))}

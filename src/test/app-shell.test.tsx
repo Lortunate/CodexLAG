@@ -1,97 +1,88 @@
+// @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { JSDOM } from "jsdom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../lib/query-client";
 
-const {
-  addRelay,
-  createPlatformKey,
-  disablePlatformKey,
-  enablePlatformKey,
-  emitDefaultKeySummaryChanged,
-  exportRuntimeDiagnostics,
-  getAccountCapabilityDetail,
-  getDefaultKeySummary,
-  getLogSummary,
-  getProviderDiagnostics,
-  getRuntimeLogMetadata,
-  getRelayCapabilityDetail,
-  getUsageRequestDetail,
-  importOfficialAccountLogin,
-  listenForDefaultKeySummaryChanged,
-  listAccounts,
-  listProviderInventory,
-  listProviderSessions,
-  listPlatformKeys,
-  listPolicies,
-  listRelays,
-  logoutOpenAiSession,
-  listUsageRequestHistory,
-  queryUsageLedger,
-  refreshAccountBalance,
-  refreshOpenAiSession,
-  refreshRelayBalance,
-  startOpenAiBrowserLogin,
-  testRelayConnection,
-  setDefaultKeyMode,
-  updatePolicy,
-} = vi.hoisted(() => {
-  let listener:
-    | ((summary: {
-        name: string;
-        allowedMode: "account_only" | "relay_only" | "hybrid" | null;
-        rawAllowedMode: string;
-        unavailableReason: string | null;
-      }) => void)
-    | null = null;
+if (typeof document === "undefined") {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    url: "http://localhost/",
+  });
 
-  return {
-    addRelay: vi.fn(),
-    createPlatformKey: vi.fn(),
-    disablePlatformKey: vi.fn(),
-    enablePlatformKey: vi.fn(),
-    emitDefaultKeySummaryChanged(summary: {
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    Event: dom.window.Event,
+    CustomEvent: dom.window.CustomEvent,
+    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+  });
+}
+
+const {
+  act,
+  fireEvent,
+  render: rtlRender,
+  screen,
+} = await import("@testing-library/react");
+
+// Replace vi.hoisted-based setup with a runner-compatible module mock shape.
+let defaultKeySummaryListener:
+  | ((summary: {
       name: string;
       allowedMode: "account_only" | "relay_only" | "hybrid" | null;
       rawAllowedMode: string;
       unavailableReason: string | null;
-    }) {
-      listener?.(summary);
-    },
-    exportRuntimeDiagnostics: vi.fn(),
-    getAccountCapabilityDetail: vi.fn(),
-    getDefaultKeySummary: vi.fn(),
-    getLogSummary: vi.fn(),
-    getProviderDiagnostics: vi.fn(),
-    getRuntimeLogMetadata: vi.fn(),
-    getRelayCapabilityDetail: vi.fn(),
-    getUsageRequestDetail: vi.fn(),
-    importOfficialAccountLogin: vi.fn(),
-    listenForDefaultKeySummaryChanged: vi.fn(async (handler) => {
-      listener = handler;
-      return () => {
-        listener = null;
-      };
-    }),
-    listAccounts: vi.fn(),
-    listProviderInventory: vi.fn(),
-    listProviderSessions: vi.fn(),
-    listPlatformKeys: vi.fn(),
-    listPolicies: vi.fn(),
-    listRelays: vi.fn(),
-    logoutOpenAiSession: vi.fn(),
-    listUsageRequestHistory: vi.fn(),
-    queryUsageLedger: vi.fn(),
-    refreshAccountBalance: vi.fn(),
-    refreshOpenAiSession: vi.fn(),
-    refreshRelayBalance: vi.fn(),
-    startOpenAiBrowserLogin: vi.fn(),
-    testRelayConnection: vi.fn(),
-    setDefaultKeyMode: vi.fn(),
-    updatePolicy: vi.fn(),
+    }) => void)
+  | null = null;
+
+const addRelay = vi.fn();
+const createPlatformKey = vi.fn();
+const disablePlatformKey = vi.fn();
+const enablePlatformKey = vi.fn();
+const exportRuntimeDiagnostics = vi.fn();
+const getAccountCapabilityDetail = vi.fn();
+const getDefaultKeySummary = vi.fn();
+const getLogSummary = vi.fn();
+const getProviderDiagnostics = vi.fn();
+const getRuntimeLogMetadata = vi.fn();
+const getRelayCapabilityDetail = vi.fn();
+const getUsageRequestDetail = vi.fn();
+const importOfficialAccountLogin = vi.fn();
+const listenForDefaultKeySummaryChanged = vi.fn(async (handler) => {
+  defaultKeySummaryListener = handler;
+  return () => {
+    defaultKeySummaryListener = null;
   };
 });
+const listAccounts = vi.fn();
+const listProviderInventory = vi.fn();
+const listProviderSessions = vi.fn();
+const listPlatformKeys = vi.fn();
+const listPolicies = vi.fn();
+const listRelays = vi.fn();
+const logoutOpenAiSession = vi.fn();
+const listUsageRequestHistory = vi.fn();
+const queryUsageLedger = vi.fn();
+const refreshAccountBalance = vi.fn();
+const refreshOpenAiSession = vi.fn();
+const refreshRelayBalance = vi.fn();
+const startOpenAiBrowserLogin = vi.fn();
+const testRelayConnection = vi.fn();
+const setDefaultKeyMode = vi.fn();
+const updatePolicy = vi.fn();
+
+function emitDefaultKeySummaryChanged(summary: {
+  name: string;
+  allowedMode: "account_only" | "relay_only" | "hybrid" | null;
+  rawAllowedMode: string;
+  unavailableReason: string | null;
+}) {
+  defaultKeySummaryListener?.(summary);
+}
 
 vi.mock("../lib/tauri", () => ({
   addRelay,
@@ -136,10 +127,12 @@ function renderApp() {
   );
 }
 
-const render = () => renderApp();
+const render = (ui = <App />) =>
+  rtlRender(<QueryClientProvider client={createQueryClient()}>{ui}</QueryClientProvider>);
 
 describe("App shell", () => {
   beforeEach(() => {
+    defaultKeySummaryListener = null;
     addRelay.mockReset();
     createPlatformKey.mockReset();
     disablePlatformKey.mockReset();
@@ -1074,11 +1067,9 @@ describe("App shell", () => {
       unavailableReason: "no available endpoint for mode 'relay_only'",
     });
 
-    render(<App />);
+    const view = render(<App />);
 
-    expect(await screen.findByText("Default key state | Current mode: relay_only")).toBeInTheDocument();
-    expect(
-      screen.getByText("no available endpoint for mode 'relay_only'"),
-    ).toBeInTheDocument();
+    expect(await view.findByText("Default key state | Current mode: relay_only")).toBeInTheDocument();
+    expect(view.getByText("no available endpoint for mode 'relay_only'")).toBeInTheDocument();
   });
 });
