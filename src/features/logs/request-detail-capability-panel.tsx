@@ -18,7 +18,9 @@ function formatMaybeJson(value: string | null): string {
 
 export function RequestDetailCapabilityPanel({ detail }: RequestDetailCapabilityPanelProps) {
   const routeExplanation = detail.route_explanation;
-  const finalRoute = routeExplanation?.selected_candidate_id ?? "unknown";
+  const finalRoute = routeExplanation
+    ? routeExplanation.selected_candidate_id ?? "not persisted"
+    : "not recorded";
   const rejectedCandidates = routeExplanation?.rejected_candidates ?? [];
 
   return (
