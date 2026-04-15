@@ -78,7 +78,6 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
                 account_id TEXT NOT NULL,
                 display_name TEXT NOT NULL,
                 auth_state TEXT NOT NULL,
-                refreshable INTEGER NOT NULL DEFAULT 0,
                 expires_at_ms INTEGER,
                 last_refresh_at_ms INTEGER,
                 last_refresh_error TEXT,
@@ -187,13 +186,6 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
         "api_key_credential_ref",
         "TEXT NOT NULL DEFAULT ''",
     )?;
-    add_column_if_missing(
-        connection,
-        "provider_sessions",
-        "refreshable",
-        "INTEGER NOT NULL DEFAULT 0",
-    )?;
-
     connection
         .execute_batch(
             "
@@ -212,9 +204,6 @@ pub fn ensure_schema_up_to_date(connection: &Connection) -> Result<()> {
             UPDATE platform_keys
             SET created_at_ms = 0
             WHERE created_at_ms IS NULL;
-            UPDATE provider_sessions
-            SET refreshable = 0
-            WHERE refreshable IS NULL;
             UPDATE managed_relays
             SET api_key_credential_ref = 'credential://relay/api-key/' || relay_id
             WHERE api_key_credential_ref IS NULL OR api_key_credential_ref = '';

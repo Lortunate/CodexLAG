@@ -45,7 +45,6 @@ async fn expired_openai_session_is_refreshed_during_runtime_startup_when_refresh
         expires_at_ms: Some(1_700_000_000_000),
         last_refresh_at_ms: None,
         last_refresh_error: None,
-        refreshable: true,
     };
 
     runtime
@@ -79,7 +78,7 @@ async fn expired_openai_session_is_refreshed_during_runtime_startup_when_refresh
     assert_eq!(refreshed.summary.expires_at_ms, Some(1_700_000_003_600));
     assert_eq!(refreshed.summary.last_refresh_at_ms, Some(1_700_000_000_100));
     assert_eq!(refreshed.summary.last_refresh_error, None);
-    assert!(refreshed.summary.refreshable);
+    assert!(refreshed.is_refreshable());
     assert_eq!(refreshed.session_secret, "new-session-cookie");
     assert!(refreshed.token_secret.contains("fresh-access-token"));
 }
