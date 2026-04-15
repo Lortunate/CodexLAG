@@ -110,6 +110,21 @@ pub struct ProviderSessionSummary {
     pub last_refresh_error: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderAuthProfile {
+    BrowserOauthPkce,
+    StaticApiKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderDescriptor {
+    pub provider_id: String,
+    pub auth_profile: ProviderAuthProfile,
+    pub supports_model_discovery: bool,
+    pub supports_capability_probe: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagedRelay {
     pub relay_id: String,

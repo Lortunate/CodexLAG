@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{CodexLagError, Result},
-    models::ProviderSessionSummary,
+    models::{ProviderAuthProfile, ProviderSessionSummary},
     state::AppState,
 };
 
@@ -47,6 +47,7 @@ pub struct OpenAiBrowserLoginRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PendingOpenAiLoopbackAuthSession {
     pub summary: ProviderSessionSummary,
+    pub auth_profile: ProviderAuthProfile,
     pub authorization_url: String,
     pub callback_url: String,
 }
@@ -319,6 +320,7 @@ impl OpenAiAuthRuntime {
 
         Ok(PendingOpenAiLoopbackAuthSession {
             summary,
+            auth_profile: ProviderAuthProfile::BrowserOauthPkce,
             authorization_url: authorization_url.to_string(),
             callback_url,
         })

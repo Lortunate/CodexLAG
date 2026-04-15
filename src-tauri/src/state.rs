@@ -15,7 +15,8 @@ use crate::gateway::{
 };
 use crate::logging::usage::{append_usage_record, UsageRecord, UsageRecordInput};
 use crate::models::{
-    ImportedOfficialAccount, ManagedRelay, PlatformKey, ProviderSessionSummary, RoutingPolicy,
+    ImportedOfficialAccount, ManagedRelay, PlatformKey, ProviderDescriptor,
+    ProviderSessionSummary, RoutingPolicy,
 };
 use crate::routing::policy::RoutingMode;
 use crate::secret_store::{SecretKey, SecretStore};
@@ -108,6 +109,10 @@ impl AppState {
 
     pub fn iter_provider_sessions(&self) -> impl Iterator<Item = &ProviderSessionSummary> {
         self.repositories.iter_provider_sessions()
+    }
+
+    pub fn list_provider_descriptors(&self) -> Vec<ProviderDescriptor> {
+        crate::auth::list_provider_descriptors()
     }
 
     pub fn save_imported_official_account(
