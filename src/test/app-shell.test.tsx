@@ -533,6 +533,12 @@ describe("App shell", () => {
       cache_write_tokens: 0,
       total_tokens: 160,
       cost: { amount: "0.0123", provenance: "estimated" },
+      route_explanation: {
+        selected_candidate_id: "official-primary",
+        rejected_candidates: ["relay-newapi"],
+        fallback_trigger: "fallback_after_429",
+        final_reason: "selected candidate returned upstream status 200",
+      },
     });
     setDefaultKeyMode.mockResolvedValue({
       name: "default",
@@ -1062,6 +1068,8 @@ describe("App shell", () => {
     expect(await screen.findByRole("heading", { name: /candidate preview/i })).toBeInTheDocument();
     expect(screen.getByText(/eligible candidates: official-primary, relay-newapi/i)).toBeInTheDocument();
     expect(screen.getByText(/rejected candidates: relay-nobalance/i)).toBeInTheDocument();
+    expect(screen.getByText(/configured preference starts with official-primary/i)).toBeInTheDocument();
+    expect(screen.getByText(/not explicitly ordered/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add relay-nobalance" }));
     expect(
@@ -1084,6 +1092,12 @@ describe("App shell", () => {
     expect(getUsageRequestDetail).toHaveBeenCalledWith("req-1");
     expect(await screen.findByText("Request detail: req-1")).toBeInTheDocument();
     expect(screen.getByText("Cost provenance: estimated")).toBeInTheDocument();
+    expect(screen.getByText("Final route: official-primary")).toBeInTheDocument();
+    expect(screen.getByText("Rejected candidates: relay-newapi")).toBeInTheDocument();
+    expect(screen.getByText("Fallback trigger: fallback_after_429")).toBeInTheDocument();
+    expect(
+      screen.getByText("Final routing reason: selected candidate returned upstream status 200"),
+    ).toBeInTheDocument();
   });
 
   it("renders logs as a request history with detail and capability panels", async () => {
