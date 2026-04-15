@@ -23,5 +23,7 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --test error_contract --test request_attempt_logging --test runtime_event_schema --test runtime_log_metadata --test tray_restart
       - name: Validate v1.1 auth and provider suites
         run: cargo test --manifest-path src-tauri/Cargo.toml --test openai_auth_flow --test openai_session_refresh --test provider_registry --test provider_inventory --test provider_diagnostics
+      - name: Validate v1.2 auth-profile and provider suites
+        run: cargo test --manifest-path src-tauri/Cargo.toml --test auth_profile_runtime --test provider_registry_v12 --test provider_inventory_v12
       - name: Run complete backend release matrix
         run: cargo test --manifest-path src-tauri/Cargo.toml
