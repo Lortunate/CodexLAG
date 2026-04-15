@@ -203,10 +203,12 @@ export function PolicyEditor({
   const fallbackBehaviorSummary =
     activeDraft?.cross_pool_fallback === true
       ? "If every ordered candidate fails, the runtime may continue into cross-pool fallback instead of stopping at the current lane."
-      : "If every ordered candidate fails, the runtime stops at the configured lane and will not spill into cross-pool fallback.";
+      : activeDraft?.cross_pool_fallback === false
+        ? "If every ordered candidate fails, the runtime stops at the configured lane and will not spill into cross-pool fallback."
+        : "Cross-pool fallback is not selected yet, so the preview cannot determine whether routing may spill into another lane.";
   const firstAttemptSummary =
     previewSummary.eligible_candidates.length > 0
-      ? `First attempt starts with ${previewSummary.eligible_candidates[0]}. Retries stay within the ordered path before fallback rules apply.`
+      ? `First attempt starts with ${previewSummary.eligible_candidates[0]}. Subsequent routing decisions follow the ordered path shown in this preview.`
       : "No request path can be evaluated until at least one eligible candidate is ordered.";
 
   function updateSelectionOrder(nextSelectionOrder: string[]) {
