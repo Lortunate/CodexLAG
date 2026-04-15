@@ -4,6 +4,7 @@ use std::{
     time::SystemTime,
 };
 
+use crate::auth::openai::OpenAiAuthRuntime;
 use crate::db::repositories::{Repositories, UsageCostEstimate};
 use crate::error::CodexLagError;
 use crate::gateway::{
@@ -290,6 +291,7 @@ fn is_runtime_log_file_name(file_name: &str) -> bool {
 #[derive(Clone)]
 pub struct RuntimeState {
     app_state: Arc<RwLock<AppState>>,
+    openai_auth: Arc<RwLock<OpenAiAuthRuntime>>,
     usage_records: Arc<RwLock<Vec<UsageRecord>>>,
     loopback_gateway: Arc<RwLock<LoopbackGateway>>,
     gateway_host: Arc<RwLock<Option<GatewayHost>>>,
@@ -301,12 +303,16 @@ pub struct RuntimeState {
 impl RuntimeState {
     pub fn new(app_state: AppState, runtime_log: RuntimeLogConfig) -> Self {
         let app_state = Arc::new(RwLock::new(app_state));
+        let openai_auth = Arc::new(RwLock::new(OpenAiAuthRuntime::from_shared_app_state(
+            Arc::clone(&app_state),
+        )));
         let usage_records = Arc::new(RwLock::new(Vec::new()));
         let loopback_gateway =
             LoopbackGateway::new(Arc::clone(&app_state), Arc::clone(&usage_records));
 
         Self {
             app_state,
+            openai_auth,
             usage_records,
             loopback_gateway: Arc::new(RwLock::new(loopback_gateway)),
             gateway_host: Arc::new(RwLock::new(None)),
@@ -333,6 +339,12 @@ impl RuntimeState {
         self.app_state
             .write()
             .expect("runtime app state lock poisoned")
+    }
+
+    pub fn openai_auth_mut(&self) -> RwLockWriteGuard<'_, OpenAiAuthRuntime> {
+        self.openai_auth
+            .write()
+            .expect("runtime openai auth lock poisoned")
     }
 
     pub fn loopback_gateway(&self) -> LoopbackGateway {

@@ -23,6 +23,7 @@ import {
   getUsageRequestDetail,
   refreshAccountBalance,
   refreshRelayBalance,
+  startOpenAiBrowserLogin,
 } from "../lib/tauri";
 
 async function expectInvokeError(operation: Promise<unknown>): Promise<CodexLagInvokeError> {
@@ -75,6 +76,28 @@ describe("tauri wrappers", () => {
         allowed_mode: "hybrid",
       },
     });
+  });
+
+  it("starts OpenAI browser login through the dedicated command surface", async () => {
+    invokeMock.mockResolvedValue({
+      summary: {
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "pending",
+        expires_at_ms: null,
+        last_refresh_at_ms: null,
+        last_refresh_error: null,
+      },
+      authorization_url: "https://auth.openai.com/oauth/authorize?response_type=code",
+      callback_url: "http://127.0.0.1:1455/auth/openai/callback",
+    });
+
+    const pending = await startOpenAiBrowserLogin();
+
+    expect(invokeMock).toHaveBeenCalledWith("start_openai_browser_login");
+    expect(pending.summary.provider_id).toBe("openai_official");
+    expect(pending.callback_url).toContain("127.0.0.1");
   });
 
   it("normalizes relay capability queryable adapter values from backend shape", async () => {

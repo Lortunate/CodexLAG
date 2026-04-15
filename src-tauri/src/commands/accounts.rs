@@ -1,13 +1,17 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 
+use crate::auth::openai::PendingOpenAiLoopbackAuthSession;
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
 use crate::models::ImportedOfficialAccount;
 use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
 use crate::state::{AppState, RuntimeState};
 
 const OFFICIAL_PRIMARY_ACCOUNT_ID: &str = "official-primary";
+const OPENAI_AUTH_ACCOUNT_ID: &str = "openai-primary";
+const OPENAI_AUTH_DISPLAY_NAME: &str = "OpenAI Primary";
 const RESERVED_BUILTIN_ACCOUNT_IDS: &[&str] = &[OFFICIAL_PRIMARY_ACCOUNT_ID];
 
 #[derive(Debug, Clone, Serialize)]
@@ -241,6 +245,35 @@ pub fn import_official_account_login(
     state: State<'_, RuntimeState>,
 ) -> Result<AccountSummary> {
     import_official_account_login_from_runtime(&state, input)
+}
+
+pub fn start_openai_browser_login_from_runtime(
+    runtime: &RuntimeState,
+    app: &AppHandle,
+) -> Result<PendingOpenAiLoopbackAuthSession> {
+    let pending = runtime
+        .openai_auth_mut()
+        .start_default_browser_login(
+            OPENAI_AUTH_ACCOUNT_ID.to_string(),
+            OPENAI_AUTH_DISPLAY_NAME.to_string(),
+        )?;
+
+    app.opener()
+        .open_url(pending.authorization_url.as_str(), None::<&str>)
+        .map_err(|error| {
+            CodexLagError::new(format!("Failed to open OpenAI browser login URL: {error}"))
+                .with_internal_context("command=start_openai_browser_login;operation=open_url")
+        })?;
+
+    Ok(pending)
+}
+
+#[tauri::command]
+pub fn start_openai_browser_login(
+    app: AppHandle,
+    state: State<'_, RuntimeState>,
+) -> Result<PendingOpenAiLoopbackAuthSession> {
+    start_openai_browser_login_from_runtime(&state, &app)
 }
 
 fn official_primary_session() -> OfficialSession {

@@ -12,6 +12,7 @@ import type {
   ErrorCategory,
   LogSummary,
   OfficialAccountImportInput,
+  PendingOpenAiBrowserLogin,
   PlatformKeyInventoryEntry,
   PolicyUpdateInput,
   PolicySummary,
@@ -269,6 +270,10 @@ export function listAccounts() {
 
 export function importOfficialAccountLogin(input: OfficialAccountImportInput) {
   return invokeWithContract<AccountSummary>("import_official_account_login", { input });
+}
+
+export function startOpenAiBrowserLogin() {
+  return invokeWithContract<PendingOpenAiBrowserLogin>("start_openai_browser_login");
 }
 
 export function refreshAccountBalance(accountId: string) {
