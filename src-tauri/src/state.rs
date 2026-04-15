@@ -4,7 +4,9 @@ use std::{
     time::SystemTime,
 };
 
-use crate::auth::openai::OpenAiAuthRuntime;
+use crate::auth::openai::{
+    OpenAiAuthRuntime, OpenAiSessionRefresher, ReqwestOpenAiSessionRefresher,
+};
 use crate::db::repositories::{Repositories, UsageCostEstimate};
 use crate::error::CodexLagError;
 use crate::gateway::{
@@ -323,7 +325,40 @@ impl RuntimeState {
     }
 
     pub fn start(app_state: AppState, runtime_log: RuntimeLogConfig) -> crate::error::Result<Self> {
+        let refresher = ReqwestOpenAiSessionRefresher::new();
+        Self::start_with_openai_refresher(app_state, runtime_log, &refresher)
+    }
+
+    pub fn start_with_openai_refresher<R: OpenAiSessionRefresher>(
+        app_state: AppState,
+        runtime_log: RuntimeLogConfig,
+        refresher: &R,
+    ) -> crate::error::Result<Self> {
         let runtime = Self::new(app_state, runtime_log);
+        let account_ids = runtime
+            .list_provider_sessions()?
+            .into_iter()
+            .map(|session| session.account_id)
+            .collect::<Vec<_>>();
+        let now_ms = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+            .unwrap_or_default();
+
+        for account_id in account_ids {
+            let refresh_result = {
+                let mut auth = runtime.openai_auth_mut();
+                auth.refresh_session_if_needed(account_id.as_str(), now_ms, refresher)
+            };
+            if let Err(error) = refresh_result {
+                log::warn!(
+                    "failed to refresh openai session '{}' during runtime startup: {}",
+                    account_id,
+                    error
+                );
+            }
+        }
+
         let host = GatewayHost::start(runtime.loopback_gateway().router())?;
         runtime.set_gateway_host(Some(host))?;
         Ok(runtime)

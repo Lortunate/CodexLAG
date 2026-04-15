@@ -18,13 +18,17 @@ const {
   importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listProviderSessions,
   listPlatformKeys,
   listPolicies,
   listRelays,
+  logoutOpenAiSession,
   listUsageRequestHistory,
   queryUsageLedger,
   refreshAccountBalance,
+  refreshOpenAiSession,
   refreshRelayBalance,
+  startOpenAiBrowserLogin,
   testRelayConnection,
   setDefaultKeyMode,
   updatePolicy,
@@ -66,13 +70,17 @@ const {
       };
     }),
     listAccounts: vi.fn(),
+    listProviderSessions: vi.fn(),
     listPlatformKeys: vi.fn(),
     listPolicies: vi.fn(),
     listRelays: vi.fn(),
+    logoutOpenAiSession: vi.fn(),
     listUsageRequestHistory: vi.fn(),
     queryUsageLedger: vi.fn(),
     refreshAccountBalance: vi.fn(),
+    refreshOpenAiSession: vi.fn(),
     refreshRelayBalance: vi.fn(),
+    startOpenAiBrowserLogin: vi.fn(),
     testRelayConnection: vi.fn(),
     setDefaultKeyMode: vi.fn(),
     updatePolicy: vi.fn(),
@@ -94,13 +102,17 @@ vi.mock("../lib/tauri", () => ({
   importOfficialAccountLogin,
   listenForDefaultKeySummaryChanged,
   listAccounts,
+  listProviderSessions,
   listPlatformKeys,
   listPolicies,
   listRelays,
+  logoutOpenAiSession,
   listUsageRequestHistory,
   queryUsageLedger,
   refreshAccountBalance,
+  refreshOpenAiSession,
   refreshRelayBalance,
+  startOpenAiBrowserLogin,
   testRelayConnection,
   setDefaultKeyMode,
   updatePolicy,
@@ -124,13 +136,17 @@ describe("App shell", () => {
     importOfficialAccountLogin.mockReset();
     listenForDefaultKeySummaryChanged.mockClear();
     listAccounts.mockReset();
+    listProviderSessions.mockReset();
     listPlatformKeys.mockReset();
     listPolicies.mockReset();
     listRelays.mockReset();
+    logoutOpenAiSession.mockReset();
     listUsageRequestHistory.mockReset();
     queryUsageLedger.mockReset();
     refreshAccountBalance.mockReset();
+    refreshOpenAiSession.mockReset();
     refreshRelayBalance.mockReset();
+    startOpenAiBrowserLogin.mockReset();
     testRelayConnection.mockReset();
     setDefaultKeyMode.mockReset();
     updatePolicy.mockReset();
@@ -168,6 +184,17 @@ describe("App shell", () => {
     listAccounts.mockResolvedValue([
       { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
     ]);
+    listProviderSessions.mockResolvedValue([
+      {
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "active",
+        expires_at_ms: null,
+        last_refresh_at_ms: null,
+        last_refresh_error: null,
+      },
+    ]);
     importOfficialAccountLogin.mockResolvedValue({
       account_id: "imported-openai",
       name: "Imported OpenAI",
@@ -188,6 +215,29 @@ describe("App shell", () => {
       refresh_capability: true,
       balance_capability: "non_queryable",
     }));
+    refreshOpenAiSession.mockResolvedValue({
+      provider_id: "openai_official",
+      account_id: "openai-primary",
+      display_name: "OpenAI Primary",
+      auth_state: "active",
+      expires_at_ms: 1_731_111_111_000,
+      last_refresh_at_ms: 1_731_111_000_500,
+      last_refresh_error: null,
+    });
+    startOpenAiBrowserLogin.mockResolvedValue({
+      summary: {
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "pending",
+        expires_at_ms: null,
+        last_refresh_at_ms: null,
+        last_refresh_error: null,
+      },
+      authorization_url: "https://auth.openai.com/oauth/authorize?response_type=code",
+      callback_url: "http://127.0.0.1:1455/auth/openai/callback",
+    });
+    logoutOpenAiSession.mockResolvedValue(true);
     listPolicies.mockResolvedValue([
       {
         policy_id: "default-policy",
@@ -514,6 +564,70 @@ describe("App shell", () => {
     });
     expect(await screen.findByText("Imported account: imported-openai")).toBeInTheDocument();
     expect(listAccounts).toHaveBeenCalled();
+  });
+
+  it("starts browser login and manages persisted OpenAI provider sessions", async () => {
+    listProviderSessions
+      .mockResolvedValueOnce([
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "active",
+          expires_at_ms: null,
+          last_refresh_at_ms: null,
+          last_refresh_error: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "pending",
+          expires_at_ms: null,
+          last_refresh_at_ms: null,
+          last_refresh_error: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          provider_id: "openai_official",
+          account_id: "openai-primary",
+          display_name: "OpenAI Primary",
+          auth_state: "active",
+          expires_at_ms: 1_731_111_111_000,
+          last_refresh_at_ms: 1_731_111_000_500,
+          last_refresh_error: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sign in with OpenAI" }));
+    });
+    expect(startOpenAiBrowserLogin).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText(/Browser login started for OpenAI Primary/),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    });
+    expect(refreshOpenAiSession).toHaveBeenCalledWith("openai-primary");
+    expect(await screen.findByText("Refreshed OpenAI session: openai-primary")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    });
+    expect(logoutOpenAiSession).toHaveBeenCalledWith("openai-primary");
+    expect(await screen.findByText("Signed out OpenAI session: openai-primary")).toBeInTheDocument();
   });
 
   it("renders account import and relay creation as structured operations panels", async () => {

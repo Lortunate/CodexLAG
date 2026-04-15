@@ -13,6 +13,7 @@ import type {
   LogSummary,
   OfficialAccountImportInput,
   PendingOpenAiBrowserLogin,
+  ProviderSessionSummary,
   PlatformKeyInventoryEntry,
   PolicyUpdateInput,
   PolicySummary,
@@ -274,6 +275,22 @@ export function importOfficialAccountLogin(input: OfficialAccountImportInput) {
 
 export function startOpenAiBrowserLogin() {
   return invokeWithContract<PendingOpenAiBrowserLogin>("start_openai_browser_login");
+}
+
+export function listProviderSessions() {
+  return invokeWithContract<ProviderSessionSummary[]>("list_provider_sessions");
+}
+
+export function refreshOpenAiSession(accountId: string) {
+  return invokeWithContract<ProviderSessionSummary>("refresh_openai_session", {
+    account_id: accountId,
+  });
+}
+
+export function logoutOpenAiSession(accountId: string) {
+  return invokeWithContract<boolean>("logout_openai_session", {
+    account_id: accountId,
+  });
 }
 
 export function refreshAccountBalance(accountId: string) {
