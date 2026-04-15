@@ -773,6 +773,21 @@ describe("App shell", () => {
     expect(screen.getAllByText(/re-authenticate with a new api key/i)).not.toHaveLength(0);
   });
 
+  it("keeps accounts visible and preserves fallback onboarding when descriptors fail", async () => {
+    listProviderDescriptors.mockRejectedValue(new Error("descriptor timeout"));
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
+    });
+
+    expect(await screen.findByText("Primary Publisher")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in with OpenAI" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert", { name: /failed to load accounts/i })).not.toBeInTheDocument();
+  });
+
   it("starts browser login and manages persisted OpenAI provider sessions", async () => {
     listProviderSessions
       .mockResolvedValueOnce([

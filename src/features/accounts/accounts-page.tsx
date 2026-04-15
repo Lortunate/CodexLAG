@@ -27,6 +27,15 @@ interface AccountPanelState {
   providerHealth: ProviderAccountHealth;
 }
 
+interface OnboardingCardState {
+  providerId: string;
+  authProfile: string;
+}
+
+function isOpenAiProvider(providerId: string) {
+  return providerId === "openai" || providerId === "openai_official";
+}
+
 function authProfileLabel(authProfile: string | null | undefined) {
   switch (authProfile) {
     case "browser":
@@ -44,6 +53,52 @@ function resolveProviderAuthProfile(provider: string) {
   return provider === "openai" ? "browser_oauth_pkce" : "static_api_key";
 }
 
+function authProfileGuidance(authProfile: string | null | undefined) {
+  return authProfile === "browser" || authProfile === "browser_oauth_pkce"
+    ? "Launch the official browser login flow and manage persisted desktop sessions."
+    : "Authenticate this provider with a configured API key before using the account.";
+}
+
+function buildOnboardingCards(
+  descriptors: ProviderDescriptor[],
+  accounts: AccountPanelState[],
+  providerSessions: ProviderSessionSummary[],
+) {
+  const cards = new Map<string, OnboardingCardState>();
+  cards.set("openai", {
+    providerId: "openai",
+    authProfile: "browser_oauth_pkce",
+  });
+
+  for (const descriptor of descriptors) {
+    cards.set(descriptor.provider_id, {
+      providerId: descriptor.provider_id,
+      authProfile: descriptor.auth_profile,
+    });
+  }
+
+  for (const panel of accounts) {
+    if (!cards.has(panel.account.provider)) {
+      cards.set(panel.account.provider, {
+        providerId: panel.account.provider,
+        authProfile: panel.providerHealth.auth_profile,
+      });
+    }
+  }
+
+  for (const session of providerSessions) {
+    const providerId = isOpenAiProvider(session.provider_id) ? "openai" : session.provider_id;
+    if (!cards.has(providerId)) {
+      cards.set(providerId, {
+        providerId,
+        authProfile: session.auth_profile ?? resolveProviderAuthProfile(providerId),
+      });
+    }
+  }
+
+  return Array.from(cards.values());
+}
+
 export function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountPanelState[]>([]);
   const [providerDescriptors, setProviderDescriptors] = useState<ProviderDescriptor[]>([]);
@@ -55,11 +110,15 @@ export function AccountsPage() {
 
   async function loadAccounts(isMounted: () => boolean = () => true) {
     try {
-      const [summaries, sessions, descriptors] = await Promise.all([
-        listAccounts(),
-        listProviderSessions(),
-        listProviderDescriptors(),
-      ]);
+      const [summaries, sessions] = await Promise.all([listAccounts(), listProviderSessions()]);
+      let descriptors: ProviderDescriptor[] = [];
+
+      try {
+        descriptors = await listProviderDescriptors();
+      } catch {
+        descriptors = [];
+      }
+
       const sessionHealthByAccountId = new Map(
         sessions.map((session) => [
           session.account_id,
@@ -207,19 +266,16 @@ export function AccountsPage() {
       <p>Review provider identity, launch browser login, and inspect capability status.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <div className="detail-grid">
-        {providerDescriptors.map((descriptor) => {
-          const supportsBrowserLogin = descriptor.auth_profile === "browser_oauth_pkce";
+        {buildOnboardingCards(providerDescriptors, accounts, providerSessions).map((card) => {
+          const supportsBrowserLogin =
+            card.authProfile === "browser" || card.authProfile === "browser_oauth_pkce";
 
           return (
-            <article className="detail-card" key={descriptor.provider_id}>
-              <h3>{authProfileLabel(descriptor.auth_profile)}</h3>
-              <p>{descriptor.provider_id}</p>
-              <p>
-                {supportsBrowserLogin
-                  ? "Launch the official browser login flow and manage persisted desktop sessions."
-                  : "Authenticate this provider with a configured API key before using the account."}
-              </p>
-              {descriptor.provider_id === "openai" ? (
+            <article className="detail-card" key={card.providerId}>
+              <h3>{authProfileLabel(card.authProfile)}</h3>
+              <p>{card.providerId}</p>
+              <p>{authProfileGuidance(card.authProfile)}</p>
+              {isOpenAiProvider(card.providerId) && supportsBrowserLogin ? (
                 <button onClick={() => void handleStartOpenAiLogin()} type="button">
                   Sign in with OpenAI
                 </button>
