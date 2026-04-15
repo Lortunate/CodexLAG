@@ -86,7 +86,9 @@ pub fn list_provider_sessions_from_runtime(
 }
 
 #[tauri::command]
-pub fn list_provider_sessions(state: State<'_, RuntimeState>) -> Result<Vec<ProviderSessionSummary>> {
+pub fn list_provider_sessions(
+    state: State<'_, RuntimeState>,
+) -> Result<Vec<ProviderSessionSummary>> {
     list_provider_sessions_from_runtime(&state)
 }
 
@@ -262,12 +264,10 @@ pub fn start_openai_browser_login_from_runtime(
     runtime: &RuntimeState,
     app: &AppHandle,
 ) -> Result<PendingOpenAiLoopbackAuthSession> {
-    let pending = runtime
-        .openai_auth_mut()
-        .start_default_browser_login(
-            OPENAI_AUTH_ACCOUNT_ID.to_string(),
-            OPENAI_AUTH_DISPLAY_NAME.to_string(),
-        )?;
+    let pending = runtime.openai_auth_mut().start_default_browser_login(
+        OPENAI_AUTH_ACCOUNT_ID.to_string(),
+        OPENAI_AUTH_DISPLAY_NAME.to_string(),
+    )?;
 
     app.opener()
         .open_url(pending.authorization_url.as_str(), None::<&str>)
@@ -310,14 +310,13 @@ pub fn logout_openai_session_from_runtime(
     runtime: &RuntimeState,
     account_id: String,
 ) -> Result<bool> {
-    runtime.openai_auth_mut().logout_session(account_id.as_str())
+    runtime
+        .openai_auth_mut()
+        .logout_session(account_id.as_str())
 }
 
 #[tauri::command]
-pub fn logout_openai_session(
-    state: State<'_, RuntimeState>,
-    account_id: String,
-) -> Result<bool> {
+pub fn logout_openai_session(state: State<'_, RuntimeState>, account_id: String) -> Result<bool> {
     logout_openai_session_from_runtime(&state, account_id)
 }
 

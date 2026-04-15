@@ -8,9 +8,8 @@ use openidconnect::core::{
     CoreSubjectIdentifierType,
 };
 use openidconnect::{
-    AuthUrl, ClientId, CsrfToken, EmptyAdditionalProviderMetadata, IssuerUrl,
-    JsonWebKeySetUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, ResponseTypes,
-    Scope, TokenUrl,
+    AuthUrl, ClientId, CsrfToken, EmptyAdditionalProviderMetadata, IssuerUrl, JsonWebKeySetUrl,
+    Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, ResponseTypes, Scope, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
 
@@ -85,9 +84,7 @@ pub trait OpenAiSessionRefresher {
     fn refresh(&self, session: &StoredProviderSession) -> Result<OpenAiSessionRefresh>;
 }
 
-pub struct ReqwestOpenAiSessionRefresher {
-    client: reqwest::blocking::Client,
-}
+pub struct ReqwestOpenAiSessionRefresher;
 
 impl Default for ReqwestOpenAiSessionRefresher {
     fn default() -> Self {
@@ -97,14 +94,13 @@ impl Default for ReqwestOpenAiSessionRefresher {
 
 impl ReqwestOpenAiSessionRefresher {
     pub fn new() -> Self {
-        Self {
-            client: reqwest::blocking::Client::new(),
-        }
+        Self
     }
 }
 
 impl OpenAiSessionRefresher for ReqwestOpenAiSessionRefresher {
     fn refresh(&self, session: &StoredProviderSession) -> Result<OpenAiSessionRefresh> {
+        let client = reqwest::blocking::Client::new();
         let existing_secret = serde_json::from_str::<OpenAiTokenSecret>(&session.token_secret)
             .map_err(|error| {
                 CodexLagError::new(format!(
@@ -119,8 +115,7 @@ impl OpenAiSessionRefresher for ReqwestOpenAiSessionRefresher {
                 CodexLagError::new("openai session cannot be refreshed without a refresh token")
             })?;
 
-        let response = self
-            .client
+        let response = client
             .post(OPENAI_TOKEN_ENDPOINT)
             .form(&[
                 ("client_id", OPENAI_CLIENT_ID),
@@ -133,10 +128,11 @@ impl OpenAiSessionRefresher for ReqwestOpenAiSessionRefresher {
             .map_err(|error| {
                 CodexLagError::new(format!("openai token refresh request failed: {error}"))
             })?;
-
         let status = response.status();
         let body = response.text().map_err(|error| {
-            CodexLagError::new(format!("failed to read openai token refresh response: {error}"))
+            CodexLagError::new(format!(
+                "failed to read openai token refresh response: {error}"
+            ))
         })?;
         if !status.is_success() {
             return Err(CodexLagError::new(format!(
@@ -144,17 +140,15 @@ impl OpenAiSessionRefresher for ReqwestOpenAiSessionRefresher {
             )));
         }
 
-        let refreshed_token = serde_json::from_str::<OpenAiTokenRefreshResponse>(&body).map_err(
-            |error| {
+        let refreshed_token =
+            serde_json::from_str::<OpenAiTokenRefreshResponse>(&body).map_err(|error| {
                 CodexLagError::new(format!(
                     "failed to decode openai token refresh response payload: {error}"
                 ))
-            },
-        )?;
+            })?;
         let refreshed_at_ms = now_ms();
-        let expires_at_ms = Some(
-            refreshed_at_ms.saturating_add(refreshed_token.expires_in.saturating_mul(1_000)),
-        );
+        let expires_at_ms =
+            Some(refreshed_at_ms.saturating_add(refreshed_token.expires_in.saturating_mul(1_000)));
         let token_secret = serde_json::to_string(&OpenAiTokenSecret {
             access_token: refreshed_token.access_token,
             refresh_token: refreshed_token.refresh_token.or(Some(refresh_token)),
@@ -226,12 +220,7 @@ impl OpenAiAuthRuntime {
         token_secret: String,
     ) -> Result<()> {
         let mut app_state = self.app_state_mut();
-        ProviderSessionStore::save(
-            &mut app_state,
-            session,
-            session_secret,
-            token_secret,
-        )
+        ProviderSessionStore::save(&mut app_state, session, session_secret, token_secret)
     }
 
     pub fn session(&self, account_id: &str) -> Result<Option<StoredProviderSession>> {
@@ -287,9 +276,9 @@ impl OpenAiAuthRuntime {
             vec![CoreJwsSigningAlgorithm::RsaSsaPssSha256],
             EmptyAdditionalProviderMetadata {},
         )
-        .set_token_endpoint(
-            Some(TokenUrl::new(request.token_endpoint.clone()).map_err(oidc_error)?),
-        );
+        .set_token_endpoint(Some(
+            TokenUrl::new(request.token_endpoint.clone()).map_err(oidc_error)?,
+        ));
 
         let client = openidconnect::core::CoreClient::from_provider_metadata(
             provider_metadata,

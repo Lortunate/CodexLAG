@@ -1,14 +1,22 @@
 import { useEffect, useState } from "react";
 import {
   getLogSummary,
+  getProviderDiagnostics,
   getUsageRequestDetail,
   listUsageRequestHistory,
   queryUsageLedger,
 } from "../../lib/tauri";
-import type { LogSummary, UsageLedger, UsageRequestDetail } from "../../lib/types";
+import type {
+  LogSummary,
+  ProviderDiagnosticsSummary,
+  UsageLedger,
+  UsageRequestDetail,
+} from "../../lib/types";
+import { DiagnosticsTable } from "./diagnostics-table";
 import { RequestDetailCapabilityPanel } from "./request-detail-capability-panel";
 
 export function LogsPage() {
+  const [diagnostics, setDiagnostics] = useState<ProviderDiagnosticsSummary | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<UsageRequestDetail[]>([]);
   const [ledger, setLedger] = useState<UsageLedger | null>(null);
@@ -20,13 +28,15 @@ export function LogsPage() {
 
     const loadLogs = async () => {
       try {
-        const [nextSummary, nextHistory, nextLedger] = await Promise.all([
+        const [nextSummary, nextDiagnostics, nextHistory, nextLedger] = await Promise.all([
           getLogSummary(),
+          getProviderDiagnostics(),
           listUsageRequestHistory(20),
           queryUsageLedger(),
         ]);
         if (isMounted) {
           setSummary(nextSummary);
+          setDiagnostics(nextDiagnostics);
           setHistory(nextHistory);
           setLedger(nextLedger);
           setErrorMessage(null);
@@ -72,6 +82,13 @@ export function LogsPage() {
             <dd>{summary.last_event}</dd>
           </div>
         </dl>
+      ) : null}
+      {diagnostics ? (
+        <section className="panel" aria-labelledby="provider-diagnostics-heading">
+          <h3 id="provider-diagnostics-heading">Provider diagnostics</h3>
+          <p>Structured auth, provider, capability, and routing visibility summaries.</p>
+          <DiagnosticsTable sections={diagnostics.sections} />
+        </section>
       ) : null}
       <section className="panel">
         <h3>Usage provenance</h3>

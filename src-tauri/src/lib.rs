@@ -80,6 +80,7 @@ pub fn run() {
             commands::policies::update_policy,
             commands::logs::get_log_summary,
             commands::logs::get_runtime_log_metadata,
+            commands::logs::get_provider_diagnostics,
             commands::logs::export_runtime_diagnostics,
             commands::logs::get_usage_request_detail,
             commands::logs::list_usage_request_history,

@@ -1,6 +1,7 @@
 use std::{
     io::ErrorKind,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener as StdTcpListener},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -38,36 +39,64 @@ impl GatewayHost {
         listener.set_nonblocking(true).map_err(|error| {
             CodexLagError::new(format!("failed to set nonblocking listener: {error}"))
         })?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|error| {
-                CodexLagError::new(format!("failed to create gateway host runtime: {error}"))
-            })?;
-        let listener = {
-            let _runtime_guard = runtime.enter();
-            TcpListener::from_std(listener).map_err(|error| {
-                CodexLagError::new(format!(
-                    "failed to convert gateway host listener to tokio: {error}"
-                ))
-            })?
-        };
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (startup_tx, startup_rx) = mpsc::sync_channel(1);
 
         let task = thread::spawn(move || {
-            runtime.block_on(async move {
-                let server = axum::serve(listener, router).with_graceful_shutdown(async move {
-                    let _ = shutdown_rx.await;
-                });
-                let _ = server.await;
-            });
+            let startup_result = (|| -> Result<(tokio::runtime::Runtime, TcpListener)> {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|error| {
+                        CodexLagError::new(format!(
+                            "failed to create gateway host runtime: {error}"
+                        ))
+                    })?;
+                let listener = {
+                    let _runtime_guard = runtime.enter();
+                    TcpListener::from_std(listener).map_err(|error| {
+                        CodexLagError::new(format!(
+                            "failed to convert gateway host listener to tokio: {error}"
+                        ))
+                    })?
+                };
+                Ok((runtime, listener))
+            })();
+
+            match startup_result {
+                Ok((runtime, listener)) => {
+                    let _ = startup_tx.send(Ok(()));
+                    runtime.block_on(async move {
+                        let server =
+                            axum::serve(listener, router).with_graceful_shutdown(async move {
+                                let _ = shutdown_rx.await;
+                            });
+                        let _ = server.await;
+                    });
+                }
+                Err(error) => {
+                    let _ = startup_tx.send(Err(error.to_string()));
+                }
+            }
         });
 
-        Ok(Self {
-            listen_addr,
-            shutdown_tx: Some(shutdown_tx),
-            task: Some(task),
-        })
+        match startup_rx.recv() {
+            Ok(Ok(())) => Ok(Self {
+                listen_addr,
+                shutdown_tx: Some(shutdown_tx),
+                task: Some(task),
+            }),
+            Ok(Err(error)) => {
+                let _ = task.join();
+                Err(CodexLagError::new(error))
+            }
+            Err(_) => {
+                let _ = task.join();
+                Err(CodexLagError::new(
+                    "gateway host thread exited before confirming startup",
+                ))
+            }
+        }
     }
 
     pub fn listen_addr(&self) -> SocketAddr {

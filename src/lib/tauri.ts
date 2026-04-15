@@ -10,6 +10,7 @@ import type {
   DefaultKeyMode,
   DefaultKeySummary,
   ErrorCategory,
+  ProviderDiagnosticsSummary,
   LogSummary,
   OfficialAccountImportInput,
   PendingOpenAiBrowserLogin,
@@ -377,6 +378,10 @@ export function getLogSummary() {
 
 export function getRuntimeLogMetadata() {
   return invokeWithContract<RuntimeLogMetadata>("get_runtime_log_metadata");
+}
+
+export function getProviderDiagnostics() {
+  return invokeWithContract<ProviderDiagnosticsSummary>("get_provider_diagnostics");
 }
 
 export function exportRuntimeDiagnostics() {

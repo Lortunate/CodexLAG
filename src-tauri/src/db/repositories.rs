@@ -10,8 +10,7 @@ use crate::error::{CodexLagError, Result};
 use crate::logging::usage::{UsageProvenance, UsageRequestDetail};
 use crate::models::{
     CredentialKind, ImportedOfficialAccount, ManagedRelay, PlatformKey, PricingProfile,
-    ProviderSessionSummary,
-    RequestAttemptLog, RequestLog, RoutingPolicy,
+    ProviderSessionSummary, RequestAttemptLog, RequestLog, RoutingPolicy,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -399,8 +398,10 @@ impl Repositories {
                 ))
             })?;
 
-        self.provider_sessions
-            .insert(provider_session_key(&session.provider_id, &session.account_id), session);
+        self.provider_sessions.insert(
+            provider_session_key(&session.provider_id, &session.account_id),
+            session,
+        );
         Ok(())
     }
 
@@ -1278,7 +1279,9 @@ impl Repositories {
         Ok(accounts)
     }
 
-    fn load_provider_sessions(connection: &Connection) -> Result<HashMap<String, ProviderSessionSummary>> {
+    fn load_provider_sessions(
+        connection: &Connection,
+    ) -> Result<HashMap<String, ProviderSessionSummary>> {
         let mut statement = connection
             .prepare(
                 "
@@ -1309,25 +1312,37 @@ impl Repositories {
         })? {
             let session = ProviderSessionSummary {
                 provider_id: row.get(0).map_err(|error| {
-                    CodexLagError::new(format!("failed to decode provider session provider id: {error}"))
+                    CodexLagError::new(format!(
+                        "failed to decode provider session provider id: {error}"
+                    ))
                 })?,
                 account_id: row.get(1).map_err(|error| {
-                    CodexLagError::new(format!("failed to decode provider session account id: {error}"))
+                    CodexLagError::new(format!(
+                        "failed to decode provider session account id: {error}"
+                    ))
                 })?,
                 display_name: row.get(2).map_err(|error| {
-                    CodexLagError::new(format!("failed to decode provider session display name: {error}"))
+                    CodexLagError::new(format!(
+                        "failed to decode provider session display name: {error}"
+                    ))
                 })?,
                 auth_state: row.get(3).map_err(|error| {
-                    CodexLagError::new(format!("failed to decode provider session auth state: {error}"))
+                    CodexLagError::new(format!(
+                        "failed to decode provider session auth state: {error}"
+                    ))
                 })?,
                 expires_at_ms: row.get(4).map_err(|error| {
                     CodexLagError::new(format!("failed to decode provider session expiry: {error}"))
                 })?,
                 last_refresh_at_ms: row.get(5).map_err(|error| {
-                    CodexLagError::new(format!("failed to decode provider session refresh time: {error}"))
+                    CodexLagError::new(format!(
+                        "failed to decode provider session refresh time: {error}"
+                    ))
                 })?,
                 last_refresh_error: row.get(6).map_err(|error| {
-                    CodexLagError::new(format!("failed to decode provider session refresh error: {error}"))
+                    CodexLagError::new(format!(
+                        "failed to decode provider session refresh error: {error}"
+                    ))
                 })?,
             };
 

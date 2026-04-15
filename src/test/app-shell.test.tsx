@@ -12,6 +12,7 @@ const {
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
+  getProviderDiagnostics,
   getRuntimeLogMetadata,
   getRelayCapabilityDetail,
   getUsageRequestDetail,
@@ -59,6 +60,7 @@ const {
     getAccountCapabilityDetail: vi.fn(),
     getDefaultKeySummary: vi.fn(),
     getLogSummary: vi.fn(),
+    getProviderDiagnostics: vi.fn(),
     getRuntimeLogMetadata: vi.fn(),
     getRelayCapabilityDetail: vi.fn(),
     getUsageRequestDetail: vi.fn(),
@@ -95,6 +97,7 @@ vi.mock("../lib/tauri", () => ({
   getAccountCapabilityDetail,
   getDefaultKeySummary,
   getLogSummary,
+  getProviderDiagnostics,
   getRuntimeLogMetadata,
   exportRuntimeDiagnostics,
   getRelayCapabilityDetail,
@@ -130,6 +133,7 @@ describe("App shell", () => {
     getAccountCapabilityDetail.mockReset();
     getDefaultKeySummary.mockReset();
     getLogSummary.mockReset();
+    getProviderDiagnostics.mockReset();
     getRuntimeLogMetadata.mockReset();
     getRelayCapabilityDetail.mockReset();
     getUsageRequestDetail.mockReset();
@@ -160,6 +164,43 @@ describe("App shell", () => {
     getLogSummary.mockResolvedValue({
       level: "info",
       last_event: "Loopback gateway ready for key 'default' in hybrid mode",
+    });
+    getProviderDiagnostics.mockResolvedValue({
+      sections: [
+        {
+          id: "auth_health",
+          title: "Auth health",
+          status: "healthy",
+          summary: "1 provider session available.",
+          rows: [
+            {
+              key: "openai-primary",
+              label: "OpenAI Primary",
+              status: "healthy",
+              value: "state=active | expires_at_ms=none | provider=openai_official",
+              details: [
+                { label: "account_id", value: "openai-primary" },
+                { label: "last_refresh_at_ms", value: "none" },
+              ],
+            },
+          ],
+        },
+        {
+          id: "provider_health",
+          title: "Provider health",
+          status: "healthy",
+          summary: "2 runtime endpoint projections available.",
+          rows: [
+            {
+              key: "official-primary",
+              label: "Primary Publisher",
+              status: "healthy",
+              value: "pool=official | available=true | priority=10 | health=Healthy",
+              details: [{ label: "provider_id", value: "openai" }],
+            },
+          ],
+        },
+      ],
     });
     getRuntimeLogMetadata.mockResolvedValue({
       log_dir: "<app-local-data>/logs",
@@ -858,6 +899,18 @@ describe("App shell", () => {
 
     expect(await screen.findByRole("heading", { name: /request history/i })).toBeInTheDocument();
     expect(screen.getByText(/usage provenance/i)).toBeInTheDocument();
+  });
+
+  it("renders auth and provider diagnostics inside the logs console", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /logs/i }));
+    });
+
+    expect(await screen.findByRole("heading", { name: /provider diagnostics/i })).toBeInTheDocument();
+    expect(screen.getByText(/auth health/i)).toBeInTheDocument();
+    expect(screen.getByText(/provider health/i)).toBeInTheDocument();
   });
 
   it("clears stale request detail when detail loading fails", async () => {

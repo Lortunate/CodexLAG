@@ -2,9 +2,7 @@ use std::path::PathBuf;
 
 use codexlag_lib::{
     auth::{
-        openai::{
-            OpenAiAuthRuntime, OpenAiSessionRefresh, OpenAiSessionRefresher,
-        },
+        openai::{OpenAiAuthRuntime, OpenAiSessionRefresh, OpenAiSessionRefresher},
         session_store::StoredProviderSession,
     },
     bootstrap::{bootstrap_openai_auth_runtime_for_test_at, bootstrap_state_for_test_at},
@@ -61,16 +59,16 @@ async fn expired_openai_session_is_refreshed_during_runtime_startup_when_refresh
 
     drop(runtime);
 
-    let refreshed_runtime = bootstrap_openai_auth_runtime_for_test_at(
-        &database_path,
-        &FakeOpenAiSessionRefresher,
-    )
-    .await
-    .expect("bootstrap openai auth runtime with refresh");
+    let refreshed_runtime =
+        bootstrap_openai_auth_runtime_for_test_at(&database_path, &FakeOpenAiSessionRefresher)
+            .await
+            .expect("bootstrap openai auth runtime with refresh");
     let sessions = refreshed_runtime
         .list_provider_sessions()
         .expect("list provider sessions after startup refresh");
-    assert!(sessions.iter().all(|session| session.auth_state != "expired"));
+    assert!(sessions
+        .iter()
+        .all(|session| session.auth_state != "expired"));
 
     let refreshed = refreshed_runtime
         .openai_auth_mut()
@@ -80,7 +78,10 @@ async fn expired_openai_session_is_refreshed_during_runtime_startup_when_refresh
 
     assert_eq!(refreshed.summary.auth_state, "active");
     assert_eq!(refreshed.summary.expires_at_ms, Some(1_700_000_003_600));
-    assert_eq!(refreshed.summary.last_refresh_at_ms, Some(1_700_000_000_100));
+    assert_eq!(
+        refreshed.summary.last_refresh_at_ms,
+        Some(1_700_000_000_100)
+    );
     assert_eq!(refreshed.summary.last_refresh_error, None);
     assert!(refreshed.is_refreshable());
     assert_eq!(refreshed.session_secret, "new-session-cookie");

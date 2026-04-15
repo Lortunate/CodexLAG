@@ -1,8 +1,5 @@
 use crate::{
-    error::CodexLagError,
-    error::Result,
-    models::ProviderSessionSummary,
-    secret_store::SecretKey,
+    error::CodexLagError, error::Result, models::ProviderSessionSummary, secret_store::SecretKey,
     state::AppState,
 };
 
@@ -80,8 +77,10 @@ impl ProviderSessionStore {
             return Ok(None);
         };
 
-        let session_secret = state.secret(&SecretKey::new(session_secret_key(provider_id, account_id)))?;
-        let token_secret = state.secret(&SecretKey::new(token_secret_key(provider_id, account_id)))?;
+        let session_secret =
+            state.secret(&SecretKey::new(session_secret_key(provider_id, account_id)))?;
+        let token_secret =
+            state.secret(&SecretKey::new(token_secret_key(provider_id, account_id)))?;
 
         Ok(Some(StoredProviderSession {
             summary,

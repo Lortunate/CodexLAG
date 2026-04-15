@@ -3,9 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use codexlag_lib::{
-    bootstrap::{
-        bootstrap_runtime_for_test, bootstrap_state_with_provider_inventory_for_test,
-    },
+    bootstrap::{bootstrap_runtime_for_test, bootstrap_state_with_provider_inventory_for_test},
     gateway::build_router_for_test,
     routing::{
         engine::{

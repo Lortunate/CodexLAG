@@ -253,3 +253,28 @@ export interface RuntimeLogMetadata {
   log_dir: string;
   files: RuntimeLogFileMetadata[];
 }
+
+export interface DiagnosticsDetail {
+  label: string;
+  value: string;
+}
+
+export interface DiagnosticsRow {
+  key: string;
+  label: string;
+  status: string;
+  value: string;
+  details: DiagnosticsDetail[];
+}
+
+export interface DiagnosticsSection {
+  id: string;
+  title: string;
+  status: string;
+  summary: string;
+  rows: DiagnosticsRow[];
+}
+
+export interface ProviderDiagnosticsSummary {
+  sections: DiagnosticsSection[];
+}

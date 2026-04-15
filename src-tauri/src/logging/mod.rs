@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod redaction;
 pub mod runtime;
 pub mod usage;

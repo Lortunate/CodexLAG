@@ -16,10 +16,11 @@ pub use keys::{
     PlatformKeyInventoryEntry,
 };
 pub use logs::{
-    get_runtime_log_metadata, get_usage_request_detail, list_usage_request_history,
-    query_usage_ledger, runtime_log_metadata_from_runtime, usage_ledger_from_runtime,
-    usage_request_detail_from_runtime, usage_request_history_from_runtime, LogSummary,
-    RuntimeLogMetadata,
+    get_provider_diagnostics, get_runtime_log_metadata, get_usage_request_detail,
+    list_usage_request_history, provider_diagnostics_from_runtime, query_usage_ledger,
+    runtime_log_metadata_from_runtime, usage_ledger_from_runtime,
+    usage_request_detail_from_runtime, usage_request_history_from_runtime, DiagnosticsDetail,
+    DiagnosticsRow, DiagnosticsSection, LogSummary, ProviderDiagnosticsSummary, RuntimeLogMetadata,
 };
 pub use policies::{list_policies, update_policy, PolicySummary, PolicyUpdateInput};
 pub use relays::{

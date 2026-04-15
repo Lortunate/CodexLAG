@@ -17,6 +17,7 @@ import {
   CodexLagInvokeError,
   createPlatformKey,
   getAccountCapabilityDetail,
+  getProviderDiagnostics,
   getRelayCapabilityDetail,
   listAccounts,
   listProviderSessions,
@@ -52,6 +53,7 @@ describe("tauri wrappers", () => {
     await getAccountCapabilityDetail("acc-2");
     await refreshRelayBalance("relay-1");
     await getUsageRequestDetail("req-7");
+    await getProviderDiagnostics();
     await createPlatformKey({
       key_id: "key-new",
       name: "new key",
@@ -71,7 +73,8 @@ describe("tauri wrappers", () => {
     expect(invokeMock).toHaveBeenNthCalledWith(4, "get_usage_request_detail", {
       request_id: "req-7",
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(5, "create_platform_key", {
+    expect(invokeMock).toHaveBeenNthCalledWith(5, "get_provider_diagnostics");
+    expect(invokeMock).toHaveBeenNthCalledWith(6, "create_platform_key", {
       input: {
         key_id: "key-new",
         name: "new key",

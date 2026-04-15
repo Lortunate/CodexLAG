@@ -32,7 +32,11 @@ async fn openai_auth_session_round_trips_through_runtime_storage() {
     };
 
     runtime
-        .store_session(summary.clone(), "session-cookie".into(), token_secret.clone())
+        .store_session(
+            summary.clone(),
+            "session-cookie".into(),
+            token_secret.clone(),
+        )
         .expect("store openai auth session");
 
     drop(runtime);
@@ -76,12 +80,16 @@ async fn starting_openai_browser_login_returns_a_pending_loopback_auth_session()
     assert_eq!(pending.summary.display_name, "OpenAI Primary");
     assert_eq!(pending.summary.auth_state, "pending");
     assert!(pending.authorization_url.contains("response_type=code"));
-    assert!(pending.authorization_url.contains("client_id=codexlag-desktop"));
+    assert!(pending
+        .authorization_url
+        .contains("client_id=codexlag-desktop"));
     assert!(pending.authorization_url.contains("code_challenge="));
     assert!(pending.authorization_url.contains("state="));
     assert!(
         pending.authorization_url.contains("scope=openid")
-            || pending.authorization_url.contains("scope=openid+profile+offline_access")
+            || pending
+                .authorization_url
+                .contains("scope=openid+profile+offline_access")
     );
     assert!(pending.callback_url.starts_with("http://127.0.0.1:"));
     assert!(pending.callback_url.ends_with("/auth/openai/callback"));

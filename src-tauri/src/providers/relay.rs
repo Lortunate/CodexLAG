@@ -188,7 +188,14 @@ pub async fn invoke_newapi_relay(
     let status = response.status();
     let body = match response.bytes().await {
         Ok(body) => body,
-        Err(_) => return Err(http_failure(request_id, attempt_id, endpoint_id, Some(status))),
+        Err(_) => {
+            return Err(http_failure(
+                request_id,
+                attempt_id,
+                endpoint_id,
+                Some(status),
+            ))
+        }
     };
     if !status.is_success() {
         return Err(map_http_status_to_failure(
@@ -201,7 +208,14 @@ pub async fn invoke_newapi_relay(
 
     let payload: ChatCompletionResponse = match serde_json::from_slice(&body) {
         Ok(payload) => payload,
-        Err(_) => return Err(config_failure(request_id, attempt_id, endpoint_id, Some(status))),
+        Err(_) => {
+            return Err(config_failure(
+                request_id,
+                attempt_id,
+                endpoint_id,
+                Some(status),
+            ))
+        }
     };
     let usage = payload.usage.unwrap_or_default();
     Ok(InvocationSuccessMetadata {

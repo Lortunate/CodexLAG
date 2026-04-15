@@ -3,6 +3,8 @@ use axum::{
     Json, Router,
 };
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, RngCore};
@@ -26,6 +28,7 @@ const DEFAULT_PLATFORM_KEY_NAME: &str = "default";
 pub const DEFAULT_PLATFORM_KEY_SECRET_PREFIX: &str = "ck_local_";
 const DEFAULT_OFFICIAL_SESSION_REF: &str = "credential://official/session/official-primary";
 const DEFAULT_OFFICIAL_TOKEN_REF: &str = "credential://official/token/official-primary";
+static TEST_PROVIDER_UPSTREAM: OnceLock<std::result::Result<String, String>> = OnceLock::new();
 
 fn build_default_app_state(
     database_path: impl AsRef<Path>,
@@ -201,6 +204,13 @@ fn random_suffix() -> String {
 }
 
 async fn spawn_test_provider_upstream() -> Result<String> {
+    TEST_PROVIDER_UPSTREAM
+        .get_or_init(|| start_test_provider_upstream().map_err(|error| error.to_string()))
+        .clone()
+        .map_err(CodexLagError::new)
+}
+
+fn start_test_provider_upstream() -> Result<String> {
     async fn official_response() -> Json<serde_json::Value> {
         Json(serde_json::json!({
             "id": "resp_official_fixture",
@@ -248,25 +258,50 @@ async fn spawn_test_provider_upstream() -> Result<String> {
         r#"{"data":{"total_balance":"25.00"}}"#
     }
 
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|error| CodexLagError::new(format!("failed to bind test provider upstream: {error}")))?;
-    let address = listener
-        .local_addr()
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|error| {
+        CodexLagError::new(format!("failed to bind test provider upstream: {error}"))
+    })?;
+    listener.set_nonblocking(true).map_err(|error| {
+        CodexLagError::new(format!(
+            "failed to configure test provider upstream listener: {error}"
+        ))
+    })?;
+    let address = listener.local_addr().map_err(|error| {
+        CodexLagError::new(format!(
+            "failed to read test provider upstream address: {error}"
+        ))
+    })?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
         .map_err(|error| {
             CodexLagError::new(format!(
-                "failed to read test provider upstream address: {error}"
+                "failed to create test provider upstream runtime: {error}"
             ))
         })?;
+    let listener = {
+        let _runtime_guard = runtime.enter();
+        TcpListener::from_std(listener).map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to convert test provider upstream listener to tokio: {error}"
+            ))
+        })?
+    };
     let router = Router::new()
         .route("/responses", post(official_response))
         .route("/v1/chat/completions", post(relay_response))
         .route("/v1/api/user/self", get(relay_balance_response))
-        .route("/badpayload/v1/api/user/self", get(badpayload_balance_response));
-    tokio::spawn(async move {
-        axum::serve(listener, router)
-            .await
-            .expect("serve test provider upstream");
+        .route(
+            "/badpayload/v1/api/user/self",
+            get(badpayload_balance_response),
+        );
+
+    thread::spawn(move || {
+        runtime.block_on(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("serve test provider upstream");
+        });
     });
 
     Ok(format!("http://{address}"))
@@ -299,7 +334,10 @@ fn seed_runtime_provider_inventory_for_test(
         let relay_id = relay.relay_id.clone();
         let credential_ref = relay.api_key_credential_ref.clone();
         state.save_managed_relay(relay)?;
-        state.store_secret(&SecretKey::new(credential_ref), format!("rk_local_{relay_id}"))?;
+        state.store_secret(
+            &SecretKey::new(credential_ref),
+            format!("rk_local_{relay_id}"),
+        )?;
     }
 
     Ok(())

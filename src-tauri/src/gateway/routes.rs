@@ -89,11 +89,8 @@ async fn codex_request(
     let request_started_at_ms = wall_clock_now_ms();
     let mode_value = platform_key.allowed_mode.clone();
     let mode = mode_value.as_str();
-    let request_id = gateway_state.next_request_id(
-        &platform_key.name,
-        request_started_at_ms,
-        "unrouted",
-    );
+    let request_id =
+        gateway_state.next_request_id(&platform_key.name, request_started_at_ms, "unrouted");
 
     let accepted_line = format_runtime_event_fields(
         "gateway",
