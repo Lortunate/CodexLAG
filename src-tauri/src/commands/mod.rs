@@ -5,7 +5,8 @@ pub mod policies;
 pub mod relays;
 
 pub use accounts::{
-    get_account_capability_detail, import_official_account_login, refresh_account_balance,
+    get_account_capability_detail, import_official_account_login, list_provider_sessions,
+    logout_openai_session, refresh_account_balance, refresh_openai_session,
     start_openai_browser_login, AccountBalanceAvailability, AccountBalanceSnapshot,
     AccountCapabilityDetail, AccountSummary, OfficialAccountImportInput,
 };

@@ -63,13 +63,17 @@ async fn expired_openai_session_is_refreshed_during_runtime_startup_when_refresh
 
     let refreshed_runtime = bootstrap_openai_auth_runtime_for_test_at(
         &database_path,
-        1_700_000_000_100,
         &FakeOpenAiSessionRefresher,
     )
     .await
     .expect("bootstrap openai auth runtime with refresh");
+    let sessions = refreshed_runtime
+        .list_provider_sessions()
+        .expect("list provider sessions after startup refresh");
+    assert!(sessions.iter().all(|session| session.auth_state != "expired"));
 
     let refreshed = refreshed_runtime
+        .openai_auth_mut()
         .session("openai-primary")
         .expect("load refreshed session")
         .expect("refreshed session should exist");

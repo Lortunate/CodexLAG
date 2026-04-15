@@ -9,7 +9,7 @@ use rand::{rngs::OsRng, RngCore};
 use tokio::net::TcpListener;
 
 use crate::{
-    auth::openai::{OpenAiAuthRuntime, OpenAiSessionRefresher},
+    auth::openai::OpenAiSessionRefresher,
     commands::{accounts::default_primary_account, relays::default_relays},
     db::repositories::Repositories,
     error::{CodexLagError, Result},
@@ -149,22 +149,18 @@ pub async fn bootstrap_runtime_for_test() -> Result<RuntimeState> {
 
 pub async fn bootstrap_openai_auth_runtime_for_test_at<R: OpenAiSessionRefresher>(
     database_path: impl AsRef<Path>,
-    now_ms: i64,
     refresher: &R,
-) -> Result<OpenAiAuthRuntime> {
+) -> Result<RuntimeState> {
     let app_state = bootstrap_state_for_test_at(&database_path).await?;
-    let mut runtime = OpenAiAuthRuntime::new(app_state);
-    let session_accounts = runtime
-        .list_sessions()
-        .into_iter()
-        .map(|session| session.account_id)
-        .collect::<Vec<_>>();
+    let app_local_data_dir = database_path
+        .as_ref()
+        .parent()
+        .ok_or_else(|| CodexLagError::new("runtime database path has no parent directory"))?;
+    let runtime_log = RuntimeLogConfig {
+        log_dir: runtime_log_dir(app_local_data_dir),
+    };
 
-    for account_id in session_accounts {
-        let _ = runtime.refresh_session_if_needed(account_id.as_str(), now_ms, refresher)?;
-    }
-
-    Ok(runtime)
+    RuntimeState::start_with_openai_refresher(app_state, runtime_log, refresher)
 }
 
 fn test_database_path() -> PathBuf {

@@ -19,9 +19,12 @@ import {
   getAccountCapabilityDetail,
   getRelayCapabilityDetail,
   listAccounts,
+  listProviderSessions,
   listPolicies,
   getUsageRequestDetail,
+  logoutOpenAiSession,
   refreshAccountBalance,
+  refreshOpenAiSession,
   refreshRelayBalance,
   startOpenAiBrowserLogin,
 } from "../lib/tauri";
@@ -98,6 +101,51 @@ describe("tauri wrappers", () => {
     expect(invokeMock).toHaveBeenCalledWith("start_openai_browser_login");
     expect(pending.summary.provider_id).toBe("openai_official");
     expect(pending.callback_url).toContain("127.0.0.1");
+  });
+
+  it("lists provider sessions through the dedicated command surface", async () => {
+    invokeMock.mockResolvedValue([
+      {
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "active",
+        expires_at_ms: 1_731_111_111_000,
+        last_refresh_at_ms: 1_731_111_000_500,
+        last_refresh_error: null,
+      },
+    ]);
+
+    const sessions = await listProviderSessions();
+
+    expect(invokeMock).toHaveBeenCalledWith("list_provider_sessions");
+    expect(sessions[0]?.account_id).toBe("openai-primary");
+  });
+
+  it("refreshes and logs out an OpenAI provider session through the dedicated command surface", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        provider_id: "openai_official",
+        account_id: "openai-primary",
+        display_name: "OpenAI Primary",
+        auth_state: "active",
+        expires_at_ms: 1_731_111_222_000,
+        last_refresh_at_ms: 1_731_111_111_000,
+        last_refresh_error: null,
+      })
+      .mockResolvedValueOnce(true);
+
+    const refreshed = await refreshOpenAiSession("openai-primary");
+    const loggedOut = await logoutOpenAiSession("openai-primary");
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "refresh_openai_session", {
+      account_id: "openai-primary",
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "logout_openai_session", {
+      account_id: "openai-primary",
+    });
+    expect(refreshed.last_refresh_at_ms).toBe(1_731_111_111_000);
+    expect(loggedOut).toBe(true);
   });
 
   it("normalizes relay capability queryable adapter values from backend shape", async () => {

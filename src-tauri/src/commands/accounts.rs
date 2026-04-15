@@ -3,9 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::auth::openai::PendingOpenAiLoopbackAuthSession;
+use crate::auth::openai::{PendingOpenAiLoopbackAuthSession, ReqwestOpenAiSessionRefresher};
 use crate::error::{CodexLagError, ConfigErrorKind, Result};
-use crate::models::ImportedOfficialAccount;
+use crate::models::{ImportedOfficialAccount, ProviderSessionSummary};
 use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
 use crate::state::{AppState, RuntimeState};
 
@@ -77,6 +77,17 @@ pub fn list_accounts_from_runtime(runtime: &RuntimeState) -> Vec<AccountSummary>
 #[tauri::command]
 pub fn list_accounts(state: State<'_, RuntimeState>) -> Vec<AccountSummary> {
     list_accounts_from_runtime(&state)
+}
+
+pub fn list_provider_sessions_from_runtime(
+    runtime: &RuntimeState,
+) -> Result<Vec<ProviderSessionSummary>> {
+    runtime.list_provider_sessions()
+}
+
+#[tauri::command]
+pub fn list_provider_sessions(state: State<'_, RuntimeState>) -> Result<Vec<ProviderSessionSummary>> {
+    list_provider_sessions_from_runtime(&state)
 }
 
 pub fn refresh_account_balance_from_runtime(
@@ -274,6 +285,40 @@ pub fn start_openai_browser_login(
     state: State<'_, RuntimeState>,
 ) -> Result<PendingOpenAiLoopbackAuthSession> {
     start_openai_browser_login_from_runtime(&state, &app)
+}
+
+pub fn refresh_openai_session_from_runtime(
+    runtime: &RuntimeState,
+    account_id: String,
+) -> Result<ProviderSessionSummary> {
+    let refresher = ReqwestOpenAiSessionRefresher::new();
+    let session = runtime
+        .openai_auth_mut()
+        .refresh_session(account_id.as_str(), &refresher)?;
+    Ok(session.summary)
+}
+
+#[tauri::command]
+pub fn refresh_openai_session(
+    state: State<'_, RuntimeState>,
+    account_id: String,
+) -> Result<ProviderSessionSummary> {
+    refresh_openai_session_from_runtime(&state, account_id)
+}
+
+pub fn logout_openai_session_from_runtime(
+    runtime: &RuntimeState,
+    account_id: String,
+) -> Result<bool> {
+    runtime.openai_auth_mut().logout_session(account_id.as_str())
+}
+
+#[tauri::command]
+pub fn logout_openai_session(
+    state: State<'_, RuntimeState>,
+    account_id: String,
+) -> Result<bool> {
+    logout_openai_session_from_runtime(&state, account_id)
 }
 
 fn official_primary_session() -> OfficialSession {
