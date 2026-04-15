@@ -26,7 +26,6 @@ async fn openai_auth_session_round_trips_through_runtime_storage() {
         account_id: "openai-primary".into(),
         display_name: "OpenAI Primary".into(),
         auth_state: "active".into(),
-        refreshable: true,
         expires_at_ms: Some(1_731_111_111_000),
         last_refresh_at_ms: Some(1_731_111_000_500),
         last_refresh_error: None,

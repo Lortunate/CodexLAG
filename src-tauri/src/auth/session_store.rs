@@ -15,6 +15,21 @@ pub struct StoredProviderSession {
     pub token_secret: String,
 }
 
+impl StoredProviderSession {
+    pub fn is_refreshable(&self) -> bool {
+        serde_json::from_str::<serde_json::Value>(&self.token_secret)
+            .ok()
+            .map(|value| {
+                value
+                    .get("refresh_token")
+                    .and_then(|refresh_token| refresh_token.as_str())
+                    .map(|refresh_token| !refresh_token.is_empty())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+}
+
 pub struct ProviderSessionStore;
 
 impl ProviderSessionStore {

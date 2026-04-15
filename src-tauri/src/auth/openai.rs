@@ -197,7 +197,6 @@ impl OpenAiAuthRuntime {
             account_id: request.account_id.clone(),
             display_name: request.display_name,
             auth_state: "pending".into(),
-            refreshable: true,
             expires_at_ms: None,
             last_refresh_at_ms: None,
             last_refresh_error: None,
@@ -230,7 +229,7 @@ impl OpenAiAuthRuntime {
         let Some(stored) = self.session(account_id)? else {
             return Ok(None);
         };
-        if !stored.summary.refreshable {
+        if !stored.is_refreshable() {
             return Ok(None);
         }
         let Some(expires_at_ms) = stored.summary.expires_at_ms else {
@@ -243,7 +242,6 @@ impl OpenAiAuthRuntime {
         let refreshed = refresher.refresh(&stored)?;
         let mut summary = stored.summary.clone();
         summary.auth_state = "active".into();
-        summary.refreshable = true;
         summary.expires_at_ms = refreshed.expires_at_ms;
         summary.last_refresh_at_ms = Some(refreshed.refreshed_at_ms);
         summary.last_refresh_error = None;

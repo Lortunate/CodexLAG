@@ -105,7 +105,6 @@ pub struct ProviderSessionSummary {
     pub account_id: String,
     pub display_name: String,
     pub auth_state: String,
-    pub refreshable: bool,
     pub expires_at_ms: Option<i64>,
     pub last_refresh_at_ms: Option<i64>,
     pub last_refresh_error: Option<String>,
