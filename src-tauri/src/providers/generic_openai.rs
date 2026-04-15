@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::Deserialize;
 use serde_json::json;
 
@@ -11,7 +13,7 @@ use crate::providers::invocation::{
 use crate::providers::registry::ProviderAdapter;
 use reqwest::StatusCode;
 
-pub const GENERIC_OPENAI_PROVIDER_ID: &str = "generic_openai";
+pub const GENERIC_OPENAI_PROVIDER_ID: &str = "generic_openai_compatible";
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
 
@@ -71,6 +73,17 @@ struct CompletionTokenDetails {
     reasoning_tokens: u32,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct ModelListResponse {
+    #[serde(default)]
+    data: Vec<ModelDescriptor>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelDescriptor {
+    id: String,
+}
+
 pub fn parse_generic_openai_config(secret: &str) -> Result<GenericOpenAiConfig, ()> {
     if let Ok(parsed) = serde_json::from_str::<GenericOpenAiCredentialSecret>(secret) {
         let api_key = parsed.api_key.trim().to_string();
@@ -122,15 +135,37 @@ pub fn normalize_manual_models(models: Vec<String>) -> Vec<String> {
 }
 
 pub fn generic_openai_inventory_models(config: &GenericOpenAiConfig) -> Vec<String> {
-    if config.manual_models.is_empty() {
-        provider_adapter()
-            .default_models
-            .iter()
-            .map(|model| (*model).to_string())
-            .collect()
-    } else {
-        config.manual_models.clone()
+    if !config.manual_models.is_empty() {
+        return config.manual_models.clone();
     }
+
+    if let Some(discovered) = discover_generic_openai_models(config) {
+        return discovered;
+    }
+
+    provider_adapter()
+        .default_models
+        .iter()
+        .map(|model| (*model).to_string())
+        .collect()
+}
+
+fn discover_generic_openai_models(config: &GenericOpenAiConfig) -> Option<Vec<String>> {
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .ok()?
+        .get(format!("{}/models", config.base_url))
+        .bearer_auth(config.api_key.as_str())
+        .send()
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let payload = response.json::<ModelListResponse>().ok()?;
+    let models = normalize_manual_models(payload.data.into_iter().map(|model| model.id).collect());
+    (!models.is_empty()).then_some(models)
 }
 
 pub async fn invoke_generic_openai(

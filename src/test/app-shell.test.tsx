@@ -568,43 +568,16 @@ describe("App shell", () => {
     expect(getAccountCapabilityDetail).toHaveBeenCalledWith("official-primary");
   });
 
-  it("submits account import flow and reloads account cards", async () => {
-    listAccounts
-      .mockResolvedValueOnce([
-        { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
-      ])
-      .mockResolvedValueOnce([
-        { account_id: "official-primary", name: "Primary Publisher", provider: "openai" },
-        { account_id: "imported-openai", name: "Imported OpenAI", provider: "openai" },
-      ]);
-
+  it("keeps official accounts focused on browser login instead of manual import", async () => {
     render(<App />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
     });
 
-    fireEvent.change(screen.getByLabelText("Account ID"), { target: { value: "imported-openai" } });
-    fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Imported OpenAI" } });
-    fireEvent.change(screen.getByLabelText("Session Credential Ref"), {
-      target: { value: "credential://official/session/imported-openai" },
-    });
-    fireEvent.change(screen.getByLabelText("Token Credential Ref"), {
-      target: { value: "credential://official/token/imported-openai" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Import account" }));
-
-    expect(importOfficialAccountLogin).toHaveBeenCalledWith({
-      account_id: "imported-openai",
-      name: "Imported OpenAI",
-      provider: "openai",
-      session_credential_ref: "credential://official/session/imported-openai",
-      token_credential_ref: "credential://official/token/imported-openai",
-      account_identity: null,
-      auth_mode: null,
-    });
-    expect(await screen.findByText("Imported account: imported-openai")).toBeInTheDocument();
-    expect(listAccounts).toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: /openai browser session/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /import official account/i })).not.toBeInTheDocument();
+    expect(importOfficialAccountLogin).not.toHaveBeenCalled();
   });
 
   it("starts browser login and manages persisted OpenAI provider sessions", async () => {
@@ -671,15 +644,14 @@ describe("App shell", () => {
     expect(await screen.findByText("Signed out OpenAI session: openai-primary")).toBeInTheDocument();
   });
 
-  it("renders account import and relay creation as structured operations panels", async () => {
+  it("renders OpenAI session and relay creation as structured operations panels", async () => {
     render(<App />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /accounts/i }));
     });
-    expect(
-      await screen.findByRole("heading", { name: /import official account/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /openai browser session/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /import official account/i })).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /relays/i }));

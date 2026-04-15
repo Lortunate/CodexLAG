@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+use crate::providers::generic_openai::GENERIC_OPENAI_PROVIDER_ID;
+use crate::providers::official::OFFICIAL_OPENAI_PROVIDER_ID;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderAdapter {
     pub provider_id: &'static str,
@@ -19,7 +22,12 @@ impl ProviderRegistry {
     }
 
     pub fn adapter(&self, provider_id: &str) -> Option<&ProviderAdapter> {
-        self.adapters.get(provider_id)
+        let canonical = match provider_id {
+            "openai" => OFFICIAL_OPENAI_PROVIDER_ID,
+            "generic_openai" => GENERIC_OPENAI_PROVIDER_ID,
+            other => other,
+        };
+        self.adapters.get(canonical)
     }
 
     pub fn provider_ids(&self) -> Vec<&'static str> {

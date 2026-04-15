@@ -1,5 +1,6 @@
 use codexlag_lib::bootstrap::bootstrap_state_for_test;
-use codexlag_lib::models::{ImportedOfficialAccount, OfficialSession};
+use codexlag_lib::auth::session_store::ProviderSessionStore;
+use codexlag_lib::models::{ImportedOfficialAccount, OfficialSession, ProviderSessionSummary};
 use codexlag_lib::providers::inventory::project_provider_inventory_summary;
 use codexlag_lib::secret_store::SecretKey;
 
@@ -11,7 +12,7 @@ async fn provider_inventory_projects_registered_models_for_official_and_generic_
         .save_imported_official_account(account(
             "official-zeta",
             "Zeta Official",
-            "openai",
+            "openai_official",
             "credential://official/session/official-zeta",
             "credential://official/token/official-zeta",
         ))
@@ -33,7 +34,7 @@ async fn provider_inventory_projects_registered_models_for_official_and_generic_
         .save_imported_official_account(account(
             "generic-alpha",
             "Alpha Generic",
-            "generic_openai",
+            "generic_openai_compatible",
             "credential://official/session/generic-alpha",
             "credential://official/token/generic-alpha",
         ))
@@ -63,7 +64,7 @@ async fn provider_inventory_projects_registered_models_for_official_and_generic_
     );
 
     let generic = &summary.providers[0];
-    assert_eq!(generic.provider_id, "generic_openai");
+    assert_eq!(generic.provider_id, "generic_openai_compatible");
     assert!(generic.registered);
     assert!(
         generic.available,
@@ -80,11 +81,49 @@ async fn provider_inventory_projects_registered_models_for_official_and_generic_
     assert_eq!(generic.feature_capabilities.len(), 2);
 
     let official = &summary.providers[1];
-    assert_eq!(official.provider_id, "openai");
+    assert_eq!(official.provider_id, "openai_official");
     assert!(official.registered);
     assert!(official.available);
     assert_eq!(official.base_url, None);
     assert_eq!(official.model_ids, vec!["gpt-5-mini".to_string()]);
+}
+
+#[tokio::test]
+async fn provider_inventory_projects_stored_openai_provider_sessions() {
+    let mut state = bootstrap_state_for_test().await.expect("bootstrap state");
+
+    ProviderSessionStore::save(
+        &mut state,
+        ProviderSessionSummary {
+            provider_id: "openai_official".into(),
+            account_id: "openai-primary".into(),
+            display_name: "OpenAI Primary".into(),
+            auth_state: "active".into(),
+            expires_at_ms: Some(1_731_111_111_000),
+            last_refresh_at_ms: Some(1_731_111_000_500),
+            last_refresh_error: None,
+        },
+        "session-cookie".into(),
+        serde_json::json!({
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+        })
+        .to_string(),
+    )
+    .expect("save openai provider session");
+
+    let summary = project_provider_inventory_summary(&state);
+    let provider = summary
+        .providers
+        .iter()
+        .find(|provider| provider.endpoint_id == "openai-primary")
+        .expect("stored openai provider session should project into inventory");
+
+    assert_eq!(provider.provider_id, "openai_official");
+    assert!(provider.registered);
+    assert!(provider.available);
+    assert_eq!(provider.base_url, None);
+    assert_eq!(provider.model_ids, vec!["gpt-5-mini".to_string()]);
 }
 
 #[tokio::test]

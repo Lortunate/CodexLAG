@@ -11,7 +11,7 @@ use crate::providers::invocation::{
 };
 use crate::providers::registry::ProviderAdapter;
 
-pub const OFFICIAL_OPENAI_PROVIDER_ID: &str = "openai";
+pub const OFFICIAL_OPENAI_PROVIDER_ID: &str = "openai_official";
 
 pub fn provider_adapter() -> ProviderAdapter {
     ProviderAdapter {

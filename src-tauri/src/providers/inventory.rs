@@ -1,3 +1,4 @@
+use crate::auth::session_store::ProviderSessionStore;
 use crate::models::FeatureCapability;
 use crate::providers::capabilities::feature_capabilities_for_model_ids;
 use crate::providers::generic_openai::{
@@ -49,7 +50,9 @@ pub fn project_provider_inventory_summary(state: &AppState) -> ProviderInventory
                     .is_none_or(|adapter| !adapter.requires_session_secret || has_session_secret);
 
             ProviderInventoryEntry {
-                provider_id: account.provider.clone(),
+                provider_id: adapter
+                    .map(|adapter| adapter.provider_id.to_string())
+                    .unwrap_or_else(|| account.provider.clone()),
                 endpoint_id: account.account_id.clone(),
                 display_name: account.name.clone(),
                 available,
@@ -60,6 +63,41 @@ pub fn project_provider_inventory_summary(state: &AppState) -> ProviderInventory
             }
         })
         .collect();
+    providers.extend(state.iter_provider_sessions().map(|session| {
+        let adapter = registry.adapter(session.provider_id.as_str()).copied();
+        let stored = ProviderSessionStore::load(
+            state,
+            session.provider_id.as_str(),
+            session.account_id.as_str(),
+        )
+        .ok()
+        .flatten();
+        let token_secret = stored.as_ref().map(|stored| stored.token_secret.as_str());
+        let has_session_secret = stored
+            .as_ref()
+            .map(|stored| !stored.session_secret.trim().is_empty())
+            .unwrap_or(false);
+        let (model_ids, base_url) =
+            inventory_models_for_account(adapter, session.provider_id.as_str(), token_secret);
+        let available = adapter.is_some()
+            && session.auth_state == "active"
+            && token_secret.is_some()
+            && adapter
+                .is_none_or(|adapter| !adapter.requires_session_secret || has_session_secret);
+
+        ProviderInventoryEntry {
+            provider_id: adapter
+                .map(|adapter| adapter.provider_id.to_string())
+                .unwrap_or_else(|| session.provider_id.clone()),
+            endpoint_id: session.account_id.clone(),
+            display_name: session.display_name.clone(),
+            available,
+            registered: adapter.is_some(),
+            base_url,
+            feature_capabilities: feature_capabilities_for_model_ids(&model_ids),
+            model_ids,
+        }
+    }));
     providers.sort_by(|left, right| {
         left.display_name
             .cmp(&right.display_name)
@@ -74,7 +112,7 @@ fn inventory_models_for_account(
     provider_id: &str,
     token_secret: Option<&str>,
 ) -> (Vec<String>, Option<String>) {
-    if provider_id == GENERIC_OPENAI_PROVIDER_ID {
+    if matches!(provider_id, GENERIC_OPENAI_PROVIDER_ID | "generic_openai") {
         if let Some(token_secret) = token_secret {
             if let Ok(config) = parse_generic_openai_config(token_secret) {
                 return (

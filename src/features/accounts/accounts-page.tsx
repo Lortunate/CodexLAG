@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   getAccountCapabilityDetail,
-  importOfficialAccountLogin,
   listAccounts,
   listProviderSessions,
   logoutOpenAiSession,
@@ -13,10 +12,8 @@ import type {
   AccountBalanceSnapshot,
   AccountCapabilityDetail,
   AccountSummary,
-  OfficialAccountImportInput,
   ProviderSessionSummary,
 } from "../../lib/types";
-import { AccountImportForm } from "./account-import-form";
 
 interface AccountPanelState {
   account: AccountSummary;
@@ -31,11 +28,8 @@ export function AccountsPage() {
   const [providerSessions, setProviderSessions] = useState<ProviderSessionSummary[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [authActionMessage, setAuthActionMessage] = useState<string | null>(null);
-  const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
-  const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
   const [sessionActionError, setSessionActionError] = useState<string | null>(null);
   const [sessionActionPending, setSessionActionPending] = useState<string | null>(null);
-  const [isImportingAccount, setIsImportingAccount] = useState(false);
 
   async function loadAccounts(isMounted: () => boolean = () => true) {
     try {
@@ -113,29 +107,6 @@ export function AccountsPage() {
     };
   }, []);
 
-  async function handleImportAccount(input: OfficialAccountImportInput): Promise<boolean> {
-    if (isImportingAccount) {
-      return false;
-    }
-
-    setIsImportingAccount(true);
-    setImportErrorMessage(null);
-    setImportSuccessMessage(null);
-
-    try {
-      const imported = await importOfficialAccountLogin(input);
-      await loadAccounts();
-      setImportSuccessMessage(`Imported account: ${imported.account_id}`);
-      setErrorMessage(null);
-      return true;
-    } catch (error) {
-      setImportErrorMessage(error instanceof Error ? error.message : "Failed to import account.");
-      return false;
-    } finally {
-      setIsImportingAccount(false);
-    }
-  }
-
   async function handleRefreshProviderSession(accountId: string) {
     if (sessionActionPending) {
       return;
@@ -179,7 +150,7 @@ export function AccountsPage() {
   return (
     <section aria-labelledby="accounts-heading">
       <h2 id="accounts-heading">Official Accounts</h2>
-      <p>Import existing login state, review provider identity, and inspect capability status.</p>
+      <p>Review provider identity, launch browser login, and inspect capability status.</p>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <div className="detail-card">
         <h3>OpenAI browser session</h3>
@@ -216,12 +187,6 @@ export function AccountsPage() {
           </div>
         )}
       </div>
-      <AccountImportForm
-        errorMessage={importErrorMessage}
-        isSubmitting={isImportingAccount}
-        successMessage={importSuccessMessage}
-        onSubmit={handleImportAccount}
-      />
       <div className="detail-grid">
         {accounts.map((panel) => (
           <article className="detail-card" key={panel.account.account_id}>

@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::net::TcpListener;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use openidconnect::core::{
@@ -19,6 +19,9 @@ use crate::{
     state::AppState,
 };
 
+use super::callback::{
+    read_loopback_callback, respond_loopback_error, respond_loopback_success,
+};
 use super::session_store::{ProviderSessionStore, StoredProviderSession};
 
 const OPENAI_PROVIDER_ID: &str = "openai_official";
@@ -28,6 +31,7 @@ const OPENAI_TOKEN_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
 const OPENAI_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const OPENAI_CALLBACK_PATH: &str = "/auth/openai/callback";
 const OPENAI_DEFAULT_SCOPES: &[&str] = &["openid", "email", "profile", "offline_access"];
+const OPENAI_REFRESH_WINDOW_MS: i64 = 5 * 60 * 1_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenAiBrowserLoginRequest {
@@ -70,6 +74,18 @@ pub struct OpenAiTokenSecret {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct OpenAiTokenRefreshResponse {
+    access_token: String,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    #[serde(default)]
+    id_token: Option<String>,
+    #[serde(default)]
+    token_type: Option<String>,
+    expires_in: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct OpenAiTokenCodeExchangeResponse {
     access_token: String,
     #[serde(default)]
     refresh_token: Option<String>,
@@ -171,22 +187,8 @@ impl OpenAiSessionRefresher for ReqwestOpenAiSessionRefresher {
     }
 }
 
-struct PendingAuthSession {
-    #[allow(dead_code)]
-    listener: TcpListener,
-    #[allow(dead_code)]
-    csrf_state: String,
-    #[allow(dead_code)]
-    nonce: String,
-    #[allow(dead_code)]
-    pkce_verifier: PkceCodeVerifier,
-    #[allow(dead_code)]
-    callback_url: String,
-}
-
 pub struct OpenAiAuthRuntime {
     app_state: Arc<RwLock<AppState>>,
-    pending_sessions: HashMap<String, PendingAuthSession>,
 }
 
 impl OpenAiAuthRuntime {
@@ -195,10 +197,7 @@ impl OpenAiAuthRuntime {
     }
 
     pub fn from_shared_app_state(app_state: Arc<RwLock<AppState>>) -> Self {
-        Self {
-            app_state,
-            pending_sessions: HashMap::new(),
-        }
+        Self { app_state }
     }
 
     pub fn app_state(&self) -> RwLockReadGuard<'_, AppState> {
@@ -296,28 +295,26 @@ impl OpenAiAuthRuntime {
         for scope in &request.scopes {
             auth_request = auth_request.add_scope(Scope::new(scope.clone()));
         }
-        let (authorization_url, csrf_state, nonce) =
+        let (authorization_url, csrf_state, _nonce) =
             auth_request.set_pkce_challenge(pkce_challenge).url();
 
         let summary = ProviderSessionSummary {
             provider_id: OPENAI_PROVIDER_ID.into(),
             account_id: request.account_id.clone(),
-            display_name: request.display_name,
+            display_name: request.display_name.clone(),
             auth_state: "pending".into(),
             expires_at_ms: None,
             last_refresh_at_ms: None,
             last_refresh_error: None,
         };
 
-        self.pending_sessions.insert(
-            request.account_id,
-            PendingAuthSession {
-                listener,
-                csrf_state: csrf_state.secret().to_string(),
-                nonce: nonce.secret().to_string(),
-                pkce_verifier,
-                callback_url: callback_url.clone(),
-            },
+        spawn_loopback_callback_worker(
+            Arc::clone(&self.app_state),
+            request.clone(),
+            listener,
+            callback_url.clone(),
+            csrf_state.secret().to_string(),
+            pkce_verifier,
         );
 
         Ok(PendingOpenAiLoopbackAuthSession {
@@ -342,7 +339,7 @@ impl OpenAiAuthRuntime {
         let Some(expires_at_ms) = stored.summary.expires_at_ms else {
             return Ok(None);
         };
-        if expires_at_ms > now_ms {
+        if expires_at_ms > now_ms.saturating_add(OPENAI_REFRESH_WINDOW_MS) {
             return Ok(None);
         }
 
@@ -367,7 +364,6 @@ impl OpenAiAuthRuntime {
     }
 
     pub fn logout_session(&mut self, account_id: &str) -> Result<bool> {
-        self.pending_sessions.remove(account_id);
         self.app_state_mut()
             .repositories_mut()
             .delete_provider_session(OPENAI_PROVIDER_ID, account_id)
@@ -426,6 +422,145 @@ impl OpenAiAuthRuntime {
 
 fn oidc_error(error: impl std::fmt::Display) -> CodexLagError {
     CodexLagError::new(format!("failed to configure openai auth client: {error}"))
+}
+
+fn spawn_loopback_callback_worker(
+    app_state: Arc<RwLock<AppState>>,
+    request: OpenAiBrowserLoginRequest,
+    listener: TcpListener,
+    callback_url: String,
+    csrf_state: String,
+    pkce_verifier: PkceCodeVerifier,
+) {
+    thread::spawn(move || {
+        if let Err(error) = complete_loopback_callback(
+            app_state,
+            request,
+            listener,
+            callback_url,
+            csrf_state,
+            pkce_verifier,
+        ) {
+            let _ = error;
+        }
+    });
+}
+
+fn complete_loopback_callback(
+    app_state: Arc<RwLock<AppState>>,
+    request: OpenAiBrowserLoginRequest,
+    listener: TcpListener,
+    callback_url: String,
+    csrf_state: String,
+    pkce_verifier: PkceCodeVerifier,
+) -> Result<()> {
+    let (mut stream, _) = listener.accept().map_err(|error| {
+        CodexLagError::new(format!("failed to accept openai loopback callback: {error}"))
+    })?;
+    let callback = match read_loopback_callback(&mut stream, OPENAI_CALLBACK_PATH) {
+        Ok(callback) => callback,
+        Err(error) => {
+            let message = error.to_string();
+            let _ = respond_loopback_error(&mut stream, message.as_str());
+            return Err(error);
+        }
+    };
+    if callback.state != csrf_state {
+        let error = CodexLagError::new("openai loopback callback state did not match");
+        let _ = respond_loopback_error(&mut stream, error.to_string().as_str());
+        return Err(error);
+    }
+
+    let exchanged =
+        exchange_openai_authorization_code(&request, callback_url.as_str(), callback.code, pkce_verifier)?;
+    persist_exchanged_openai_session(&app_state, &request, exchanged)?;
+    respond_loopback_success(&mut stream)
+}
+
+fn exchange_openai_authorization_code(
+    request: &OpenAiBrowserLoginRequest,
+    callback_url: &str,
+    code: String,
+    pkce_verifier: PkceCodeVerifier,
+) -> Result<OpenAiSessionRefresh> {
+    let response = reqwest::blocking::Client::new()
+        .post(request.token_endpoint.as_str())
+        .form(&[
+            ("client_id", request.client_id.as_str()),
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", callback_url),
+            ("code_verifier", pkce_verifier.secret()),
+        ])
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .map_err(|error| {
+            CodexLagError::new(format!("openai auth code exchange failed: {error}"))
+        })?;
+    let status = response.status();
+    let body = response.text().map_err(|error| {
+        CodexLagError::new(format!(
+            "failed to read openai auth code exchange response: {error}"
+        ))
+    })?;
+    if !status.is_success() {
+        return Err(CodexLagError::new(format!(
+            "openai auth code exchange failed with status {status}: {body}"
+        )));
+    }
+    let token_response =
+        serde_json::from_str::<OpenAiTokenCodeExchangeResponse>(&body).map_err(|error| {
+            CodexLagError::new(format!(
+                "failed to decode openai auth code exchange payload: {error}"
+            ))
+        })?;
+    let refreshed_at_ms = now_ms();
+    let expires_at_ms =
+        Some(refreshed_at_ms.saturating_add(token_response.expires_in.saturating_mul(1_000)));
+    let access_token = token_response.access_token;
+    let token_secret = serde_json::to_string(&OpenAiTokenSecret {
+        access_token: access_token.clone(),
+        refresh_token: token_response.refresh_token,
+        expires_at_ms,
+        id_token: token_response.id_token,
+        token_type: token_response.token_type,
+    })
+    .map_err(|error| {
+        CodexLagError::new(format!(
+            "failed to serialize exchanged openai token secret: {error}"
+        ))
+    })?;
+
+    Ok(OpenAiSessionRefresh {
+        session_secret: access_token,
+        token_secret,
+        expires_at_ms,
+        refreshed_at_ms,
+    })
+}
+
+fn persist_exchanged_openai_session(
+    app_state: &Arc<RwLock<AppState>>,
+    request: &OpenAiBrowserLoginRequest,
+    exchanged: OpenAiSessionRefresh,
+) -> Result<()> {
+    let mut state = app_state
+        .write()
+        .expect("openai auth runtime app state lock poisoned");
+    ProviderSessionStore::save(
+        &mut state,
+        ProviderSessionSummary {
+            provider_id: OPENAI_PROVIDER_ID.into(),
+            account_id: request.account_id.clone(),
+            display_name: request.display_name.clone(),
+            auth_state: "active".into(),
+            expires_at_ms: exchanged.expires_at_ms,
+            last_refresh_at_ms: Some(exchanged.refreshed_at_ms),
+            last_refresh_error: None,
+        },
+        exchanged.session_secret,
+        exchanged.token_secret,
+    )
 }
 
 fn now_ms() -> i64 {
