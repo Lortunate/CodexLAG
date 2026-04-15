@@ -198,8 +198,8 @@ export function PolicyEditor({
       : "none";
   const rejectionReason =
     previewSummary.rejected_candidates.length > 0
-      ? "These endpoints are excluded from the current route because they are not present in the ordered selection list."
-      : "All known endpoints are represented in the current ordered selection list.";
+      ? "These endpoints are not explicitly ordered; the runtime may still append them after ordered candidates if they remain available."
+      : "All known endpoints are explicitly represented in the current ordered selection list.";
   const fallbackBehaviorSummary =
     activeDraft?.cross_pool_fallback === true
       ? "If every ordered candidate fails, the runtime may continue into cross-pool fallback instead of stopping at the current lane."
@@ -208,8 +208,8 @@ export function PolicyEditor({
         : "Cross-pool fallback is not selected yet, so the preview cannot determine whether routing may spill into another lane.";
   const firstAttemptSummary =
     previewSummary.eligible_candidates.length > 0
-      ? `First attempt starts with ${previewSummary.eligible_candidates[0]}. Subsequent routing decisions follow the ordered path shown in this preview.`
-      : "No request path can be evaluated until at least one eligible candidate is ordered.";
+      ? `Configured preference starts with ${previewSummary.eligible_candidates[0]}. Actual runtime choice still depends on availability, health, and recovery state.`
+      : "No configured preference can be evaluated until at least one known candidate is ordered.";
 
   function updateSelectionOrder(nextSelectionOrder: string[]) {
     if (!activeDraft) {
