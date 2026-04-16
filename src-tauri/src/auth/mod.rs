@@ -1,5 +1,6 @@
 pub mod callback;
 pub mod openai;
+pub mod openai_claims;
 pub mod session_store;
 
 use crate::models::{ProviderAuthProfile, ProviderDescriptor};
