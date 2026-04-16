@@ -8,9 +8,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "test:backend": "bun scripts/run-cargo-test-isolated.mjs",
     "test:smoke": "vitest run src/test/app-shell.test.tsx",
     "test:watch": "vitest",
-    "tauri:dev": "tauri dev"
+    "tauri:dev": "tauri dev",
+    "verify:foundation": "bun scripts/check-source-comments.mjs && cargo test --manifest-path src-tauri/Cargo.toml --test foundation_alignment"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
