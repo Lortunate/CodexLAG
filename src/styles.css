@@ -1,23 +1,50 @@
 @import "tailwindcss";
 
-@theme {
-  --color-background: #f2f4ef;
-  --color-foreground: #17201b;
-  --color-border: #d7dfd2;
-  --color-muted: #e6ece0;
-  --color-muted-foreground: #4e5f54;
-  --color-card: #fbfdf8;
-  --color-card-foreground: #17201b;
-  --color-primary: #2b5b46;
-  --color-primary-foreground: #f4fbf6;
-  --color-secondary: #dce5d6;
-  --color-secondary-foreground: #1f3328;
-  --color-ring: #3d7a60;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
 :root {
-  --app-bg: #f2f4ef;
-  --app-fg: #17201b;
+  color-scheme: dark;
+  --background: #0d1117;
+  --foreground: #e6edf3;
+  --card: #111827;
+  --card-foreground: #e6edf3;
+  --popover: #161b22;
+  --popover-foreground: #e6edf3;
+  --primary: #4ea1ff;
+  --primary-foreground: #f8fbff;
+  --secondary: #1a2230;
+  --secondary-foreground: #c9d1d9;
+  --muted: #161b22;
+  --muted-foreground: #8b949e;
+  --accent: #132338;
+  --accent-foreground: #dceeff;
+  --destructive: #da3633;
+  --destructive-foreground: #ffffff;
+  --border: #2b3442;
+  --input: #202938;
+  --ring: #6cb6ff;
+  --app-bg: var(--background);
+  --app-fg: var(--foreground);
 }
 
 * {
@@ -28,7 +55,9 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: linear-gradient(180deg, #f8f8f4 0%, #eef2e8 100%);
+  background:
+    radial-gradient(circle at top, rgba(78, 161, 255, 0.12), transparent 34%),
+    linear-gradient(180deg, #0d1117 0%, #101620 100%);
   color: var(--app-fg);
   font-family: "Segoe UI", "Noto Sans", sans-serif;
 }
