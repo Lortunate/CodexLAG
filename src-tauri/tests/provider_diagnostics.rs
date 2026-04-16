@@ -38,6 +38,7 @@ fn diagnostics_surface_includes_auth_provider_capability_and_routing_sections() 
                 quota_capability: Some(false),
                 last_verified_at_ms: None,
                 status: "active".into(),
+                entitlement: Default::default(),
             },
             session_credential_ref: "credential://official/session/official-primary".into(),
             token_credential_ref: "credential://official/token/official-primary".into(),

@@ -15,13 +15,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{CodexLagError, Result},
-    models::{ProviderAuthProfile, ProviderSessionSummary},
+    models::{
+        ImportedOfficialAccount, OfficialSession, ProviderAuthProfile, ProviderSessionSummary,
+    },
     state::AppState,
 };
 
-use super::callback::{
-    read_loopback_callback, respond_loopback_error, respond_loopback_success,
-};
+use super::callback::{read_loopback_callback, respond_loopback_error, respond_loopback_success};
+use super::openai_claims::parse_openai_id_token_claims;
 use super::session_store::{ProviderSessionStore, StoredProviderSession};
 
 const OPENAI_PROVIDER_ID: &str = "openai_official";
@@ -309,6 +310,15 @@ impl OpenAiAuthRuntime {
             last_refresh_error: None,
         };
 
+        self.store_session(
+            summary.clone(),
+            "pending-session".into(),
+            serde_json::json!({
+                "access_token": "pending-access-token",
+            })
+            .to_string(),
+        )?;
+
         spawn_loopback_callback_worker(
             Arc::clone(&self.app_state),
             request.clone(),
@@ -436,14 +446,14 @@ fn spawn_loopback_callback_worker(
 ) {
     thread::spawn(move || {
         if let Err(error) = complete_loopback_callback(
-            app_state,
-            request,
+            Arc::clone(&app_state),
+            request.clone(),
             listener,
             callback_url,
             csrf_state,
             pkce_verifier,
         ) {
-            let _ = error;
+            let _ = persist_callback_error(&app_state, &request, error.to_string());
         }
     });
 }
@@ -457,7 +467,9 @@ fn complete_loopback_callback(
     pkce_verifier: PkceCodeVerifier,
 ) -> Result<()> {
     let (mut stream, _) = listener.accept().map_err(|error| {
-        CodexLagError::new(format!("failed to accept openai loopback callback: {error}"))
+        CodexLagError::new(format!(
+            "failed to accept openai loopback callback: {error}"
+        ))
     })?;
     let callback = match read_loopback_callback(&mut stream, OPENAI_CALLBACK_PATH) {
         Ok(callback) => callback,
@@ -473,8 +485,12 @@ fn complete_loopback_callback(
         return Err(error);
     }
 
-    let exchanged =
-        exchange_openai_authorization_code(&request, callback_url.as_str(), callback.code, pkce_verifier)?;
+    let exchanged = exchange_openai_authorization_code(
+        &request,
+        callback_url.as_str(),
+        callback.code,
+        pkce_verifier,
+    )?;
     persist_exchanged_openai_session(&app_state, &request, exchanged)?;
     respond_loopback_success(&mut stream)
 }
@@ -546,6 +562,16 @@ fn persist_exchanged_openai_session(
     request: &OpenAiBrowserLoginRequest,
     exchanged: OpenAiSessionRefresh,
 ) -> Result<()> {
+    let entitlement = serde_json::from_str::<OpenAiTokenSecret>(&exchanged.token_secret)
+        .ok()
+        .and_then(|secret| secret.id_token)
+        .as_deref()
+        .map(parse_openai_id_token_claims)
+        .transpose()?;
+    let account_identity = entitlement
+        .as_ref()
+        .and_then(|snapshot| snapshot.email.clone())
+        .or_else(|| Some(request.display_name.clone()));
     let mut state = app_state
         .write()
         .expect("openai auth runtime app state lock poisoned");
@@ -562,6 +588,68 @@ fn persist_exchanged_openai_session(
         },
         exchanged.session_secret,
         exchanged.token_secret,
+    )?;
+    state.save_imported_official_account(ImportedOfficialAccount {
+        account_id: request.account_id.clone(),
+        name: request.display_name.clone(),
+        provider: "openai".to_string(),
+        session: OfficialSession {
+            session_id: format!("session:{}", request.account_id),
+            account_identity,
+            auth_mode: None,
+            refresh_capability: Some(true),
+            quota_capability: Some(false),
+            last_verified_at_ms: None,
+            status: "active".to_string(),
+            entitlement: entitlement.map(Into::into).unwrap_or_default(),
+        },
+        session_credential_ref: format!(
+            "credential://auth/{OPENAI_PROVIDER_ID}/session/{}",
+            request.account_id
+        ),
+        token_credential_ref: format!(
+            "credential://auth/{OPENAI_PROVIDER_ID}/token/{}",
+            request.account_id
+        ),
+    })
+}
+
+fn persist_callback_error(
+    app_state: &Arc<RwLock<AppState>>,
+    request: &OpenAiBrowserLoginRequest,
+    error_message: String,
+) -> Result<()> {
+    let mut state = app_state
+        .write()
+        .expect("openai auth runtime app state lock poisoned");
+    let existing = ProviderSessionStore::load(&state, OPENAI_PROVIDER_ID, request.account_id.as_str())?;
+    let session_secret = existing
+        .as_ref()
+        .map(|stored| stored.session_secret.clone())
+        .unwrap_or_else(|| "pending-session".to_string());
+    let token_secret = existing
+        .as_ref()
+        .map(|stored| stored.token_secret.clone())
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "access_token": "pending-access-token",
+            })
+            .to_string()
+        });
+
+    ProviderSessionStore::save(
+        &mut state,
+        ProviderSessionSummary {
+            provider_id: OPENAI_PROVIDER_ID.into(),
+            account_id: request.account_id.clone(),
+            display_name: request.display_name.clone(),
+            auth_state: "reauth_required".into(),
+            expires_at_ms: None,
+            last_refresh_at_ms: None,
+            last_refresh_error: Some(error_message),
+        },
+        session_secret,
+        token_secret,
     )
 }
 

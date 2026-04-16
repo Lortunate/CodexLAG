@@ -155,6 +155,51 @@ async fn openai_loopback_callback_persists_active_session_after_code_exchange() 
     );
 }
 
+#[tokio::test]
+async fn openai_loopback_callback_state_mismatch_marks_session_reauth_required() {
+    let database_path = temp_database_path("codexlag-openai-auth-state-mismatch");
+    let app_state = bootstrap_state_for_test_at(&database_path)
+        .await
+        .expect("bootstrap isolated app state");
+    let mut runtime = OpenAiAuthRuntime::new(app_state);
+
+    let pending = runtime
+        .start_browser_login(OpenAiBrowserLoginRequest {
+            account_id: "openai-primary".into(),
+            display_name: "OpenAI Primary".into(),
+            client_id: "codexlag-desktop".into(),
+            issuer_url: "https://auth.openai.example".into(),
+            authorization_endpoint: "https://auth.openai.example/oauth2/v1/authorize".into(),
+            token_endpoint: "https://auth.openai.example/oauth2/v1/token".into(),
+            scopes: vec!["openid".into(), "profile".into(), "offline_access".into()],
+        })
+        .expect("start browser login");
+
+    let callback_response = reqwest::Client::new()
+        .get(format!(
+            "{}?code=sample-auth-code&state=wrong-state",
+            pending.callback_url
+        ))
+        .timeout(Duration::from_secs(1))
+        .send()
+        .await
+        .expect("complete loopback callback");
+    assert!(!callback_response.status().is_success());
+
+    let stored = wait_for_session(&runtime, "openai-primary")
+        .await
+        .expect("pending session should still be persisted");
+
+    assert_eq!(stored.summary.auth_state, "reauth_required");
+    assert!(
+        stored
+            .summary
+            .last_refresh_error
+            .as_deref()
+            .is_some_and(|value| value.contains("state did not match"))
+    );
+}
+
 fn temp_database_path(prefix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("{prefix}-{}.sqlite3", random_suffix()))
 }

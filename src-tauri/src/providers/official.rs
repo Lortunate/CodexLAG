@@ -2,6 +2,7 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::auth::openai_claims::{parse_openai_id_token_claims, OpenAiEntitlementSnapshot};
 use crate::error::{
     CodexLagError, ConfigErrorKind, CredentialErrorKind, QuotaErrorKind, UpstreamErrorKind,
 };
@@ -51,6 +52,14 @@ pub enum OfficialBalanceCapability {
     NonQueryable,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OfficialEntitlement {
+    pub plan_type: Option<String>,
+    pub subscription_active_start: Option<String>,
+    pub subscription_active_until: Option<String>,
+    pub claim_source: Option<String>,
+}
+
 impl From<String> for OfficialAuthMode {
     fn from(value: String) -> Self {
         match value.as_str() {
@@ -81,6 +90,8 @@ pub struct OfficialSession {
     pub last_verified_at_ms: Option<i64>,
     #[serde(default = "default_official_session_status")]
     pub status: String,
+    #[serde(default)]
+    pub entitlement: OfficialEntitlement,
 }
 
 impl OfficialSession {
@@ -91,6 +102,34 @@ impl OfficialSession {
 
 fn default_official_session_status() -> String {
     "active".to_string()
+}
+
+impl From<OpenAiEntitlementSnapshot> for OfficialEntitlement {
+    fn from(value: OpenAiEntitlementSnapshot) -> Self {
+        Self {
+            plan_type: value.plan_type,
+            subscription_active_start: value.subscription_active_start,
+            subscription_active_until: value.subscription_active_until,
+            claim_source: Some(value.claim_source),
+        }
+    }
+}
+
+pub fn official_entitlement_from_token_secret(token_secret: &str) -> OfficialEntitlement {
+    let Ok(secret) = serde_json::from_str::<serde_json::Value>(token_secret) else {
+        return OfficialEntitlement::default();
+    };
+    let Some(id_token) = secret
+        .get("id_token")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return OfficialEntitlement::default();
+    };
+    parse_openai_id_token_claims(id_token)
+        .map(OfficialEntitlement::from)
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Deserialize)]

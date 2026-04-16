@@ -56,6 +56,7 @@ fn official_session_supports_unloaded_metadata_state() {
         quota_capability: None,
         last_verified_at_ms: None,
         status: "active".to_string(),
+        entitlement: Default::default(),
     };
 
     assert_eq!(session.account_identity, None);
@@ -74,6 +75,7 @@ fn official_session_can_represent_unknown_auth_mode() {
         quota_capability: Some(false),
         last_verified_at_ms: None,
         status: "active".to_string(),
+        entitlement: Default::default(),
     };
 
     assert_eq!(
@@ -136,6 +138,7 @@ fn official_sessions_report_balance_capability_as_non_queryable() {
         quota_capability: Some(false),
         last_verified_at_ms: None,
         status: "active".to_string(),
+        entitlement: Default::default(),
     };
 
     assert_eq!(

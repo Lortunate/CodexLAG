@@ -1,11 +1,14 @@
-use crate::providers::claude::{CLAUDE_DEFAULT_MODELS, CLAUDE_PROVIDER_ID};
 use crate::auth::session_store::ProviderSessionStore;
+use crate::providers::claude::{CLAUDE_DEFAULT_MODELS, CLAUDE_PROVIDER_ID};
 use crate::providers::gemini::{GEMINI_DEFAULT_MODELS, GEMINI_PROVIDER_ID};
 use crate::providers::generic_openai::{
     generic_openai_inventory_models, parse_generic_openai_config, GENERIC_OPENAI_DEFAULT_MODELS,
     GENERIC_OPENAI_PROVIDER_ID,
 };
-use crate::providers::official::{OFFICIAL_DEFAULT_MODELS, OFFICIAL_OPENAI_PROVIDER_ID};
+use crate::providers::official::{
+    official_entitlement_from_token_secret, OfficialEntitlement, OFFICIAL_DEFAULT_MODELS,
+    OFFICIAL_OPENAI_PROVIDER_ID,
+};
 use crate::providers::registry::default_provider_registry;
 use crate::secret_store::SecretKey;
 use crate::state::AppState;
@@ -23,9 +26,14 @@ pub struct ProviderAccountSummary {
     pub account_id: String,
     pub display_name: String,
     pub auth_state: String,
+    pub status: Option<String>,
     pub available: bool,
     pub registered: bool,
     pub base_url: Option<String>,
+    pub plan_type: Option<String>,
+    pub subscription_active_start: Option<String>,
+    pub subscription_active_until: Option<String>,
+    pub claim_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,20 +67,31 @@ pub fn project_provider_inventory_summary(state: &AppState) -> ProviderInventory
             let has_session_secret = state
                 .secret(&SecretKey::new(account.session_credential_ref.clone()))
                 .is_ok();
-            let model_set = inventory_models_for_account(canonical_provider_id, token_secret.as_deref());
+            let model_set =
+                inventory_models_for_account(canonical_provider_id, token_secret.as_deref());
             let available = adapter.is_some()
                 && account.session.status == "active"
                 && token_secret.is_some()
                 && (!requires_session_secret(canonical_provider_id) || has_session_secret);
+            let entitlement =
+                entitlement_for_account(canonical_provider_id, token_secret.as_deref());
+            let status = inventory_status(
+                account.session.status.as_str(),
+                available,
+                adapter.is_some(),
+                token_secret.is_some(),
+            );
 
             project_account_inventory(
                 canonical_provider_id,
                 account.account_id.clone(),
                 account.name.clone(),
                 account.session.status.clone(),
+                status,
                 available,
                 adapter.is_some(),
                 model_set.base_url,
+                entitlement,
                 model_set.model_ids,
                 model_set.source,
             )
@@ -100,15 +119,24 @@ pub fn project_provider_inventory_summary(state: &AppState) -> ProviderInventory
             && session.auth_state == "active"
             && token_secret.is_some()
             && (!requires_session_secret(canonical_provider_id) || has_session_secret);
+        let entitlement = entitlement_for_account(canonical_provider_id, token_secret);
+        let status = inventory_status(
+            session.auth_state.as_str(),
+            available,
+            adapter.is_some(),
+            token_secret.is_some(),
+        );
 
         project_account_inventory(
             canonical_provider_id,
             session.account_id.clone(),
             session.display_name.clone(),
             session.auth_state.clone(),
+            status,
             available,
             adapter.is_some(),
             model_set.base_url,
+            entitlement,
             model_set.model_ids,
             if model_set.source == "default" {
                 "session".into()
@@ -146,7 +174,10 @@ struct InventoryModelSet {
     source: String,
 }
 
-fn inventory_models_for_account(provider_id: &str, token_secret: Option<&str>) -> InventoryModelSet {
+fn inventory_models_for_account(
+    provider_id: &str,
+    token_secret: Option<&str>,
+) -> InventoryModelSet {
     if matches!(provider_id, GENERIC_OPENAI_PROVIDER_ID | "generic_openai") {
         if let Some(token_secret) = token_secret {
             if let Ok(config) = parse_generic_openai_config(token_secret) {
@@ -189,20 +220,53 @@ fn requires_session_secret(provider_id: &str) -> bool {
     matches!(provider_id, OFFICIAL_OPENAI_PROVIDER_ID | "openai")
 }
 
+fn entitlement_for_account(provider_id: &str, token_secret: Option<&str>) -> OfficialEntitlement {
+    if matches!(provider_id, OFFICIAL_OPENAI_PROVIDER_ID | "openai") {
+        token_secret
+            .map(official_entitlement_from_token_secret)
+            .unwrap_or_default()
+    } else {
+        OfficialEntitlement::default()
+    }
+}
+
+fn inventory_status(
+    auth_state: &str,
+    available: bool,
+    registered: bool,
+    has_token_secret: bool,
+) -> Option<String> {
+    if !registered || !has_token_secret {
+        return Some("unavailable".into());
+    }
+    if available {
+        return Some("active".into());
+    }
+    if auth_state == "active" {
+        Some("degraded".into())
+    } else {
+        Some(auth_state.to_string())
+    }
+}
+
 fn project_account_inventory(
     provider_id: &str,
     account_id: String,
     display_name: String,
     auth_state: String,
+    status: Option<String>,
     available: bool,
     registered: bool,
     base_url: Option<String>,
+    entitlement: OfficialEntitlement,
     model_ids: Vec<String>,
     source: String,
 ) -> InventoryProjection {
     let models = model_ids
         .into_iter()
-        .map(|model_id| model_capability_summary(provider_id, account_id.as_str(), model_id, source.as_str()))
+        .map(|model_id| {
+            model_capability_summary(provider_id, account_id.as_str(), model_id, source.as_str())
+        })
         .collect();
     InventoryProjection {
         account: ProviderAccountSummary {
@@ -210,9 +274,14 @@ fn project_account_inventory(
             account_id,
             display_name,
             auth_state,
+            status,
             available,
             registered,
             base_url,
+            plan_type: entitlement.plan_type,
+            subscription_active_start: entitlement.subscription_active_start,
+            subscription_active_until: entitlement.subscription_active_until,
+            claim_source: entitlement.claim_source,
         },
         models,
     }

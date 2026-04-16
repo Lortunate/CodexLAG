@@ -1,5 +1,6 @@
-use codexlag_lib::bootstrap::bootstrap_state_for_test;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use codexlag_lib::auth::session_store::ProviderSessionStore;
+use codexlag_lib::bootstrap::bootstrap_state_for_test;
 use codexlag_lib::models::{ImportedOfficialAccount, OfficialSession, ProviderSessionSummary};
 use codexlag_lib::providers::inventory::project_provider_inventory_summary;
 use codexlag_lib::secret_store::SecretKey;
@@ -105,7 +106,9 @@ async fn provider_inventory_projects_registered_models_for_official_and_generic_
             .collect::<Vec<_>>(),
         vec!["gpt-5-mini".to_string()]
     );
-    assert!(official_models.iter().all(|model| model.source == "default"));
+    assert!(official_models
+        .iter()
+        .all(|model| model.source == "default"));
 }
 
 #[tokio::test]
@@ -142,6 +145,7 @@ async fn provider_inventory_projects_stored_openai_provider_sessions() {
     assert_eq!(provider.provider_id, "openai_official");
     assert!(provider.registered);
     assert!(provider.available);
+    assert_eq!(provider.status.as_deref(), Some("active"));
     assert_eq!(provider.base_url, None);
     let models = summary
         .models
@@ -156,6 +160,99 @@ async fn provider_inventory_projects_stored_openai_provider_sessions() {
         vec!["gpt-5-mini".to_string()]
     );
     assert!(models.iter().all(|model| model.source == "session"));
+}
+
+#[tokio::test]
+async fn provider_inventory_projects_openai_entitlement_from_stored_session_token() {
+    let mut state = bootstrap_state_for_test().await.expect("bootstrap state");
+
+    ProviderSessionStore::save(
+        &mut state,
+        ProviderSessionSummary {
+            provider_id: "openai_official".into(),
+            account_id: "openai-entitled".into(),
+            display_name: "OpenAI Entitled".into(),
+            auth_state: "active".into(),
+            expires_at_ms: Some(1_731_111_111_000),
+            last_refresh_at_ms: Some(1_731_111_000_500),
+            last_refresh_error: None,
+        },
+        "session-cookie".into(),
+        serde_json::json!({
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+            "id_token": test_openai_jwt(
+                r#"{
+                    "email":"entitled@example.test",
+                    "https://api.openai.com/auth":{
+                        "chatgpt_plan_type":"pro",
+                        "chatgpt_subscription_active_start":"2026-04-01T00:00:00Z",
+                        "chatgpt_subscription_active_until":"2026-05-01T00:00:00Z"
+                    }
+                }"#,
+            ),
+        })
+        .to_string(),
+    )
+    .expect("save openai provider session");
+
+    let summary = project_provider_inventory_summary(&state);
+    let provider = summary
+        .accounts
+        .iter()
+        .find(|provider| provider.account_id == "openai-entitled")
+        .expect("stored openai provider session should project into inventory");
+
+    assert!(provider.available);
+    assert_eq!(provider.status.as_deref(), Some("active"));
+    assert_eq!(provider.plan_type.as_deref(), Some("pro"));
+    assert_eq!(provider.claim_source.as_deref(), Some("id_token_claim"));
+    assert_eq!(
+        provider.subscription_active_until.as_deref(),
+        Some("2026-05-01T00:00:00Z")
+    );
+}
+
+#[tokio::test]
+async fn provider_inventory_marks_active_openai_session_without_session_secret_as_degraded() {
+    let mut state = bootstrap_state_for_test().await.expect("bootstrap state");
+
+    ProviderSessionStore::save(
+        &mut state,
+        ProviderSessionSummary {
+            provider_id: "openai_official".into(),
+            account_id: "openai-degraded".into(),
+            display_name: "OpenAI Degraded".into(),
+            auth_state: "active".into(),
+            expires_at_ms: None,
+            last_refresh_at_ms: None,
+            last_refresh_error: None,
+        },
+        "   ".into(),
+        serde_json::json!({
+            "access_token": "access-token",
+            "id_token": test_openai_jwt(
+                r#"{
+                    "https://api.openai.com/auth":{
+                        "chatgpt_plan_type":"plus"
+                    }
+                }"#,
+            ),
+        })
+        .to_string(),
+    )
+    .expect("save openai provider session");
+
+    let summary = project_provider_inventory_summary(&state);
+    let provider = summary
+        .accounts
+        .iter()
+        .find(|provider| provider.account_id == "openai-degraded")
+        .expect("stored openai provider session should project into inventory");
+
+    assert!(!provider.available);
+    assert_eq!(provider.status.as_deref(), Some("degraded"));
+    assert_eq!(provider.plan_type.as_deref(), Some("plus"));
 }
 
 #[tokio::test]
@@ -190,14 +287,12 @@ async fn provider_inventory_marks_unregistered_providers_as_unavailable() {
         !unsupported.available,
         "unregistered providers should not project as available"
     );
-    assert!(
-        summary
-            .models
-            .iter()
-            .filter(|model| model.account_id == "unsupported-provider")
-            .collect::<Vec<_>>()
-            .is_empty()
-    );
+    assert!(summary
+        .models
+        .iter()
+        .filter(|model| model.account_id == "unsupported-provider")
+        .collect::<Vec<_>>()
+        .is_empty());
 }
 
 fn account(
@@ -219,8 +314,16 @@ fn account(
             quota_capability: Some(false),
             last_verified_at_ms: None,
             status: "active".to_string(),
+            entitlement: Default::default(),
         },
         session_credential_ref: session_credential_ref.to_string(),
         token_credential_ref: token_credential_ref.to_string(),
     }
+}
+
+fn test_openai_jwt(payload_json: &str) -> String {
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"none","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(payload_json);
+
+    format!("{header}.{payload}.signature")
 }

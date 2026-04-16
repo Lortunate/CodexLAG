@@ -38,17 +38,22 @@ pub fn parse_openai_id_token_claims(id_token: &str) -> Result<OpenAiEntitlementS
         .split('.')
         .nth(1)
         .ok_or_else(|| CodexLagError::new("openai id_token missing payload segment"))?;
-    let decoded = URL_SAFE_NO_PAD
-        .decode(payload)
-        .map_err(|error| CodexLagError::new(format!("failed to decode openai id_token: {error}")))?;
-    let claims: JwtClaims = serde_json::from_slice(&decoded)
-        .map_err(|error| CodexLagError::new(format!("failed to parse openai id_token claims: {error}")))?;
+    let decoded = URL_SAFE_NO_PAD.decode(payload).map_err(|error| {
+        CodexLagError::new(format!("failed to decode openai id_token: {error}"))
+    })?;
+    let claims: JwtClaims = serde_json::from_slice(&decoded).map_err(|error| {
+        CodexLagError::new(format!("failed to parse openai id_token claims: {error}"))
+    })?;
     let auth = claims.auth;
 
     Ok(OpenAiEntitlementSnapshot {
         email: claims.email,
-        account_id: auth.as_ref().and_then(|value| value.chatgpt_account_id.clone()),
-        plan_type: auth.as_ref().and_then(|value| value.chatgpt_plan_type.clone()),
+        account_id: auth
+            .as_ref()
+            .and_then(|value| value.chatgpt_account_id.clone()),
+        plan_type: auth
+            .as_ref()
+            .and_then(|value| value.chatgpt_plan_type.clone()),
         subscription_active_start: auth
             .as_ref()
             .and_then(|value| value.chatgpt_subscription_active_start.clone()),

@@ -185,6 +185,10 @@ async fn account_and_relay_capability_details_expose_balance_metadata() {
         account.account_identity,
         Some("user@example.com".to_string())
     );
+    assert!(account.entitlement.plan_type.is_none());
+    assert!(account.entitlement.subscription_active_start.is_none());
+    assert!(account.entitlement.subscription_active_until.is_none());
+    assert!(account.entitlement.claim_source.is_none());
 
     let relay = get_relay_capability_detail_from_runtime(&runtime, "relay-newapi".to_string())
         .expect("relay should succeed");
@@ -240,11 +244,23 @@ async fn route_explanation_groundwork_projects_final_choice_rejections_and_fallb
     let database_path = isolated_root.join("state.sqlite3");
     let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
 
-    let request =
-        request_log_fixture("req-route-1", Some("relay-newapi"), "success", Some(200), None, 2);
+    let request = request_log_fixture(
+        "req-route-1",
+        Some("relay-newapi"),
+        "success",
+        Some(200),
+        None,
+        2,
+    );
     let attempts = vec![
         request_attempt_fixture("req-route-1", 0, "official-primary", "initial", Some(429)),
-        request_attempt_fixture("req-route-1", 1, "relay-newapi", "fallback_after_429", Some(200)),
+        request_attempt_fixture(
+            "req-route-1",
+            1,
+            "relay-newapi",
+            "fallback_after_429",
+            Some(200),
+        ),
     ];
 
     append_persisted_request_bundle(&runtime, request.clone(), attempts.clone());
@@ -273,7 +289,13 @@ async fn route_explanation_groundwork_keeps_final_selection_unknown_when_not_per
 
     let request = request_log_fixture("req-route-unknown", None, "success", Some(200), None, 2);
     let attempts = vec![
-        request_attempt_fixture("req-route-unknown", 0, "official-primary", "initial", Some(429)),
+        request_attempt_fixture(
+            "req-route-unknown",
+            0,
+            "official-primary",
+            "initial",
+            Some(429),
+        ),
         request_attempt_fixture(
             "req-route-unknown",
             1,
@@ -328,10 +350,22 @@ async fn route_explanation_groundwork_deduplicates_retries_for_the_selected_endp
     let database_path = isolated_root.join("state.sqlite3");
     let runtime = runtime_for_paths(&database_path, &isolated_root.join("logs")).await;
 
-    let request =
-        request_log_fixture("req-route-retries", Some("official-primary"), "success", Some(200), None, 2);
+    let request = request_log_fixture(
+        "req-route-retries",
+        Some("official-primary"),
+        "success",
+        Some(200),
+        None,
+        2,
+    );
     let attempts = vec![
-        request_attempt_fixture("req-route-retries", 0, "official-primary", "initial", Some(504)),
+        request_attempt_fixture(
+            "req-route-retries",
+            0,
+            "official-primary",
+            "initial",
+            Some(504),
+        ),
         request_attempt_fixture(
             "req-route-retries",
             1,
@@ -365,7 +399,13 @@ async fn route_explanation_groundwork_preserves_terminal_failure_without_final_s
 
     let request = request_log_fixture("req-route-failed", None, "failed", None, None, 2);
     let attempts = vec![
-        request_attempt_fixture("req-route-failed", 0, "official-primary", "initial", Some(429)),
+        request_attempt_fixture(
+            "req-route-failed",
+            0,
+            "official-primary",
+            "initial",
+            Some(429),
+        ),
         request_attempt_fixture(
             "req-route-failed",
             1,

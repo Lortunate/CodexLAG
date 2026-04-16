@@ -65,9 +65,14 @@ export interface ProviderAccountSummary {
   account_id: string;
   display_name: string;
   auth_state: string;
+  status: string | null;
   available: boolean;
   registered: boolean;
   base_url: string | null;
+  plan_type: string | null;
+  subscription_active_start: string | null;
+  subscription_active_until: string | null;
+  claim_source: string | null;
 }
 
 export interface ModelCapabilitySummary {
@@ -121,11 +126,21 @@ export interface AccountBalanceSnapshot {
   balance: AccountBalanceAvailability;
 }
 
+export interface AccountEntitlementSummary {
+  plan_type: string | null;
+  subscription_active_start: string | null;
+  subscription_active_until: string | null;
+  claim_source: string | null;
+}
+
 export interface AccountCapabilityDetail {
   account_id: string;
   provider: string;
   refresh_capability: boolean | null;
   balance_capability: string;
+  status: string;
+  account_identity: string | null;
+  entitlement: AccountEntitlementSummary;
 }
 
 export interface RelaySummary {

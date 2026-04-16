@@ -892,6 +892,33 @@ describe("App shell", () => {
     expect(getRelayCapabilityDetail).toHaveBeenCalledWith("relay-newapi");
   });
 
+  it("shows claim-derived OpenAI plan metadata on the accounts page", async () => {
+    getAccountCapabilityDetail.mockImplementation(async (accountId: string) => ({
+      account_id: accountId,
+      provider: "openai",
+      refresh_capability: true,
+      balance_capability: "non_queryable",
+      status: "active",
+      account_identity: "user@example.com",
+      entitlement: {
+        plan_type: "pro",
+        subscription_active_start: "2026-04-01T00:00:00Z",
+        subscription_active_until: "2026-05-01T00:00:00Z",
+        claim_source: "id_token_claim",
+      },
+    }));
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Official Accounts" }));
+    });
+
+    expect(await screen.findByText("Plan: pro")).toBeInTheDocument();
+    expect(screen.getByText("Source: id_token_claim")).toBeInTheDocument();
+    expect(screen.getByText("Active until: 2026-05-01T00:00:00Z")).toBeInTheDocument();
+  });
+
   it("creates a relay and runs connection test flow", async () => {
     listRelays
       .mockResolvedValueOnce([

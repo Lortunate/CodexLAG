@@ -9,8 +9,10 @@ use crate::models::{
     ImportedOfficialAccount, ProviderDescriptor, ProviderSessionSummary, RequestAttemptLog,
     RequestLog, RequestRouteExplanation,
 };
-use crate::providers::official::{OfficialAuthMode, OfficialBalanceCapability, OfficialSession};
 use crate::providers::inventory::{project_provider_inventory_summary, ProviderInventorySummary};
+use crate::providers::official::{
+    OfficialAuthMode, OfficialBalanceCapability, OfficialEntitlement, OfficialSession,
+};
 use crate::state::{AppState, RuntimeState};
 
 const OFFICIAL_PRIMARY_ACCOUNT_ID: &str = "official-primary";
@@ -48,6 +50,7 @@ pub struct AccountCapabilityDetail {
     pub balance_capability: OfficialBalanceCapability,
     pub status: String,
     pub account_identity: Option<String>,
+    pub entitlement: OfficialEntitlement,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -199,6 +202,7 @@ pub fn get_account_capability_detail_from_runtime(
         balance_capability: session.balance_capability(),
         status: session.status,
         account_identity: session.account_identity,
+        entitlement: session.entitlement,
     })
 }
 
@@ -252,6 +256,7 @@ pub fn import_official_account_login_from_runtime(
             quota_capability: Some(false),
             last_verified_at_ms: None,
             status: "active".to_string(),
+            entitlement: OfficialEntitlement::default(),
         },
         session_credential_ref: input.session_credential_ref.trim().to_string(),
         token_credential_ref: input.token_credential_ref.trim().to_string(),
@@ -359,6 +364,7 @@ fn official_primary_session() -> OfficialSession {
         quota_capability: Some(false),
         last_verified_at_ms: None,
         status: "active".to_string(),
+        entitlement: OfficialEntitlement::default(),
     }
 }
 

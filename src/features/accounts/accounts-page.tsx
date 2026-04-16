@@ -335,8 +335,21 @@ export function AccountsPage() {
             )}
             {panel.capabilityDetail ? (
               <>
+                <p>Capability status: {panel.capabilityDetail.status}</p>
+                <p>Account identity: {panel.capabilityDetail.account_identity ?? "unknown"}</p>
                 <p>Refresh support: {String(panel.capabilityDetail.refresh_capability)}</p>
                 <p>Balance capability: {panel.capabilityDetail.balance_capability}</p>
+                {panel.capabilityDetail.entitlement?.plan_type ? (
+                  <p>Plan: {panel.capabilityDetail.entitlement.plan_type}</p>
+                ) : null}
+                {panel.capabilityDetail.entitlement?.claim_source ? (
+                  <p>Source: {panel.capabilityDetail.entitlement.claim_source}</p>
+                ) : null}
+                {panel.capabilityDetail.entitlement?.subscription_active_until ? (
+                  <p>
+                    Active until: {panel.capabilityDetail.entitlement.subscription_active_until}
+                  </p>
+                ) : null}
               </>
             ) : (
               <p>{panel.capabilityError ?? "Capability detail unavailable."}</p>

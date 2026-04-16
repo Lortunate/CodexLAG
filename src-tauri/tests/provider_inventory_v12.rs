@@ -63,18 +63,12 @@ async fn provider_inventory_v12_projects_official_and_generic_accounts_into_one_
             .any(|account| account.provider_id == "gemini_official" && account.available),
         "gemini api-key account should project as available"
     );
-    assert!(
-        inventory
-            .models
-            .iter()
-            .any(|model| model.provider_id == "claude_official" && model.model_id == "claude-3-7-sonnet")
-    );
-    assert!(
-        inventory
-            .models
-            .iter()
-            .any(|model| model.provider_id == "gemini_official" && model.model_id == "gemini-2.5-flash")
-    );
+    assert!(inventory.models.iter().any(
+        |model| model.provider_id == "claude_official" && model.model_id == "claude-3-7-sonnet"
+    ));
+    assert!(inventory.models.iter().any(
+        |model| model.provider_id == "gemini_official" && model.model_id == "gemini-2.5-flash"
+    ));
 }
 
 #[tokio::test]
@@ -93,7 +87,10 @@ async fn provider_inventory_v12_reports_auth_profile_and_capability_support() {
     let inventory = project_provider_inventory_summary(&state);
 
     assert!(
-        inventory.models.iter().all(|model| !model.provider_id.is_empty()),
+        inventory
+            .models
+            .iter()
+            .all(|model| !model.provider_id.is_empty()),
         "capability rows should stay tied to stable provider ids"
     );
 
@@ -131,6 +128,7 @@ fn seed_account(
                 quota_capability: Some(false),
                 last_verified_at_ms: None,
                 status: "active".to_string(),
+                entitlement: Default::default(),
             },
             session_credential_ref: session_ref.clone(),
             token_credential_ref: token_ref.clone(),

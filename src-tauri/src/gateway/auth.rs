@@ -302,6 +302,7 @@ fn official_primary_session() -> crate::providers::official::OfficialSession {
         quota_capability: Some(false),
         last_verified_at_ms: None,
         status: "active".to_string(),
+        entitlement: Default::default(),
     }
 }
 

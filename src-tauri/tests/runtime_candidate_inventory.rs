@@ -80,6 +80,7 @@ async fn runtime_candidates_reflect_missing_provider_credentials_as_unavailable(
                 quota_capability: Some(false),
                 last_verified_at_ms: None,
                 status: "active".to_string(),
+                entitlement: Default::default(),
             },
             session_credential_ref: "credential://official/session/official-missing-secrets"
                 .to_string(),

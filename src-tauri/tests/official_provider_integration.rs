@@ -11,6 +11,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use codexlag_lib::bootstrap::{bootstrap_runtime_for_test, bootstrap_state_for_test};
 use codexlag_lib::commands::accounts::{
     import_official_account_login_from_runtime, OfficialAccountImportInput,
@@ -18,6 +19,7 @@ use codexlag_lib::commands::accounts::{
 use codexlag_lib::commands::logs::{
     usage_request_detail_from_runtime, usage_request_history_from_runtime,
 };
+use codexlag_lib::providers::official::official_entitlement_from_token_secret;
 use codexlag_lib::secret_store::SecretKey;
 use codexlag_lib::state::{RuntimeLogConfig, RuntimeState};
 use serde_json::{json, Value};
@@ -168,6 +170,38 @@ async fn imported_official_account_runtime_path_requires_stored_session_secret()
 }
 
 #[tokio::test]
+async fn official_entitlement_projects_from_stored_openai_token_secret() {
+    let token_secret = json!({
+        "access_token": "access-token",
+        "refresh_token": "refresh-token",
+        "id_token": test_openai_jwt(
+            r#"{
+                "email":"official-entitled@example.test",
+                "https://api.openai.com/auth":{
+                    "chatgpt_plan_type":"pro",
+                    "chatgpt_subscription_active_start":"2026-04-01T00:00:00Z",
+                    "chatgpt_subscription_active_until":"2026-05-01T00:00:00Z"
+                }
+            }"#,
+        )
+    })
+    .to_string();
+
+    let entitlement = official_entitlement_from_token_secret(token_secret.as_str());
+
+    assert_eq!(entitlement.plan_type.as_deref(), Some("pro"));
+    assert_eq!(entitlement.claim_source.as_deref(), Some("id_token_claim"));
+    assert_eq!(
+        entitlement.subscription_active_start.as_deref(),
+        Some("2026-04-01T00:00:00Z")
+    );
+    assert_eq!(
+        entitlement.subscription_active_until.as_deref(),
+        Some("2026-05-01T00:00:00Z")
+    );
+}
+
+#[tokio::test]
 async fn official_provider_invokes_real_upstream_request_from_imported_login_state() {
     let (base_url, captured) = spawn_official_upstream().await;
     let state = bootstrap_state_for_test().await.expect("bootstrap state");
@@ -259,4 +293,11 @@ async fn official_provider_invokes_real_upstream_request_from_imported_login_sta
         captured.values(),
         vec!["Bearer official-live-key".to_string()]
     );
+}
+
+fn test_openai_jwt(payload_json: &str) -> String {
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"none","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(payload_json);
+
+    format!("{header}.{payload}.signature")
 }
