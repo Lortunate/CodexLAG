@@ -32,7 +32,7 @@ export default function App() {
 
   switch (activePage) {
     case "accounts":
-      activeContent = <AccountsPage />;
+      activeContent = <AccountsPage onOpenRelays={() => setActivePage("relays")} />;
       break;
     case "relays":
       activeContent = <RelaysPage />;

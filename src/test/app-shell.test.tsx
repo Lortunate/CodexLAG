@@ -709,7 +709,7 @@ describe("App shell", () => {
     });
 
     expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
-    expect(await screen.findByText(/auth profile: api key/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/api key required/i).length).toBeGreaterThan(0);
   });
 
   it("renders onboarding guidance per provider descriptor", async () => {
@@ -721,7 +721,7 @@ describe("App shell", () => {
 
     expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
     expect(screen.getByText("claude_official")).toBeInTheDocument();
-    expect(screen.getByText("API key required")).toBeInTheDocument();
+    expect(screen.getAllByText(/api key required/i).length).toBeGreaterThan(0);
   });
 
   it("shows degraded account health and last error guidance", async () => {

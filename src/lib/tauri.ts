@@ -12,6 +12,7 @@ import type {
   ErrorCategory,
   ProviderDiagnosticsSummary,
   LogSummary,
+  OfficialAccountImportInput,
   PendingOpenAiBrowserLogin,
   ProviderDescriptor,
   ProviderInventorySummary,
@@ -273,6 +274,10 @@ export function listAccounts() {
 
 export function startOpenAiBrowserLogin() {
   return invokeWithContract<PendingOpenAiBrowserLogin>("start_openai_browser_login");
+}
+
+export function importOfficialAccountLogin(input: OfficialAccountImportInput) {
+  return invokeWithContract<AccountSummary>("import_official_account_login", { input });
 }
 
 export function listProviderSessions() {
