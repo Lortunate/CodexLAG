@@ -723,6 +723,26 @@ p[role="status"] {
   font-size: 0.88rem;
 }
 
+.operator-code-block {
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 1rem;
+  background-color: color-mix(in oklab, var(--surface-0) 92%, black 8%);
+  color: var(--text-base);
+  padding: 1rem;
+  font-family: "Cascadia Code", "JetBrains Mono", "Consolas", monospace;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.operator-emphasis-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
 .operator-preview h4 {
   font-size: 0.98rem;
 }

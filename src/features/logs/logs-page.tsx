@@ -76,6 +76,20 @@ export function LogsPage() {
         description="Monitor gateway health, inspect provider diagnostics, and trace request-level routing decisions from the same desktop-visible log console."
       />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+      <div className="operator-summary-grid">
+        <article className="operator-callout">
+          <h4>History rows</h4>
+          <p>{history.length} recent requests loaded into the local operator timeline.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Diagnostics sections</h4>
+          <p>{diagnostics?.sections.length ?? 0} structured provider diagnostics groups currently available.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Ledger provenance</h4>
+          <p>{ledger?.total_cost.provenance ?? "unknown"} cost provenance on {ledger?.total_tokens ?? 0} total ledger tokens.</p>
+        </article>
+      </div>
       {summary ? (
         <section className="panel" aria-labelledby="logs-summary-heading">
           <div className="panel-heading">
@@ -98,24 +112,57 @@ export function LogsPage() {
       ) : null}
       {diagnostics ? (
         <section className="panel" aria-labelledby="provider-diagnostics-heading">
-          <h3 id="provider-diagnostics-heading">Provider diagnostics</h3>
-          <p>Structured auth, provider, capability, and routing visibility summaries.</p>
+          <div className="panel-heading">
+            <div>
+              <h3 id="provider-diagnostics-heading">Provider diagnostics</h3>
+              <p>Structured auth, provider, capability, and routing visibility summaries.</p>
+            </div>
+          </div>
           <DiagnosticsTable sections={diagnostics.sections} />
         </section>
       ) : null}
+      <div className="operator-emphasis-grid">
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Usage provenance</h3>
+              <p>Keep total token volume and cost provenance visible before drilling into request-level details.</p>
+            </div>
+          </div>
+          <p>Total ledger tokens: {ledger?.total_tokens ?? 0}</p>
+          <p>Total cost provenance: {ledger?.total_cost.provenance ?? "unknown"}</p>
+          <p>Total cost estimated marker: {ledger?.total_cost.is_estimated ? "yes" : "no"}</p>
+        </section>
+        {requestDetail ? (
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <h3>Selected request</h3>
+                <p>Current drill-down focus inside the request history timeline.</p>
+              </div>
+            </div>
+            <p>Selected request id: {requestDetail.request_id}</p>
+            <p>Endpoint: {requestDetail.endpoint_id}</p>
+            <p>Model: {requestDetail.model ?? "n/a"}</p>
+            <p>Pricing profile: {requestDetail.pricing_profile_id ?? "n/a"}</p>
+          </section>
+        ) : null}
+      </div>
       <section className="panel">
-        <h3>Usage provenance</h3>
-        <p>Total ledger tokens: {ledger?.total_tokens ?? 0}</p>
-        <p>Total cost provenance: {ledger?.total_cost.provenance ?? "unknown"}</p>
-        <p>Total cost estimated marker: {ledger?.total_cost.is_estimated ? "yes" : "no"}</p>
-      </section>
-      <section className="panel">
-        <h3>Request history</h3>
+        <div className="panel-heading">
+          <div>
+            <h3>Request history</h3>
+            <p>Recent request rows stay compact so operators can jump into one request at a time.</p>
+          </div>
+        </div>
         <ul className="history-list">
           {history.map((entry) => (
             <li key={entry.request_id}>
-              <div>
-                <strong>{entry.request_id}</strong>
+              <div className="operator-stack">
+                <div className="operator-list__item-header">
+                  <strong className="operator-list__item-title">{entry.request_id}</strong>
+                  <code>{entry.endpoint_id}</code>
+                </div>
                 <p>Endpoint: {entry.endpoint_id}</p>
                 <p>Model: {entry.model ?? "n/a"}</p>
                 <p>Tokens: {entry.total_tokens}</p>
@@ -138,7 +185,30 @@ export function LogsPage() {
       </section>
       {requestDetail ? (
         <section className="panel">
-          <h3>Request detail: {requestDetail.request_id}</h3>
+          <div className="panel-heading">
+            <div>
+              <h3>Request detail: {requestDetail.request_id}</h3>
+              <p>Trace the final route, cost envelope, and capability projection for this single request.</p>
+            </div>
+          </div>
+          <dl className="operator-inline-pairs">
+            <div>
+              <dt>Endpoint</dt>
+              <dd>{requestDetail.endpoint_id}</dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd>{requestDetail.model ?? "n/a"}</dd>
+            </div>
+            <div>
+              <dt>Pricing profile</dt>
+              <dd>{requestDetail.pricing_profile_id ?? "n/a"}</dd>
+            </div>
+            <div>
+              <dt>Total tokens</dt>
+              <dd>{requestDetail.total_tokens}</dd>
+            </div>
+          </dl>
           <p>Endpoint: {requestDetail.endpoint_id}</p>
           <p>Model: {requestDetail.model ?? "n/a"}</p>
           <p>Pricing profile: {requestDetail.pricing_profile_id ?? "n/a"}</p>
