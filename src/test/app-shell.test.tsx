@@ -891,12 +891,12 @@ describe("App shell", () => {
       fireEvent.click(screen.getByRole("button", { name: "Relays" }));
     });
 
-    expect(await screen.findByText("Endpoint: http://127.0.0.1:8787")).toBeInTheDocument();
+    expect((await screen.findAllByText("Endpoint: http://127.0.0.1:8787")).length).toBeGreaterThan(0);
     expect(screen.getByText("Balance state: queryable")).toBeInTheDocument();
     expect(screen.getByText("Adapter: new_api")).toBeInTheDocument();
     expect(screen.getByText("Total: 25.00")).toBeInTheDocument();
     expect(screen.getByText("Used: 7.50")).toBeInTheDocument();
-    expect(screen.getByText("Endpoint: https://relay.example.test")).toBeInTheDocument();
+    expect(screen.getAllByText("Endpoint: https://relay.example.test").length).toBeGreaterThan(0);
     expect(screen.getByText("Balance state: unsupported")).toBeInTheDocument();
     expect(screen.getByText("Capability: unsupported")).toBeInTheDocument();
     expect(refreshRelayBalance).toHaveBeenCalledWith("relay-newapi");
@@ -937,6 +937,8 @@ describe("App shell", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Relays" }));
     });
+
+    expect(await screen.findByRole("heading", { name: /connection verification/i })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Relay ID"), { target: { value: "relay-managed" } });
     fireEvent.change(screen.getByLabelText("Relay Name"), { target: { value: "Managed Relay" } });
@@ -1076,6 +1078,7 @@ describe("App shell", () => {
       fireEvent.click(screen.getByRole("button", { name: /policies/i }));
     });
 
+    expect(await screen.findByRole("heading", { name: /policy lanes/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /candidate preview/i })).toBeInTheDocument();
     expect(screen.getByText(/eligible candidates: official-primary, relay-newapi/i)).toBeInTheDocument();
     expect(screen.getByText(/rejected candidates: relay-nobalance/i)).toBeInTheDocument();

@@ -249,15 +249,23 @@ export function PolicyEditor({
   return (
     <section className="panel" aria-labelledby="policy-editor-heading">
       <h3 id="policy-editor-heading">Policy Editor</h3>
-      <ul aria-label="Policy summaries">
-        {policies.map((policy) => (
-          <li key={policy.policy_id}>
-            <strong>{policy.name}</strong> <span>{policy.status}</span>
-          </li>
-        ))}
-      </ul>
+      <p className="panel-intro">
+        Author endpoint preference, fallback posture, and recovery thresholds as an operator-facing
+        routing lane instead of an opaque config blob.
+      </p>
+      <section className="panel-subsection" aria-labelledby="policy-lanes-heading">
+        <h4 id="policy-lanes-heading">Policy lanes</h4>
+        <ul className="summary-list" aria-label="Policy summaries">
+          {policies.map((policy) => (
+            <li key={policy.policy_id}>
+              <strong>{policy.name}</strong>
+              <span>{policy.status}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
       <form onSubmit={handleSubmit}>
-        <p>
+        <div className="form-grid">
           <label>
             Policy
             <select
@@ -273,8 +281,8 @@ export function PolicyEditor({
               ))}
             </select>
           </label>
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Policy Name
             <input
@@ -291,8 +299,8 @@ export function PolicyEditor({
             />
           </label>
           {fieldErrors.name?.[0] ? <span role="alert">{fieldErrors.name[0]}</span> : null}
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Selection Order
             <input
@@ -303,56 +311,58 @@ export function PolicyEditor({
           {fieldErrors.selection_order?.[0] ? (
             <span role="alert">{fieldErrors.selection_order[0]}</span>
           ) : null}
-        </p>
-        <div aria-label="Selection order controls">
+        </div>
+        <div className="panel-subsection" aria-label="Selection order controls">
           <p className="text-sm text-muted-foreground">
             Reorder candidates explicitly instead of editing a comma-separated string.
           </p>
-          <ul>
+          <ul className="selection-lane-list">
             {selectionOrder.map((endpointId, index) => (
               <li key={endpointId}>
-                <span>{endpointId}</span>{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (index === 0) {
-                      return;
+                <span>{endpointId}</span>
+                <div className="selection-lane-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (index === 0) {
+                        return;
+                      }
+                      const next = [...selectionOrder];
+                      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                      updateSelectionOrder(next);
+                    }}
+                  >
+                    Move {endpointId} up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (index === selectionOrder.length - 1) {
+                        return;
+                      }
+                      const next = [...selectionOrder];
+                      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                      updateSelectionOrder(next);
+                    }}
+                  >
+                    Move {endpointId} down
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSelectionOrder(selectionOrder.filter((candidate) => candidate !== endpointId))
                     }
-                    const next = [...selectionOrder];
-                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                    updateSelectionOrder(next);
-                  }}
-                >
-                  Move {endpointId} up
-                </button>{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (index === selectionOrder.length - 1) {
-                      return;
-                    }
-                    const next = [...selectionOrder];
-                    [next[index], next[index + 1]] = [next[index + 1], next[index]];
-                    updateSelectionOrder(next);
-                  }}
-                >
-                  Move {endpointId} down
-                </button>{" "}
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateSelectionOrder(selectionOrder.filter((candidate) => candidate !== endpointId))
-                  }
-                >
-                  Remove {endpointId}
-                </button>
+                  >
+                    Remove {endpointId}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
           {availableEndpointIds.length > 0 ? (
-            <div>
+            <div className="panel-subsection">
               <p>Available endpoints</p>
-              <ul>
+              <ul className="summary-list">
                 {availableEndpointIds.map((endpointId) => (
                   <li key={endpointId}>
                     <button
@@ -367,7 +377,7 @@ export function PolicyEditor({
             </div>
           ) : null}
         </div>
-        <p>
+        <div className="form-grid">
           <label>
             Cross Pool Fallback
             <select
@@ -395,8 +405,8 @@ export function PolicyEditor({
           {fieldErrors.cross_pool_fallback?.[0] ? (
             <span role="alert">{fieldErrors.cross_pool_fallback[0]}</span>
           ) : null}
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Retry Budget
             <input
@@ -415,8 +425,8 @@ export function PolicyEditor({
           {fieldErrors.retry_budget?.[0] ? (
             <span role="alert">{fieldErrors.retry_budget[0]}</span>
           ) : null}
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Timeout Open After
             <input
@@ -438,8 +448,8 @@ export function PolicyEditor({
           {fieldErrors.timeout_open_after?.[0] ? (
             <span role="alert">{fieldErrors.timeout_open_after[0]}</span>
           ) : null}
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Server Error Open After
             <input
@@ -461,8 +471,8 @@ export function PolicyEditor({
           {fieldErrors.server_error_open_after?.[0] ? (
             <span role="alert">{fieldErrors.server_error_open_after[0]}</span>
           ) : null}
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Cooldown (ms)
             <input
@@ -484,8 +494,8 @@ export function PolicyEditor({
           {fieldErrors.cooldown_ms?.[0] ? (
             <span role="alert">{fieldErrors.cooldown_ms[0]}</span>
           ) : null}
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Half Open After (ms)
             <input
@@ -507,8 +517,8 @@ export function PolicyEditor({
           {fieldErrors.half_open_after_ms?.[0] ? (
             <span role="alert">{fieldErrors.half_open_after_ms[0]}</span>
           ) : null}
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Success Close After
             <input
@@ -530,12 +540,12 @@ export function PolicyEditor({
           {fieldErrors.success_close_after?.[0] ? (
             <span role="alert">{fieldErrors.success_close_after[0]}</span>
           ) : null}
-        </p>
+        </div>
         <button type="submit" disabled={isSaving || policies.length === 0}>
           Save policy
         </button>
       </form>
-      <section aria-labelledby="policy-preview-heading">
+      <section className="panel-subsection" aria-labelledby="policy-preview-heading">
         <h4 id="policy-preview-heading">Candidate preview</h4>
         <p>Eligible candidates: {previewSummary.eligible_candidates.join(", ") || "none"}</p>
         <p>Rejected candidates: {previewSummary.rejected_candidates.join(", ") || "none"}</p>
@@ -548,7 +558,7 @@ export function PolicyEditor({
         <p>Known endpoint ids: {endpointIds.join(", ")}</p>
       ) : null}
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      {successMessage ? <p>{successMessage}</p> : null}
+      {successMessage ? <p role="status">{successMessage}</p> : null}
     </section>
   );
 }

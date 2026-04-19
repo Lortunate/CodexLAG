@@ -27,6 +27,10 @@ export function DefaultKeyModeToggle({
   return (
     <section className="panel">
       <h3>Default Key Mode</h3>
+      <p className="panel-intro">
+        Keep the current route eligibility visible before changing the default key between account,
+        relay, or hybrid traffic.
+      </p>
       <p>Default key: {summaryName}</p>
       <p>{buildTraySummaryText(activeMode, rawMode)}</p>
       <p>Allowed mode: {activeMode ?? `unsupported (${rawMode})`}</p>

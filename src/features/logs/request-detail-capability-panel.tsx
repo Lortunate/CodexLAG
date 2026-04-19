@@ -26,17 +26,24 @@ export function RequestDetailCapabilityPanel({ detail }: RequestDetailCapability
   return (
     <section className="panel" aria-label="Request capability detail">
       <h4>Capability resolution</h4>
+      <p className="panel-intro">
+        Preserve the declared requirement set, the normalized effective result, and the route
+        evidence that explains how the request actually landed.
+      </p>
       <p>Declared requirements</p>
       <pre>{formatMaybeJson(detail.declared_capability_requirements)}</pre>
       <p>Effective result</p>
       <pre>{formatMaybeJson(detail.effective_capability_result)}</pre>
-      <p>Final route: {finalRoute}</p>
-      <p>Rejected candidates: {rejectedCandidates.length > 0 ? rejectedCandidates.join(", ") : "none"}</p>
-      <p>Fallback trigger: {routeExplanation?.fallback_trigger ?? "n/a"}</p>
-      <p>Final routing reason: {routeExplanation?.final_reason ?? "n/a"}</p>
-      <p>Final upstream status: {detail.final_upstream_status ?? "n/a"}</p>
-      <p>Final upstream error code: {detail.final_upstream_error_code ?? "n/a"}</p>
-      <p>Final upstream error reason: {detail.final_upstream_error_reason ?? "n/a"}</p>
+      <div className="panel-subsection">
+        <h5>Routing evidence</h5>
+        <p>Final route: {finalRoute}</p>
+        <p>Rejected candidates: {rejectedCandidates.length > 0 ? rejectedCandidates.join(", ") : "none"}</p>
+        <p>Fallback trigger: {routeExplanation?.fallback_trigger ?? "n/a"}</p>
+        <p>Final routing reason: {routeExplanation?.final_reason ?? "n/a"}</p>
+        <p>Final upstream status: {detail.final_upstream_status ?? "n/a"}</p>
+        <p>Final upstream error code: {detail.final_upstream_error_code ?? "n/a"}</p>
+        <p>Final upstream error reason: {detail.final_upstream_error_reason ?? "n/a"}</p>
+      </div>
     </section>
   );
 }

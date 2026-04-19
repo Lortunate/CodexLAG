@@ -57,8 +57,12 @@ export function RelayEditor({
   return (
     <section className="panel" aria-labelledby="relay-editor-heading">
       <h3 id="relay-editor-heading">Manage Relays</h3>
+      <p className="panel-intro">
+        Stage relay definitions, keep adapter shape explicit, and verify connectivity before the
+        relay is allowed into rotation.
+      </p>
       <form onSubmit={handleSubmit}>
-        <p>
+        <div className="form-grid">
           <label>
             Relay ID
             <input
@@ -69,8 +73,8 @@ export function RelayEditor({
               }
             />
           </label>
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Relay Name
             <input
@@ -81,8 +85,8 @@ export function RelayEditor({
               }
             />
           </label>
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Relay Endpoint
             <input
@@ -93,8 +97,8 @@ export function RelayEditor({
               }
             />
           </label>
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Adapter
             <select
@@ -111,13 +115,20 @@ export function RelayEditor({
               <option value="none">none</option>
             </select>
           </label>
-        </p>
+        </div>
         <button type="submit" disabled={isCreating}>
           Create relay
         </button>
       </form>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      {successMessage ? <p>{successMessage}</p> : null}
+      {successMessage ? <p role="status">{successMessage}</p> : null}
+      <div className="panel-subsection">
+        <h4>Connection verification</h4>
+        <p className="panel-intro">
+          Run point-in-time checks against configured relays and keep the latest latency result
+          attached to each endpoint record.
+        </p>
+      </div>
       <ul className="history-list" aria-label="Relay management list">
         {relays.map((relay) => {
           const result = connectionResults[relay.relay_id];
@@ -125,7 +136,8 @@ export function RelayEditor({
             <li key={relay.relay_id}>
               <div>
                 <strong>{relay.name}</strong>
-                <p>{relay.endpoint}</p>
+                <p>Endpoint: {relay.endpoint}</p>
+                <p>Relay ID: {relay.relay_id}</p>
                 {result ? (
                   <p>
                     {result.relay_id}: {result.status} ({result.latency_ms}ms)

@@ -58,8 +58,12 @@ export function KeyManagementPanel({
   return (
     <section className="panel" aria-labelledby="key-management-heading">
       <h3 id="key-management-heading">Platform Key Management</h3>
+      <p className="panel-intro">
+        Mint local credentials against a specific policy lane and keep allowed runtime mode visible
+        before the secret is issued.
+      </p>
       <form onSubmit={handleSubmit}>
-        <p>
+        <div className="form-grid">
           <label>
             Key ID
             <input
@@ -70,8 +74,8 @@ export function KeyManagementPanel({
               }
             />
           </label>
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Key Name
             <input
@@ -82,8 +86,8 @@ export function KeyManagementPanel({
               }
             />
           </label>
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Policy ID
             <input
@@ -94,8 +98,8 @@ export function KeyManagementPanel({
               }
             />
           </label>
-        </p>
-        <p>
+        </div>
+        <div className="form-grid">
           <label>
             Allowed Mode
             <select
@@ -113,13 +117,20 @@ export function KeyManagementPanel({
               <option value="relay_only">relay_only</option>
             </select>
           </label>
-        </p>
+        </div>
         <button type="submit" disabled={isCreating}>
           Create key
         </button>
       </form>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      {successMessage ? <p>{successMessage}</p> : null}
+      {successMessage ? <p role="status">{successMessage}</p> : null}
+      <div className="panel-subsection">
+        <h4>Issued credentials</h4>
+        <p className="panel-intro">
+          Track which key is enabled, which policy it binds to, and whether the runtime should admit
+          account traffic, relay traffic, or both.
+        </p>
+      </div>
       <ul className="history-list" aria-label="Platform key inventory">
         {keys.map((key) => (
           <li key={key.id}>
