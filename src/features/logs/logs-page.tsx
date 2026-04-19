@@ -12,6 +12,7 @@ import type {
   UsageLedger,
   UsageRequestDetail,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 import { DiagnosticsTable } from "./diagnostics-table";
 import { RequestDetailCapabilityPanel } from "./request-detail-capability-panel";
 
@@ -68,20 +69,32 @@ export function LogsPage() {
 
   return (
     <section aria-labelledby="logs-heading">
-      <h2 id="logs-heading">Usage Timeline</h2>
-      <p>Use desktop-visible logs to monitor the gateway and review recent usage signals.</p>
+      <PageHeader
+        eyebrow="Diagnostics console"
+        titleId="logs-heading"
+        title="Usage Timeline"
+        description="Monitor gateway health, inspect provider diagnostics, and trace request-level routing decisions from the same desktop-visible log console."
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       {summary ? (
-        <dl className="metric-list">
-          <div>
-            <dt>Level</dt>
-            <dd>{summary.level}</dd>
+        <section className="panel" aria-labelledby="logs-summary-heading">
+          <div className="panel-heading">
+            <div>
+              <h3 id="logs-summary-heading">Runtime summary</h3>
+              <p>Keep the latest operator-visible signal and current logging level in view.</p>
+            </div>
           </div>
-          <div>
-            <dt>Last event</dt>
-            <dd>{summary.last_event}</dd>
-          </div>
-        </dl>
+          <dl className="metric-list">
+            <div>
+              <dt>Level</dt>
+              <dd>{summary.level}</dd>
+            </div>
+            <div>
+              <dt>Last event</dt>
+              <dd>{summary.last_event}</dd>
+            </div>
+          </dl>
+        </section>
       ) : null}
       {diagnostics ? (
         <section className="panel" aria-labelledby="provider-diagnostics-heading">

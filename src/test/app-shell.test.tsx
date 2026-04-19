@@ -603,8 +603,8 @@ describe("App shell", () => {
   it("shows the overview diagnostics panel and default key operations in the rebuilt pages", async () => {
     render(<App />);
 
-    expect(await screen.findByText(/runtime diagnostics/i)).toBeInTheDocument();
-    expect(screen.getByText(/default key mode/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /runtime diagnostics/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /default key mode/i })).toBeInTheDocument();
   });
 
   it("exports runtime diagnostics and renders manifest path fallback", async () => {
@@ -1146,8 +1146,8 @@ describe("App shell", () => {
     });
 
     expect(await screen.findByRole("heading", { name: /provider diagnostics/i })).toBeInTheDocument();
-    expect(screen.getByText(/auth health/i)).toBeInTheDocument();
-    expect(screen.getByText(/provider health/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /auth health/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /provider health/i })).toBeInTheDocument();
   });
 
   it("reveals diagnostics detail rows when an operator expands a section row", async () => {

@@ -1,3 +1,4 @@
+import { cn } from "../../lib/utils";
 import type { DefaultKeyMode } from "../../lib/types";
 
 const modes: DefaultKeyMode[] = ["account_only", "relay_only", "hybrid"];
@@ -26,7 +27,12 @@ export function DefaultKeyModeToggle({
 }: DefaultKeyModeToggleProps) {
   return (
     <section className="panel">
-      <h3>Default Key Mode</h3>
+      <div className="panel-heading">
+        <div>
+          <h3>Default Key Mode</h3>
+          <p>Choose which upstream path the default platform key is allowed to use.</p>
+        </div>
+      </div>
       <p>Default key: {summaryName}</p>
       <p>{buildTraySummaryText(activeMode, rawMode)}</p>
       <p>Allowed mode: {activeMode ?? `unsupported (${rawMode})`}</p>
@@ -36,6 +42,7 @@ export function DefaultKeyModeToggle({
           <button
             key={mode}
             type="button"
+            className={cn("mode-toggle-chip", mode === activeMode && "is-active")}
             aria-pressed={mode === activeMode ? "true" : "false"}
             disabled={disabled || mode === activeMode}
             onClick={() => onSelectMode(mode)}

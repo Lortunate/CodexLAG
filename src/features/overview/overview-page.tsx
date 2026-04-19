@@ -22,6 +22,7 @@ import type {
   RuntimeLogMetadata,
   UsageLedger,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 import { DefaultKeyModeToggle } from "../default-key/default-key-mode-toggle";
 import { CapabilityMatrixTable } from "./capability-matrix-table";
 import { RuntimeLogFilesTable } from "./runtime-log-files-table";
@@ -201,8 +202,12 @@ export function OverviewPage() {
 
   return (
     <section aria-labelledby="overview-heading">
-      <h2 id="overview-heading">Gateway Overview</h2>
-      <p>CodexLAG manages local accounts, relays, keys, policy routing, and logs.</p>
+      <PageHeader
+        eyebrow="Operator workbench"
+        titleId="overview-heading"
+        title="Gateway Overview"
+        description="CodexLAG manages local accounts, relays, platform keys, policy routing, and runtime diagnostics from a single-machine control surface."
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <div className="status-card-grid">
         <article className="status-card">
@@ -222,34 +227,46 @@ export function OverviewPage() {
           <p>Total ledger tokens: {usageLedger?.total_tokens ?? 0}</p>
           <p>Usage cost provenance: {usageLedger?.total_cost.provenance ?? "unknown"}</p>
         </article>
-        <article className="status-card">
-          <h3>Runtime diagnostics</h3>
+      </div>
+      <div className="overview-split">
+        <section className="panel" aria-labelledby="runtime-diagnostics-heading">
+          <div className="panel-heading">
+            <div>
+              <h3 id="runtime-diagnostics-heading">Runtime diagnostics</h3>
+              <p>Keep local log metadata and exportable diagnostics packages close to the top-level state view.</p>
+            </div>
+            <button type="button" onClick={handleExportDiagnostics} disabled={isExportingDiagnostics}>
+              Export diagnostics
+            </button>
+          </div>
           <p>
             Log directory:{" "}
             {runtimeLogMetadata?.log_dir ?? (runtimeLogDiagnosticsUnavailable ? "unavailable" : "loading")}
           </p>
           <p>Tracked log files: {runtimeLogMetadata?.files.length ?? 0}</p>
           {runtimeLogMetadata ? <RuntimeLogFilesTable files={runtimeLogMetadata.files} /> : null}
-          <button type="button" onClick={handleExportDiagnostics} disabled={isExportingDiagnostics}>
-            Export diagnostics
-          </button>
           {runtimeDiagnosticsManifestPath ? (
             <p>Diagnostics manifest: {runtimeDiagnosticsManifestPath}</p>
           ) : null}
-        </article>
+        </section>
+        <DefaultKeyModeToggle
+          activeMode={summary.allowedMode}
+          disabled={isUpdatingMode}
+          rawMode={summary.rawAllowedMode}
+          unavailableReason={summary.unavailableReason}
+          summaryName={summary.name}
+          onSelectMode={handleSelectMode}
+        />
       </div>
-      <DefaultKeyModeToggle
-        activeMode={summary.allowedMode}
-        disabled={isUpdatingMode}
-        rawMode={summary.rawAllowedMode}
-        unavailableReason={summary.unavailableReason}
-        summaryName={summary.name}
-        onSelectMode={handleSelectMode}
-      />
-      <section className="mt-6" aria-labelledby="capability-matrix-heading">
-        <div className="mb-3">
-          <h3 id="capability-matrix-heading">Capability Matrix</h3>
-          <p>Compare provider models, auth state, and normalized capability flags from one inventory surface.</p>
+      <section className="panel" aria-labelledby="capability-matrix-heading">
+        <div className="panel-heading">
+          <div>
+            <h3 id="capability-matrix-heading">Capability Matrix</h3>
+            <p>
+              Compare provider models, auth state, and normalized capability flags from one inventory
+              surface.
+            </p>
+          </div>
         </div>
         {isProviderInventoryError ? <p role="alert">Failed to load capability matrix.</p> : null}
         <CapabilityMatrixTable

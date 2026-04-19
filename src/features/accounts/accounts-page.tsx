@@ -17,6 +17,7 @@ import type {
   ProviderAccountHealth,
   ProviderSessionSummary,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 
 interface AccountPanelState {
   account: AccountSummary;
@@ -262,8 +263,12 @@ export function AccountsPage() {
 
   return (
     <section aria-labelledby="accounts-heading">
-      <h2 id="accounts-heading">Official Accounts</h2>
-      <p>Review provider identity, launch browser login, and inspect capability status.</p>
+      <PageHeader
+        eyebrow="Provider onboarding"
+        titleId="accounts-heading"
+        title="Official Accounts"
+        description="Review provider identity, launch the correct auth flow, and keep degraded sessions and capability state visible without hiding partial failures."
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <div className="detail-grid">
         {buildOnboardingCards(providerDescriptors, accounts, providerSessions).map((card) => {
@@ -284,7 +289,7 @@ export function AccountsPage() {
           );
         })}
       </div>
-      {authActionMessage ? <p>{authActionMessage}</p> : null}
+      {authActionMessage ? <p role="status">{authActionMessage}</p> : null}
       {sessionActionError ? <p role="alert">{sessionActionError}</p> : null}
       {providerSessions.length === 0 ? (
         <p>No provider sessions stored.</p>
