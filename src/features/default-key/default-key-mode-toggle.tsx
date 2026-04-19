@@ -17,6 +17,18 @@ function buildTraySummaryText(activeMode: DefaultKeyMode | null, rawMode: string
   return `Default key state | Current mode: ${modeText}`;
 }
 
+function modeLabel(mode: DefaultKeyMode) {
+  switch (mode) {
+    case "account_only":
+      return "Account only";
+    case "relay_only":
+      return "Relay only";
+    case "hybrid":
+    default:
+      return "Hybrid";
+  }
+}
+
 export function DefaultKeyModeToggle({
   activeMode,
   disabled = false,
@@ -47,7 +59,7 @@ export function DefaultKeyModeToggle({
             disabled={disabled || mode === activeMode}
             onClick={() => onSelectMode(mode)}
           >
-            {mode}
+            {disabled && mode !== activeMode ? `Switch to ${modeLabel(mode)}` : modeLabel(mode)}
           </button>
         ))}
       </div>

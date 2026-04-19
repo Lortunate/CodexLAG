@@ -26,6 +26,18 @@ const initialDraft: KeyDraft = {
   allowed_mode: "hybrid",
 };
 
+function modeLabel(mode: KeyDraft["allowed_mode"]) {
+  switch (mode) {
+    case "account_only":
+      return "Account only";
+    case "relay_only":
+      return "Relay only";
+    case "hybrid":
+    default:
+      return "Hybrid";
+  }
+}
+
 export function KeyManagementPanel({
   errorMessage,
   isCreating,
@@ -119,7 +131,7 @@ export function KeyManagementPanel({
         </div>
         <div className="operator-form-actions">
           <button type="submit" disabled={isCreating}>
-            Create key
+            {isCreating ? "Creating key..." : "Create key"}
           </button>
         </div>
       </form>
@@ -140,7 +152,7 @@ export function KeyManagementPanel({
                 </div>
                 <div>
                   <dt>Allowed mode</dt>
-                  <dd>{key.allowed_mode}</dd>
+                  <dd>{modeLabel(key.allowed_mode)}</dd>
                 </div>
                 <div>
                   <dt>Status</dt>
@@ -156,7 +168,7 @@ export function KeyManagementPanel({
                   onDisable(key.id);
                 }}
               >
-                Disable key {key.id}
+                {keyActionId === key.id ? "Disabling..." : `Disable key ${key.id}`}
               </button>
             ) : (
               <button
@@ -166,7 +178,7 @@ export function KeyManagementPanel({
                   onEnable(key.id);
                 }}
               >
-                Enable key {key.id}
+                {keyActionId === key.id ? "Enabling..." : `Enable key ${key.id}`}
               </button>
             )}
           </li>

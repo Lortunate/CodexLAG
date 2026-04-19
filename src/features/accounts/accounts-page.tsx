@@ -312,15 +312,25 @@ export function AccountsPage() {
               </div>
               <p>{authProfileGuidance(card.authProfile)}</p>
               {isOpenAiProvider(card.providerId) && supportsBrowserLogin ? (
-                <button onClick={() => void handleStartOpenAiLogin()} type="button">
-                  Sign in with OpenAI
+                <button
+                  disabled={sessionActionPending !== null}
+                  onClick={() => void handleStartOpenAiLogin()}
+                  type="button"
+                >
+                  {sessionActionPending === "browser-login"
+                    ? "Starting browser sign-in..."
+                    : "Sign in with OpenAI"}
                 </button>
               ) : null}
             </article>
           );
         })}
       </div>
-      {authActionMessage ? <p role="status">{authActionMessage}</p> : null}
+      {authActionMessage ? (
+        <p className="operator-success" role="status">
+          {authActionMessage}
+        </p>
+      ) : null}
       {sessionActionError ? <p role="alert">{sessionActionError}</p> : null}
       <div className="operator-section-title">
         <h3>Provider sessions</h3>
@@ -351,11 +361,19 @@ export function AccountsPage() {
               <p>Auth profile: {authProfileLabel(session.auth_profile)}</p>
               <p>Last auth error: {session.last_error_message ?? session.last_refresh_error ?? "none"}</p>
               <div className="operator-actions">
-                <button onClick={() => void handleRefreshProviderSession(session.account_id)} type="button">
-                  Refresh
+                <button
+                  disabled={sessionActionPending !== null}
+                  onClick={() => void handleRefreshProviderSession(session.account_id)}
+                  type="button"
+                >
+                  {sessionActionPending === `refresh:${session.account_id}` ? "Refreshing..." : "Refresh"}
                 </button>
-                <button onClick={() => void handleLogoutProviderSession(session.account_id)} type="button">
-                  Sign out
+                <button
+                  disabled={sessionActionPending !== null}
+                  onClick={() => void handleLogoutProviderSession(session.account_id)}
+                  type="button"
+                >
+                  {sessionActionPending === `logout:${session.account_id}` ? "Signing out..." : "Sign out"}
                 </button>
               </div>
             </article>

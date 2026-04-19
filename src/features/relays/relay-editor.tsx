@@ -120,7 +120,7 @@ export function RelayEditor({
         </div>
         <div className="operator-form-actions">
           <button type="submit" disabled={isCreating}>
-            Create relay
+            {isCreating ? "Creating relay..." : "Create relay"}
           </button>
         </div>
       </form>
@@ -160,7 +160,9 @@ export function RelayEditor({
                   onTest(relay.relay_id);
                 }}
               >
-                Test relay {relay.relay_id}
+                {isTestingRelayId === relay.relay_id
+                  ? `Testing ${relay.relay_id}...`
+                  : `Test relay ${relay.relay_id}`}
               </button>
             </li>
           );

@@ -236,7 +236,7 @@ export function OverviewPage() {
               <p>Keep local log metadata and exportable diagnostics packages close to the top-level state view.</p>
             </div>
             <button type="button" onClick={handleExportDiagnostics} disabled={isExportingDiagnostics}>
-              Export diagnostics
+              {isExportingDiagnostics ? "Exporting diagnostics..." : "Export diagnostics"}
             </button>
           </div>
           <p>
