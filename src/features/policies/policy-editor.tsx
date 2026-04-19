@@ -183,6 +183,15 @@ export function PolicyEditor({
       ? validationResult.error.flatten().fieldErrors
       : {};
   const canSave = !!validationResult?.success;
+  const nameError = fieldErrors.name?.[0];
+  const selectionOrderError = fieldErrors.selection_order?.[0];
+  const crossPoolFallbackError = fieldErrors.cross_pool_fallback?.[0];
+  const retryBudgetError = fieldErrors.retry_budget?.[0];
+  const timeoutOpenAfterError = fieldErrors.timeout_open_after?.[0];
+  const serverErrorOpenAfterError = fieldErrors.server_error_open_after?.[0];
+  const cooldownMsError = fieldErrors.cooldown_ms?.[0];
+  const halfOpenAfterMsError = fieldErrors.half_open_after_ms?.[0];
+  const successCloseAfterError = fieldErrors.success_close_after?.[0];
   const crossPoolFallbackValue = activeDraft
     ? activeDraft.cross_pool_fallback === null
       ? ""
@@ -287,6 +296,8 @@ export function PolicyEditor({
             <label htmlFor="policy-name">Policy Name</label>
             <input
               id="policy-name"
+              aria-describedby={nameError ? "policy-name-error" : undefined}
+              aria-invalid={nameError ? "true" : "false"}
               value={activeDraft?.name ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -298,13 +309,29 @@ export function PolicyEditor({
                 }));
               }}
             />
-            {fieldErrors.name?.[0] ? <span role="alert">{fieldErrors.name[0]}</span> : null}
+            {nameError ? (
+              <span className="operator-error-text" id="policy-name-error" role="alert">
+                {nameError}
+              </span>
+            ) : null}
           </div>
           <div className="operator-field operator-field--full">
             <label htmlFor="policy-selection-order">Selection Order</label>
-            <input id="policy-selection-order" readOnly value={selectionOrder.join(", ")} />
-            {fieldErrors.selection_order?.[0] ? (
-              <span role="alert">{fieldErrors.selection_order[0]}</span>
+            <input
+              id="policy-selection-order"
+              aria-describedby={selectionOrderError ? "policy-selection-order-error" : undefined}
+              aria-invalid={selectionOrderError ? "true" : "false"}
+              readOnly
+              value={selectionOrder.join(", ")}
+            />
+            {selectionOrderError ? (
+              <span
+                className="operator-error-text"
+                id="policy-selection-order-error"
+                role="alert"
+              >
+                {selectionOrderError}
+              </span>
             ) : null}
           </div>
         </div>
@@ -377,6 +404,8 @@ export function PolicyEditor({
             <label htmlFor="policy-fallback">Cross Pool Fallback</label>
             <select
               id="policy-fallback"
+              aria-describedby={crossPoolFallbackError ? "policy-fallback-error" : undefined}
+              aria-invalid={crossPoolFallbackError ? "true" : "false"}
               value={crossPoolFallbackValue}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -397,14 +426,18 @@ export function PolicyEditor({
               <option value="false">false</option>
               <option value="true">true</option>
             </select>
-            {fieldErrors.cross_pool_fallback?.[0] ? (
-              <span role="alert">{fieldErrors.cross_pool_fallback[0]}</span>
+            {crossPoolFallbackError ? (
+              <span className="operator-error-text" id="policy-fallback-error" role="alert">
+                {crossPoolFallbackError}
+              </span>
             ) : null}
           </div>
           <div className="operator-field">
             <label htmlFor="policy-retry-budget">Retry Budget</label>
             <input
               id="policy-retry-budget"
+              aria-describedby={retryBudgetError ? "policy-retry-budget-error" : undefined}
+              aria-invalid={retryBudgetError ? "true" : "false"}
               value={activeDraft?.retry_budget ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -416,14 +449,18 @@ export function PolicyEditor({
                 }));
               }}
             />
-            {fieldErrors.retry_budget?.[0] ? (
-              <span role="alert">{fieldErrors.retry_budget[0]}</span>
+            {retryBudgetError ? (
+              <span className="operator-error-text" id="policy-retry-budget-error" role="alert">
+                {retryBudgetError}
+              </span>
             ) : null}
           </div>
           <div className="operator-field">
             <label htmlFor="policy-timeout-open-after">Timeout Open After</label>
             <input
               id="policy-timeout-open-after"
+              aria-describedby={timeoutOpenAfterError ? "policy-timeout-open-after-error" : undefined}
+              aria-invalid={timeoutOpenAfterError ? "true" : "false"}
               value={activeDraft?.timeout_open_after ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -438,14 +475,24 @@ export function PolicyEditor({
                 }));
               }}
             />
-            {fieldErrors.timeout_open_after?.[0] ? (
-              <span role="alert">{fieldErrors.timeout_open_after[0]}</span>
+            {timeoutOpenAfterError ? (
+              <span
+                className="operator-error-text"
+                id="policy-timeout-open-after-error"
+                role="alert"
+              >
+                {timeoutOpenAfterError}
+              </span>
             ) : null}
           </div>
           <div className="operator-field">
             <label htmlFor="policy-server-error-open-after">Server Error Open After</label>
             <input
               id="policy-server-error-open-after"
+              aria-describedby={
+                serverErrorOpenAfterError ? "policy-server-error-open-after-error" : undefined
+              }
+              aria-invalid={serverErrorOpenAfterError ? "true" : "false"}
               value={activeDraft?.server_error_open_after ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -460,14 +507,22 @@ export function PolicyEditor({
                 }));
               }}
             />
-            {fieldErrors.server_error_open_after?.[0] ? (
-              <span role="alert">{fieldErrors.server_error_open_after[0]}</span>
+            {serverErrorOpenAfterError ? (
+              <span
+                className="operator-error-text"
+                id="policy-server-error-open-after-error"
+                role="alert"
+              >
+                {serverErrorOpenAfterError}
+              </span>
             ) : null}
           </div>
           <div className="operator-field">
             <label htmlFor="policy-cooldown-ms">Cooldown (ms)</label>
             <input
               id="policy-cooldown-ms"
+              aria-describedby={cooldownMsError ? "policy-cooldown-ms-error" : undefined}
+              aria-invalid={cooldownMsError ? "true" : "false"}
               value={activeDraft?.cooldown_ms ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -482,14 +537,18 @@ export function PolicyEditor({
                 }));
               }}
             />
-            {fieldErrors.cooldown_ms?.[0] ? (
-              <span role="alert">{fieldErrors.cooldown_ms[0]}</span>
+            {cooldownMsError ? (
+              <span className="operator-error-text" id="policy-cooldown-ms-error" role="alert">
+                {cooldownMsError}
+              </span>
             ) : null}
           </div>
           <div className="operator-field">
             <label htmlFor="policy-half-open-after-ms">Half Open After (ms)</label>
             <input
               id="policy-half-open-after-ms"
+              aria-describedby={halfOpenAfterMsError ? "policy-half-open-after-ms-error" : undefined}
+              aria-invalid={halfOpenAfterMsError ? "true" : "false"}
               value={activeDraft?.half_open_after_ms ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -504,14 +563,24 @@ export function PolicyEditor({
                 }));
               }}
             />
-            {fieldErrors.half_open_after_ms?.[0] ? (
-              <span role="alert">{fieldErrors.half_open_after_ms[0]}</span>
+            {halfOpenAfterMsError ? (
+              <span
+                className="operator-error-text"
+                id="policy-half-open-after-ms-error"
+                role="alert"
+              >
+                {halfOpenAfterMsError}
+              </span>
             ) : null}
           </div>
           <div className="operator-field">
             <label htmlFor="policy-success-close-after">Success Close After</label>
             <input
               id="policy-success-close-after"
+              aria-describedby={
+                successCloseAfterError ? "policy-success-close-after-error" : undefined
+              }
+              aria-invalid={successCloseAfterError ? "true" : "false"}
               value={activeDraft?.success_close_after ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -526,8 +595,14 @@ export function PolicyEditor({
                 }));
               }}
             />
-            {fieldErrors.success_close_after?.[0] ? (
-              <span role="alert">{fieldErrors.success_close_after[0]}</span>
+            {successCloseAfterError ? (
+              <span
+                className="operator-error-text"
+                id="policy-success-close-after-error"
+                role="alert"
+              >
+                {successCloseAfterError}
+              </span>
             ) : null}
           </div>
         </div>

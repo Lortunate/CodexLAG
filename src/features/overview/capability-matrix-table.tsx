@@ -155,7 +155,7 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
   });
 
   if (isLoading) {
-    return <p>Loading capability inventory...</p>;
+    return <p className="operator-empty">Loading capability inventory...</p>;
   }
 
   return (
@@ -285,7 +285,7 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
           </tbody>
         </table>
         {table.getRowModel().rows.length === 0 ? (
-          <p className="operator-message">No capability rows match the current filters.</p>
+          <p className="operator-empty">No capability rows match the current filters.</p>
         ) : null}
       </div>
     </section>

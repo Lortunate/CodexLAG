@@ -327,7 +327,7 @@ export function AccountsPage() {
         <p>Persisted browser sessions remain actionable here so refresh and sign-out stay close to auth health.</p>
       </div>
       {providerSessions.length === 0 ? (
-        <p>No provider sessions stored.</p>
+        <p className="operator-empty">No provider sessions stored.</p>
       ) : (
         <div className="detail-grid">
           {providerSessions.map((session) => (

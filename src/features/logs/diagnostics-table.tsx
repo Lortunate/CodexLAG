@@ -19,7 +19,7 @@ function statusTone(status: string) {
 
 export function DiagnosticsTable({ sections }: DiagnosticsTableProps) {
   if (sections.length === 0) {
-    return <p>No diagnostics have been captured yet.</p>;
+    return <p className="operator-empty">No diagnostics have been captured yet.</p>;
   }
 
   return (
@@ -38,7 +38,7 @@ export function DiagnosticsTable({ sections }: DiagnosticsTableProps) {
             </span>
           </div>
           {section.rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No rows recorded for this section.</p>
+            <p className="operator-empty">No rows recorded for this section.</p>
           ) : (
             <div className="operator-table-shell">
               <table aria-label={section.title}>

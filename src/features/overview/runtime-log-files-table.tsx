@@ -11,7 +11,7 @@ function formatTimestamp(epochMillis: number) {
 
 export function RuntimeLogFilesTable({ files }: RuntimeLogFilesTableProps) {
   if (files.length === 0) {
-    return <p>No runtime log files available.</p>;
+    return <p className="operator-empty">No runtime log files available.</p>;
   }
 
   return (

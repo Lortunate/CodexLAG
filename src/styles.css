@@ -704,6 +704,21 @@ p[role="status"] {
   line-height: 1.55;
 }
 
+.operator-empty {
+  border: 1px dashed var(--line-soft);
+  border-radius: 1rem;
+  background-color: color-mix(in oklab, var(--surface-1) 82%, transparent);
+  color: var(--text-quiet);
+  padding: 1rem;
+  line-height: 1.6;
+}
+
+.operator-error-text {
+  color: color-mix(in oklab, var(--destructive) 76%, white 12%);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
 .operator-section-title {
   display: grid;
   gap: 0.35rem;
