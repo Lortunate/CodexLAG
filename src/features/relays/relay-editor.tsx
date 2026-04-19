@@ -56,48 +56,54 @@ export function RelayEditor({
 
   return (
     <section className="panel" aria-labelledby="relay-editor-heading">
-      <h3 id="relay-editor-heading">Manage Relays</h3>
-      <form onSubmit={handleSubmit}>
-        <p>
-          <label>
-            Relay ID
+      <div className="panel-heading">
+        <div>
+          <h3 id="relay-editor-heading">Manage Relays</h3>
+          <p>Register managed upstreams, then run quick connection checks without leaving the page.</p>
+        </div>
+      </div>
+      <form className="operator-form" onSubmit={handleSubmit}>
+        <div className="operator-fields">
+          <div className="operator-field">
+            <label htmlFor="relay-id">Relay ID</label>
             <input
+              id="relay-id"
               name="relay_id"
               value={draft.relay_id}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, relay_id: event.target.value }))
               }
             />
-          </label>
-        </p>
-        <p>
-          <label>
-            Relay Name
+          </div>
+          <div className="operator-field">
+            <label htmlFor="relay-name">Relay Name</label>
             <input
+              id="relay-name"
               name="name"
               value={draft.name}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, name: event.target.value }))
               }
             />
-          </label>
-        </p>
-        <p>
-          <label>
-            Relay Endpoint
+          </div>
+          <div className="operator-field operator-field--full">
+            <label htmlFor="relay-endpoint">Relay Endpoint</label>
             <input
+              id="relay-endpoint"
               name="endpoint"
               value={draft.endpoint}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, endpoint: event.target.value }))
               }
             />
-          </label>
-        </p>
-        <p>
-          <label>
-            Adapter
+            <span className="operator-field-help">
+              Use the exact loopback or managed upstream URL the gateway should test and route through.
+            </span>
+          </div>
+          <div className="operator-field">
+            <label htmlFor="relay-adapter">Adapter</label>
             <select
+              id="relay-adapter"
               name="adapter"
               value={draft.adapter}
               onChange={(event) =>
@@ -110,26 +116,41 @@ export function RelayEditor({
               <option value="newapi">newapi</option>
               <option value="none">none</option>
             </select>
-          </label>
-        </p>
-        <button type="submit" disabled={isCreating}>
-          Create relay
-        </button>
+          </div>
+        </div>
+        <div className="operator-form-actions">
+          <button type="submit" disabled={isCreating}>
+            Create relay
+          </button>
+        </div>
       </form>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      {successMessage ? <p>{successMessage}</p> : null}
+      {successMessage ? <p className="operator-success">{successMessage}</p> : null}
       <ul className="history-list" aria-label="Relay management list">
         {relays.map((relay) => {
           const result = connectionResults[relay.relay_id];
           return (
             <li key={relay.relay_id}>
-              <div>
-                <strong>{relay.name}</strong>
+              <div className="operator-stack">
+                <div className="operator-list__item-header">
+                  <strong className="operator-list__item-title">{relay.name}</strong>
+                  <code>{relay.relay_id}</code>
+                </div>
                 <p>{relay.endpoint}</p>
                 {result ? (
-                  <p>
-                    {result.relay_id}: {result.status} ({result.latency_ms}ms)
-                  </p>
+                  <>
+                    <p>{result.relay_id}: {result.status} ({result.latency_ms}ms)</p>
+                    <dl className="operator-inline-pairs">
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{result.status}</dd>
+                      </div>
+                      <div>
+                        <dt>Latency</dt>
+                        <dd>{result.latency_ms}ms</dd>
+                      </div>
+                    </dl>
+                  </>
                 ) : null}
               </div>
               <button

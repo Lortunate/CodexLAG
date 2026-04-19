@@ -541,6 +541,228 @@ p[role="status"] {
   gap: 1.5rem;
 }
 
+.operator-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.operator-fields {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.operator-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.operator-field--full {
+  grid-column: 1 / -1;
+}
+
+.operator-field-help {
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.operator-form-actions,
+.operator-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.operator-list {
+  display: grid;
+  gap: 0.9rem;
+  list-style: none;
+  padding: 0;
+}
+
+.operator-list__item {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 1rem;
+  background-color: var(--surface-1);
+  padding: 1rem;
+}
+
+.operator-list__item-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.operator-list__item-title {
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.operator-list__item-meta,
+.operator-stack {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.operator-inline-pairs {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+
+.operator-inline-pairs > div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.operator-inline-pairs dt {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.operator-inline-pairs dd {
+  color: var(--text-base);
+}
+
+.operator-message {
+  color: var(--text-quiet);
+}
+
+.operator-success {
+  border: 1px solid color-mix(in oklab, var(--primary) 22%, var(--line-soft));
+  border-radius: 1rem;
+  background-color: color-mix(in oklab, var(--accent) 28%, var(--surface-1));
+  color: var(--text-base);
+  padding: 0.9rem 1rem;
+}
+
+.operator-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.operator-pill-list button {
+  min-height: 2.25rem;
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.82rem;
+}
+
+.operator-preview {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 1rem;
+  background-color: var(--surface-1);
+  padding: 1rem;
+}
+
+.operator-preview h4 {
+  font-size: 0.98rem;
+}
+
+.operator-selection-list {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.operator-selection-list > li {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 0.95rem;
+  background-color: color-mix(in oklab, var(--surface-2) 90%, black 10%);
+  padding: 0.9rem;
+}
+
+.operator-selection-list code {
+  width: fit-content;
+}
+
+.operator-table-shell {
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 1rem;
+  background-color: var(--surface-1);
+}
+
+.operator-table-shell table {
+  min-width: 100%;
+  border-collapse: collapse;
+}
+
+.operator-table-shell th,
+.operator-table-shell td {
+  padding: 0.85rem 0.9rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.operator-table-shell thead tr {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.operator-table-shell tbody tr {
+  border-bottom: 1px solid color-mix(in oklab, var(--line-soft) 80%, transparent);
+}
+
+.operator-table-shell tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.operator-table-shell th {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.operator-table-shell summary {
+  cursor: pointer;
+  color: var(--text-quiet);
+}
+
+.operator-table-shell details[open] summary {
+  color: var(--text-strong);
+}
+
+.operator-detail-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.operator-detail-list > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.operator-detail-list dt {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.operator-detail-list dd {
+  color: var(--text-base);
+}
+
 @media (min-width: 1024px) {
   .workbench-shell__grid {
     grid-template-columns: minmax(18rem, 21rem) minmax(0, 1fr);
@@ -563,6 +785,11 @@ p[role="status"] {
   }
 
   .history-list > li {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .operator-list__item {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
   }

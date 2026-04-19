@@ -57,48 +57,51 @@ export function KeyManagementPanel({
 
   return (
     <section className="panel" aria-labelledby="key-management-heading">
-      <h3 id="key-management-heading">Platform Key Management</h3>
-      <form onSubmit={handleSubmit}>
-        <p>
-          <label>
-            Key ID
+      <div className="panel-heading">
+        <div>
+          <h3 id="key-management-heading">Platform Key Management</h3>
+          <p>Create local credentials and keep policy bindings and allowed upstream modes readable.</p>
+        </div>
+      </div>
+      <form className="operator-form" onSubmit={handleSubmit}>
+        <div className="operator-fields">
+          <div className="operator-field">
+            <label htmlFor="platform-key-id">Key ID</label>
             <input
+              id="platform-key-id"
               name="key_id"
               value={draft.key_id}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, key_id: event.target.value }))
               }
             />
-          </label>
-        </p>
-        <p>
-          <label>
-            Key Name
+          </div>
+          <div className="operator-field">
+            <label htmlFor="platform-key-name">Key Name</label>
             <input
+              id="platform-key-name"
               name="name"
               value={draft.name}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, name: event.target.value }))
               }
             />
-          </label>
-        </p>
-        <p>
-          <label>
-            Policy ID
+          </div>
+          <div className="operator-field">
+            <label htmlFor="platform-policy-id">Policy ID</label>
             <input
+              id="platform-policy-id"
               name="policy_id"
               value={draft.policy_id}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, policy_id: event.target.value }))
               }
             />
-          </label>
-        </p>
-        <p>
-          <label>
-            Allowed Mode
+          </div>
+          <div className="operator-field">
+            <label htmlFor="platform-allowed-mode">Allowed Mode</label>
             <select
+              id="platform-allowed-mode"
               name="allowed_mode"
               value={draft.allowed_mode}
               onChange={(event) =>
@@ -112,23 +115,38 @@ export function KeyManagementPanel({
               <option value="account_only">account_only</option>
               <option value="relay_only">relay_only</option>
             </select>
-          </label>
-        </p>
-        <button type="submit" disabled={isCreating}>
-          Create key
-        </button>
+          </div>
+        </div>
+        <div className="operator-form-actions">
+          <button type="submit" disabled={isCreating}>
+            Create key
+          </button>
+        </div>
       </form>
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      {successMessage ? <p>{successMessage}</p> : null}
+      {successMessage ? <p className="operator-success">{successMessage}</p> : null}
       <ul className="history-list" aria-label="Platform key inventory">
         {keys.map((key) => (
           <li key={key.id}>
-            <div>
-              <strong>{key.name}</strong>
-              <p>ID: {key.id}</p>
-              <p>Policy: {key.policy_id}</p>
-              <p>Allowed mode: {key.allowed_mode}</p>
-              <p>{key.enabled ? "Enabled" : "Disabled"}</p>
+            <div className="operator-stack">
+              <div className="operator-list__item-header">
+                <strong className="operator-list__item-title">{key.name}</strong>
+                <code>{key.id}</code>
+              </div>
+              <dl className="operator-inline-pairs">
+                <div>
+                  <dt>Policy</dt>
+                  <dd>{key.policy_id}</dd>
+                </div>
+                <div>
+                  <dt>Allowed mode</dt>
+                  <dd>{key.allowed_mode}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{key.enabled ? "Enabled" : "Disabled"}</dd>
+                </div>
+              </dl>
             </div>
             {key.enabled ? (
               <button

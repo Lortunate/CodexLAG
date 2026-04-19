@@ -13,6 +13,7 @@ import type {
   RelaySummary,
   RelayUpsertInput,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 import { RelayEditor } from "./relay-editor";
 
 interface RelayPanelState {
@@ -129,8 +130,12 @@ export function RelaysPage() {
 
   return (
     <section aria-labelledby="relays-heading">
-      <h2 id="relays-heading">Relays</h2>
-      <p>Manage NewAPI relay endpoints, validate connectivity, and inspect balance support.</p>
+      <PageHeader
+        eyebrow="Upstream relay fleet"
+        titleId="relays-heading"
+        title="Relays"
+        description="Manage NewAPI relay endpoints, validate connectivity, and keep balance visibility and capability support obvious at a glance."
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <RelayEditor
         connectionResults={relayConnectionResults}
@@ -145,16 +150,39 @@ export function RelaysPage() {
       <div className="detail-grid">
         {relays.map((panel) => (
           <article className="detail-card" key={panel.relay.relay_id}>
-            <h3>{panel.relay.name}</h3>
+            <div className="operator-list__item-header">
+              <h3>{panel.relay.name}</h3>
+              <code>{panel.relay.relay_id}</code>
+            </div>
             <p>Endpoint: {panel.relay.endpoint}</p>
             {panel.balanceSnapshot ? (
               <>
                 <p>Balance state: {panel.balanceSnapshot.balance.kind}</p>
+                <dl className="operator-inline-pairs">
+                  <div>
+                    <dt>Balance state</dt>
+                    <dd>{panel.balanceSnapshot.balance.kind}</dd>
+                  </div>
+                </dl>
                 {panel.balanceSnapshot.balance.kind === "queryable" ? (
                   <>
                     <p>Adapter: {panel.balanceSnapshot.balance.adapter}</p>
                     <p>Total: {panel.balanceSnapshot.balance.balance.total}</p>
                     <p>Used: {panel.balanceSnapshot.balance.balance.used}</p>
+                    <dl className="operator-inline-pairs">
+                      <div>
+                        <dt>Adapter</dt>
+                        <dd>{panel.balanceSnapshot.balance.adapter}</dd>
+                      </div>
+                      <div>
+                        <dt>Total</dt>
+                        <dd>{panel.balanceSnapshot.balance.balance.total}</dd>
+                      </div>
+                      <div>
+                        <dt>Used</dt>
+                        <dd>{panel.balanceSnapshot.balance.balance.used}</dd>
+                      </div>
+                    </dl>
                   </>
                 ) : (
                   <p>{panel.balanceSnapshot.balance.reason}</p>

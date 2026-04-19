@@ -248,19 +248,29 @@ export function PolicyEditor({
 
   return (
     <section className="panel" aria-labelledby="policy-editor-heading">
-      <h3 id="policy-editor-heading">Policy Editor</h3>
-      <ul aria-label="Policy summaries">
+      <div className="panel-heading">
+        <div>
+          <h3 id="policy-editor-heading">Policy Editor</h3>
+          <p>Adjust candidate order and recovery thresholds without hiding the routing consequences.</p>
+        </div>
+      </div>
+      <ul aria-label="Policy summaries" className="operator-list">
         {policies.map((policy) => (
-          <li key={policy.policy_id}>
-            <strong>{policy.name}</strong> <span>{policy.status}</span>
+          <li key={policy.policy_id} className="operator-list__item">
+            <div className="operator-list__item-header">
+              <strong className="operator-list__item-title">{policy.name}</strong>
+              <code>{policy.policy_id}</code>
+            </div>
+            <p className="operator-message">Status: {policy.status}</p>
           </li>
         ))}
       </ul>
-      <form onSubmit={handleSubmit}>
-        <p>
-          <label>
-            Policy
+      <form className="operator-form" onSubmit={handleSubmit}>
+        <div className="operator-fields">
+          <div className="operator-field">
+            <label htmlFor="policy-select">Policy</label>
             <select
+              id="policy-select"
               value={activePolicyId}
               onChange={(event) => {
                 setActivePolicyId(event.target.value);
@@ -272,12 +282,11 @@ export function PolicyEditor({
                 </option>
               ))}
             </select>
-          </label>
-        </p>
-        <p>
-          <label>
-            Policy Name
+          </div>
+          <div className="operator-field operator-field--full">
+            <label htmlFor="policy-name">Policy Name</label>
             <input
+              id="policy-name"
               value={activeDraft?.name ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -289,88 +298,85 @@ export function PolicyEditor({
                 }));
               }}
             />
-          </label>
-          {fieldErrors.name?.[0] ? <span role="alert">{fieldErrors.name[0]}</span> : null}
-        </p>
-        <p>
-          <label>
-            Selection Order
-            <input
-              readOnly
-              value={selectionOrder.join(", ")}
-            />
-          </label>
-          {fieldErrors.selection_order?.[0] ? (
-            <span role="alert">{fieldErrors.selection_order[0]}</span>
-          ) : null}
-        </p>
-        <div aria-label="Selection order controls">
-          <p className="text-sm text-muted-foreground">
+            {fieldErrors.name?.[0] ? <span role="alert">{fieldErrors.name[0]}</span> : null}
+          </div>
+          <div className="operator-field operator-field--full">
+            <label htmlFor="policy-selection-order">Selection Order</label>
+            <input id="policy-selection-order" readOnly value={selectionOrder.join(", ")} />
+            {fieldErrors.selection_order?.[0] ? (
+              <span role="alert">{fieldErrors.selection_order[0]}</span>
+            ) : null}
+          </div>
+        </div>
+        <div aria-label="Selection order controls" className="operator-preview">
+          <p className="operator-field-help">
             Reorder candidates explicitly instead of editing a comma-separated string.
           </p>
-          <ul>
+          <ul className="operator-selection-list">
             {selectionOrder.map((endpointId, index) => (
               <li key={endpointId}>
-                <span>{endpointId}</span>{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (index === 0) {
-                      return;
+                <code>{endpointId}</code>
+                <div className="operator-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (index === 0) {
+                        return;
+                      }
+                      const next = [...selectionOrder];
+                      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                      updateSelectionOrder(next);
+                    }}
+                  >
+                    Move {endpointId} up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (index === selectionOrder.length - 1) {
+                        return;
+                      }
+                      const next = [...selectionOrder];
+                      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                      updateSelectionOrder(next);
+                    }}
+                  >
+                    Move {endpointId} down
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSelectionOrder(selectionOrder.filter((candidate) => candidate !== endpointId))
                     }
-                    const next = [...selectionOrder];
-                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                    updateSelectionOrder(next);
-                  }}
-                >
-                  Move {endpointId} up
-                </button>{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (index === selectionOrder.length - 1) {
-                      return;
-                    }
-                    const next = [...selectionOrder];
-                    [next[index], next[index + 1]] = [next[index + 1], next[index]];
-                    updateSelectionOrder(next);
-                  }}
-                >
-                  Move {endpointId} down
-                </button>{" "}
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateSelectionOrder(selectionOrder.filter((candidate) => candidate !== endpointId))
-                  }
-                >
-                  Remove {endpointId}
-                </button>
+                  >
+                    Remove {endpointId}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
           {availableEndpointIds.length > 0 ? (
-            <div>
-              <p>Available endpoints</p>
-              <ul>
+            <div className="operator-stack">
+              <p className="operator-message">Available endpoints</p>
+              <div className="operator-pill-list">
                 {availableEndpointIds.map((endpointId) => (
-                  <li key={endpointId}>
-                    <button
-                      type="button"
-                      onClick={() => updateSelectionOrder([...selectionOrder, endpointId])}
-                    >
-                      Add {endpointId}
-                    </button>
-                  </li>
+                  <button
+                    key={endpointId}
+                    type="button"
+                    onClick={() => updateSelectionOrder([...selectionOrder, endpointId])}
+                  >
+                    Add {endpointId}
+                  </button>
                 ))}
-              </ul>
+              </div>
             </div>
           ) : null}
         </div>
-        <p>
-          <label>
-            Cross Pool Fallback
+        <div className="operator-fields">
+          <div className="operator-field">
+            <label htmlFor="policy-fallback">Cross Pool Fallback</label>
             <select
+              id="policy-fallback"
               value={crossPoolFallbackValue}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -391,15 +397,14 @@ export function PolicyEditor({
               <option value="false">false</option>
               <option value="true">true</option>
             </select>
-          </label>
-          {fieldErrors.cross_pool_fallback?.[0] ? (
-            <span role="alert">{fieldErrors.cross_pool_fallback[0]}</span>
-          ) : null}
-        </p>
-        <p>
-          <label>
-            Retry Budget
+            {fieldErrors.cross_pool_fallback?.[0] ? (
+              <span role="alert">{fieldErrors.cross_pool_fallback[0]}</span>
+            ) : null}
+          </div>
+          <div className="operator-field">
+            <label htmlFor="policy-retry-budget">Retry Budget</label>
             <input
+              id="policy-retry-budget"
               value={activeDraft?.retry_budget ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -411,15 +416,14 @@ export function PolicyEditor({
                 }));
               }}
             />
-          </label>
-          {fieldErrors.retry_budget?.[0] ? (
-            <span role="alert">{fieldErrors.retry_budget[0]}</span>
-          ) : null}
-        </p>
-        <p>
-          <label>
-            Timeout Open After
+            {fieldErrors.retry_budget?.[0] ? (
+              <span role="alert">{fieldErrors.retry_budget[0]}</span>
+            ) : null}
+          </div>
+          <div className="operator-field">
+            <label htmlFor="policy-timeout-open-after">Timeout Open After</label>
             <input
+              id="policy-timeout-open-after"
               value={activeDraft?.timeout_open_after ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -434,15 +438,14 @@ export function PolicyEditor({
                 }));
               }}
             />
-          </label>
-          {fieldErrors.timeout_open_after?.[0] ? (
-            <span role="alert">{fieldErrors.timeout_open_after[0]}</span>
-          ) : null}
-        </p>
-        <p>
-          <label>
-            Server Error Open After
+            {fieldErrors.timeout_open_after?.[0] ? (
+              <span role="alert">{fieldErrors.timeout_open_after[0]}</span>
+            ) : null}
+          </div>
+          <div className="operator-field">
+            <label htmlFor="policy-server-error-open-after">Server Error Open After</label>
             <input
+              id="policy-server-error-open-after"
               value={activeDraft?.server_error_open_after ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -457,15 +460,14 @@ export function PolicyEditor({
                 }));
               }}
             />
-          </label>
-          {fieldErrors.server_error_open_after?.[0] ? (
-            <span role="alert">{fieldErrors.server_error_open_after[0]}</span>
-          ) : null}
-        </p>
-        <p>
-          <label>
-            Cooldown (ms)
+            {fieldErrors.server_error_open_after?.[0] ? (
+              <span role="alert">{fieldErrors.server_error_open_after[0]}</span>
+            ) : null}
+          </div>
+          <div className="operator-field">
+            <label htmlFor="policy-cooldown-ms">Cooldown (ms)</label>
             <input
+              id="policy-cooldown-ms"
               value={activeDraft?.cooldown_ms ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -480,15 +482,14 @@ export function PolicyEditor({
                 }));
               }}
             />
-          </label>
-          {fieldErrors.cooldown_ms?.[0] ? (
-            <span role="alert">{fieldErrors.cooldown_ms[0]}</span>
-          ) : null}
-        </p>
-        <p>
-          <label>
-            Half Open After (ms)
+            {fieldErrors.cooldown_ms?.[0] ? (
+              <span role="alert">{fieldErrors.cooldown_ms[0]}</span>
+            ) : null}
+          </div>
+          <div className="operator-field">
+            <label htmlFor="policy-half-open-after-ms">Half Open After (ms)</label>
             <input
+              id="policy-half-open-after-ms"
               value={activeDraft?.half_open_after_ms ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -503,15 +504,14 @@ export function PolicyEditor({
                 }));
               }}
             />
-          </label>
-          {fieldErrors.half_open_after_ms?.[0] ? (
-            <span role="alert">{fieldErrors.half_open_after_ms[0]}</span>
-          ) : null}
-        </p>
-        <p>
-          <label>
-            Success Close After
+            {fieldErrors.half_open_after_ms?.[0] ? (
+              <span role="alert">{fieldErrors.half_open_after_ms[0]}</span>
+            ) : null}
+          </div>
+          <div className="operator-field">
+            <label htmlFor="policy-success-close-after">Success Close After</label>
             <input
+              id="policy-success-close-after"
               value={activeDraft?.success_close_after ?? ""}
               onChange={(event) => {
                 if (!activeDraft) {
@@ -526,16 +526,18 @@ export function PolicyEditor({
                 }));
               }}
             />
-          </label>
-          {fieldErrors.success_close_after?.[0] ? (
-            <span role="alert">{fieldErrors.success_close_after[0]}</span>
-          ) : null}
-        </p>
-        <button type="submit" disabled={isSaving || policies.length === 0}>
-          Save policy
-        </button>
+            {fieldErrors.success_close_after?.[0] ? (
+              <span role="alert">{fieldErrors.success_close_after[0]}</span>
+            ) : null}
+          </div>
+        </div>
+        <div className="operator-form-actions">
+          <button type="submit" disabled={isSaving || policies.length === 0}>
+            Save policy
+          </button>
+        </div>
       </form>
-      <section aria-labelledby="policy-preview-heading">
+      <section className="operator-preview" aria-labelledby="policy-preview-heading">
         <h4 id="policy-preview-heading">Candidate preview</h4>
         <p>Eligible candidates: {previewSummary.eligible_candidates.join(", ") || "none"}</p>
         <p>Rejected candidates: {previewSummary.rejected_candidates.join(", ") || "none"}</p>
@@ -545,10 +547,10 @@ export function PolicyEditor({
         <p>{rejectionReason}</p>
       </section>
       {endpointIds.length > 0 ? (
-        <p>Known endpoint ids: {endpointIds.join(", ")}</p>
+        <p className="operator-message">Known endpoint ids: {endpointIds.join(", ")}</p>
       ) : null}
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      {successMessage ? <p>{successMessage}</p> : null}
+      {successMessage ? <p className="operator-success">{successMessage}</p> : null}
     </section>
   );
 }
