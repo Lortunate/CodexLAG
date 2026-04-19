@@ -17,6 +17,7 @@ import type {
   ProviderAccountHealth,
   ProviderSessionSummary,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 
 interface AccountPanelState {
   account: AccountSummary;
@@ -260,12 +261,17 @@ export function AccountsPage() {
     }
   }
 
-  return (
-    <section aria-labelledby="accounts-heading">
-      <h2 id="accounts-heading">Official Accounts</h2>
-      <p>Review provider identity, launch browser login, and inspect capability status.</p>
-      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      <div className="detail-grid">
+    return (
+        <section className="workspace-page" aria-labelledby="accounts-heading">
+            <PageHeader
+                eyebrow="Provider inventory"
+                title="Official Accounts"
+                titleId="accounts-heading"
+                description="Review provider identity, launch browser sign-in, and inspect whether each account can really serve traffic."
+                meta={`${providerSessions.length} persisted session${providerSessions.length === 1 ? "" : "s"}`}
+            />
+            {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+            <div className="detail-grid">
         {buildOnboardingCards(providerDescriptors, accounts, providerSessions).map((card) => {
           const supportsBrowserLogin =
             card.authProfile === "browser" || card.authProfile === "browser_oauth_pkce";

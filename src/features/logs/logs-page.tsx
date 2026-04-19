@@ -12,6 +12,7 @@ import type {
   UsageLedger,
   UsageRequestDetail,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 import { DiagnosticsTable } from "./diagnostics-table";
 import { RequestDetailCapabilityPanel } from "./request-detail-capability-panel";
 
@@ -67,9 +68,14 @@ export function LogsPage() {
   }
 
   return (
-    <section aria-labelledby="logs-heading">
-      <h2 id="logs-heading">Usage Timeline</h2>
-      <p>Use desktop-visible logs to monitor the gateway and review recent usage signals.</p>
+    <section className="workspace-page" aria-labelledby="logs-heading">
+      <PageHeader
+        eyebrow="Request explainability"
+        title="Usage Timeline"
+        titleId="logs-heading"
+        description="Use desktop-visible logs to monitor the gateway, inspect provider diagnostics, and review recent request fallout."
+        meta={`${history.length} recent request${history.length === 1 ? "" : "s"}`}
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       {summary ? (
         <dl className="metric-list">

@@ -554,7 +554,18 @@ describe("App shell", () => {
 
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
     expect(screen.getByText("CodexLAG")).toBeInTheDocument();
-    expect(screen.getByText("Gateway Overview")).toBeInTheDocument();
+    expect(screen.getAllByText("Gateway Overview").length).toBeGreaterThan(0);
+  });
+
+  it("renders the operator workbench chrome for the rebuilt control surface", async () => {
+    render(<App />);
+    await screen.findByText("Runtime status");
+
+    expect(screen.getAllByText("Operator workbench").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Single-machine runtime").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Cold-path visibility for auth, routing, and diagnostics.").length,
+    ).toBeGreaterThan(0);
   });
 
   it("renders the shared desktop shell and highlights the active page", async () => {
@@ -1108,7 +1119,7 @@ describe("App shell", () => {
     });
 
     expect(await screen.findByRole("heading", { name: /request history/i })).toBeInTheDocument();
-    expect(screen.getByText(/usage provenance/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /usage provenance/i })).toBeInTheDocument();
   });
 
   it("renders auth and provider diagnostics inside the logs console", async () => {

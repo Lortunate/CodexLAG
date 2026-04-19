@@ -13,6 +13,7 @@ import type {
   RelaySummary,
   RelayUpsertInput,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 import { RelayEditor } from "./relay-editor";
 
 interface RelayPanelState {
@@ -128,9 +129,14 @@ export function RelaysPage() {
   }
 
   return (
-    <section aria-labelledby="relays-heading">
-      <h2 id="relays-heading">Relays</h2>
-      <p>Manage NewAPI relay endpoints, validate connectivity, and inspect balance support.</p>
+    <section className="workspace-page" aria-labelledby="relays-heading">
+      <PageHeader
+        eyebrow="Relay inventory"
+        title="Relays"
+        titleId="relays-heading"
+        description="Manage NewAPI relay endpoints, validate connectivity, and compare which relays expose usable balance signals."
+        meta={`${relays.length} configured relay${relays.length === 1 ? "" : "s"}`}
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <RelayEditor
         connectionResults={relayConnectionResults}

@@ -10,6 +10,7 @@ import type {
   CreatedPlatformKey,
   PlatformKeyInventoryEntry,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 import { KeyManagementPanel } from "./key-management-panel";
 
 export function KeysPage() {
@@ -106,9 +107,14 @@ export function KeysPage() {
   }
 
   return (
-    <section aria-labelledby="keys-heading">
-      <h2 id="keys-heading">Platform Keys</h2>
-      <p>Issue local gateway keys, bind runtime policy, and review mode access.</p>
+    <section className="workspace-page" aria-labelledby="keys-heading">
+      <PageHeader
+        eyebrow="Access control"
+        title="Platform Keys"
+        titleId="keys-heading"
+        description="Issue local gateway keys, bind runtime policy, and keep allowed modes explicit before secrets leave the screen."
+        meta={`${keys.length} active key record${keys.length === 1 ? "" : "s"}`}
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       {createdKey ? (
         <div role="status">

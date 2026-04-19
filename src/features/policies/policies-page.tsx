@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listAccounts, listPolicies, listRelays, updatePolicy } from "../../lib/tauri";
 import type { PolicySummary, PolicyUpdateInput } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 import { PolicyEditor } from "./policy-editor";
 
 export function PoliciesPage() {
@@ -68,9 +69,14 @@ export function PoliciesPage() {
   }
 
   return (
-    <section aria-labelledby="policies-heading">
-      <h2 id="policies-heading">Policies</h2>
-      <p>Edit runtime endpoint order, retry budget, and recovery thresholds.</p>
+    <section className="workspace-page" aria-labelledby="policies-heading">
+      <PageHeader
+        eyebrow="Selection logic"
+        title="Policies"
+        titleId="policies-heading"
+        description="Edit endpoint ordering, retry budget, and recovery thresholds with a clearer view of runtime consequences."
+        meta={`${policies.length} saved polic${policies.length === 1 ? "y" : "ies"}`}
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <PolicyEditor
         endpointIds={endpointIds}

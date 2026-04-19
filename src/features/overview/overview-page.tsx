@@ -22,6 +22,7 @@ import type {
   RuntimeLogMetadata,
   UsageLedger,
 } from "../../lib/types";
+import { PageHeader } from "../../components/page-header";
 import { DefaultKeyModeToggle } from "../default-key/default-key-mode-toggle";
 import { CapabilityMatrixTable } from "./capability-matrix-table";
 import { RuntimeLogFilesTable } from "./runtime-log-files-table";
@@ -200,9 +201,14 @@ export function OverviewPage() {
   ).length;
 
   return (
-    <section aria-labelledby="overview-heading">
-      <h2 id="overview-heading">Gateway Overview</h2>
-      <p>CodexLAG manages local accounts, relays, keys, policy routing, and logs.</p>
+    <section className="workspace-page" aria-labelledby="overview-heading">
+      <PageHeader
+        eyebrow="Runtime posture"
+        title="Gateway Overview"
+        titleId="overview-heading"
+        description="Inspect runtime health, key mode, capability coverage, and exportable diagnostics before touching policy."
+        meta="Always-on visibility"
+      />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <div className="status-card-grid">
         <article className="status-card">
