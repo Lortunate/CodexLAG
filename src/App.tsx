@@ -54,12 +54,14 @@ export default function App() {
 
   return (
     <AppShell
+      activePageLabel={sections.find((section) => section.id === activePage)?.label ?? "Overview"}
       navigation={
         <div className="workbench-shell__rail-inner">
           <nav aria-label="Primary" className="workbench-nav">
             <div className="workbench-brand">
               <p className="workbench-brand__eyebrow">Local control plane</p>
               <h1 className="workbench-brand__title">CodexLAG</h1>
+              <p className="workbench-brand__caption">Modern local gateway workbench</p>
             </div>
             {sections.map((section, index) => (
               <button
