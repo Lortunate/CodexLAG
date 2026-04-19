@@ -100,6 +100,17 @@ function buildOnboardingCards(
   return Array.from(cards.values());
 }
 
+function entitlementSummary(detail: AccountCapabilityDetail | null) {
+  if (!detail?.entitlement?.plan_type) {
+    return "No plan metadata projected.";
+  }
+
+  const source = detail.entitlement.claim_source
+    ? ` via ${detail.entitlement.claim_source}`
+    : "";
+  return `Plan ${detail.entitlement.plan_type}${source}`;
+}
+
 export function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountPanelState[]>([]);
   const [providerDescriptors, setProviderDescriptors] = useState<ProviderDescriptor[]>([]);
@@ -270,6 +281,24 @@ export function AccountsPage() {
         description="Review provider identity, launch the correct auth flow, and keep degraded sessions and capability state visible without hiding partial failures."
       />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+      <div className="operator-summary-grid">
+        <article className="operator-callout">
+          <h4>Providers in scope</h4>
+          <p>{buildOnboardingCards(providerDescriptors, accounts, providerSessions).length} auth paths tracked locally.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Stored sessions</h4>
+          <p>{providerSessions.length} provider sessions currently persisted on this desktop.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Imported accounts</h4>
+          <p>{accounts.length} official accounts available to the gateway and operator surfaces.</p>
+        </article>
+      </div>
+      <div className="operator-section-title">
+        <h3>Onboarding paths</h3>
+        <p>Each provider advertises its required auth profile so operators can use the right entry point immediately.</p>
+      </div>
       <div className="detail-grid">
         {buildOnboardingCards(providerDescriptors, accounts, providerSessions).map((card) => {
           const supportsBrowserLogin =
@@ -277,8 +306,10 @@ export function AccountsPage() {
 
           return (
             <article className="detail-card" key={card.providerId}>
-              <h3>{authProfileLabel(card.authProfile)}</h3>
-              <p>{card.providerId}</p>
+              <div className="operator-list__item-header">
+                <h3>{authProfileLabel(card.authProfile)}</h3>
+                <code>{card.providerId}</code>
+              </div>
               <p>{authProfileGuidance(card.authProfile)}</p>
               {isOpenAiProvider(card.providerId) && supportsBrowserLogin ? (
                 <button onClick={() => void handleStartOpenAiLogin()} type="button">
@@ -291,31 +322,71 @@ export function AccountsPage() {
       </div>
       {authActionMessage ? <p role="status">{authActionMessage}</p> : null}
       {sessionActionError ? <p role="alert">{sessionActionError}</p> : null}
+      <div className="operator-section-title">
+        <h3>Provider sessions</h3>
+        <p>Persisted browser sessions remain actionable here so refresh and sign-out stay close to auth health.</p>
+      </div>
       {providerSessions.length === 0 ? (
         <p>No provider sessions stored.</p>
       ) : (
         <div className="detail-grid">
           {providerSessions.map((session) => (
             <article className="detail-card" key={`${session.provider_id}:${session.account_id}`}>
-              <h4>{session.display_name}</h4>
+              <div className="operator-list__item-header">
+                <h4>{session.display_name}</h4>
+                <code>{session.account_id}</code>
+              </div>
+              <dl className="operator-inline-pairs">
+                <div>
+                  <dt>Auth state</dt>
+                  <dd>{session.auth_state}</dd>
+                </div>
+                <div>
+                  <dt>Auth profile</dt>
+                  <dd>{authProfileLabel(session.auth_profile)}</dd>
+                </div>
+              </dl>
               <p>Provider session: {session.account_id}</p>
               <p>Auth state: {session.auth_state}</p>
               <p>Auth profile: {authProfileLabel(session.auth_profile)}</p>
               <p>Last auth error: {session.last_error_message ?? session.last_refresh_error ?? "none"}</p>
-              <button onClick={() => void handleRefreshProviderSession(session.account_id)} type="button">
-                Refresh
-              </button>
-              <button onClick={() => void handleLogoutProviderSession(session.account_id)} type="button">
-                Sign out
-              </button>
+              <div className="operator-actions">
+                <button onClick={() => void handleRefreshProviderSession(session.account_id)} type="button">
+                  Refresh
+                </button>
+                <button onClick={() => void handleLogoutProviderSession(session.account_id)} type="button">
+                  Sign out
+                </button>
+              </div>
             </article>
           ))}
         </div>
       )}
+      <div className="operator-section-title">
+        <h3>Account inventory</h3>
+        <p>Capability, balance, auth degradation, and entitlement hints stay grouped at the account row so failures remain attributable.</p>
+      </div>
       <div className="detail-grid">
         {accounts.map((panel) => (
           <article className="detail-card" key={panel.account.account_id}>
-            <h3>{panel.account.name}</h3>
+            <div className="operator-list__item-header">
+              <h3>{panel.account.name}</h3>
+              <code>{panel.account.account_id}</code>
+            </div>
+            <dl className="operator-inline-pairs">
+              <div>
+                <dt>Provider</dt>
+                <dd>{panel.account.provider}</dd>
+              </div>
+              <div>
+                <dt>Auth state</dt>
+                <dd>{panel.providerHealth.auth_state}</dd>
+              </div>
+              <div>
+                <dt>Auth profile</dt>
+                <dd>{authProfileLabel(panel.providerHealth.auth_profile)}</dd>
+              </div>
+            </dl>
             <p>Provider: {panel.account.provider}</p>
             <p>Auth state: {panel.providerHealth.auth_state}</p>
             <p>Auth profile: {authProfileLabel(panel.providerHealth.auth_profile)}</p>
@@ -340,6 +411,7 @@ export function AccountsPage() {
             )}
             {panel.capabilityDetail ? (
               <>
+                <p>{entitlementSummary(panel.capabilityDetail)}</p>
                 <p>Capability status: {panel.capabilityDetail.status}</p>
                 <p>Account identity: {panel.capabilityDetail.account_identity ?? "unknown"}</p>
                 <p>Refresh support: {String(panel.capabilityDetail.refresh_capability)}</p>

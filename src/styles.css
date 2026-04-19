@@ -668,6 +668,61 @@ p[role="status"] {
   padding: 1rem;
 }
 
+.operator-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.9rem;
+}
+
+.operator-toolbar > label,
+.operator-toolbar .operator-field {
+  min-width: min(100%, 14rem);
+}
+
+.operator-summary-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.operator-callout {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 1rem;
+  background-color: var(--surface-1);
+  padding: 1rem;
+}
+
+.operator-callout h4 {
+  font-size: 0.96rem;
+}
+
+.operator-callout p {
+  color: var(--text-quiet);
+  line-height: 1.55;
+}
+
+.operator-section-title {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.operator-section-title p {
+  color: var(--text-quiet);
+  line-height: 1.6;
+}
+
+.operator-table-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--text-quiet);
+  font-size: 0.88rem;
+}
+
 .operator-preview h4 {
   font-size: 0.98rem;
 }

@@ -68,12 +68,12 @@ const columns: ColumnDef<CapabilityMatrixRow>[] = [
 
 function authStateTone(authState: string) {
   if (authState === "active") {
-    return "text-emerald-600";
+    return "text-[color:oklch(0.84_0.08_160)]";
   }
   if (authState === "expired") {
-    return "text-red-600";
+    return "text-[color:oklch(0.72_0.16_28)]";
   }
-  return "text-amber-600";
+  return "text-[color:oklch(0.8_0.11_85)]";
 }
 
 export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrixTableProps) {
@@ -160,18 +160,34 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
 
   return (
     <section className="space-y-4" aria-labelledby="capability-matrix-heading">
-      <div className="flex flex-wrap items-end gap-3">
-        <label>
-          Search
+      <div className="operator-summary-grid">
+        <article className="operator-callout">
+          <h4>Visible rows</h4>
+          <p>{filteredRows.length} capability entries match the current filters.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Providers</h4>
+          <p>{providerOptions.length} provider families represented in the current inventory.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Accounts</h4>
+          <p>{accountOptions.length} accounts contribute capability projections to this matrix.</p>
+        </article>
+      </div>
+      <div className="operator-toolbar">
+        <div className="operator-field">
+          <label htmlFor="capability-search">Search</label>
           <input
+            id="capability-search"
             aria-label="Capability matrix search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-        </label>
-        <label>
-          Provider scope
+        </div>
+        <div className="operator-field">
+          <label htmlFor="provider-scope">Provider scope</label>
           <select
+            id="provider-scope"
             aria-label="Provider scope"
             value={providerScope}
             onChange={(event) => setProviderScope(event.target.value)}
@@ -183,10 +199,11 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
               </option>
             ))}
           </select>
-        </label>
-        <label>
-          Account scope
+        </div>
+        <div className="operator-field">
+          <label htmlFor="account-scope">Account scope</label>
           <select
+            id="account-scope"
             aria-label="Account scope"
             value={accountScope}
             onChange={(event) => setAccountScope(event.target.value)}
@@ -198,13 +215,13 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
               </option>
             ))}
           </select>
-        </label>
+        </div>
         <button type="button" onClick={() => setShowColumnPicker((current) => !current)}>
           Columns
         </button>
       </div>
       {showColumnPicker ? (
-        <div className="flex flex-wrap gap-3" aria-label="Capability matrix column visibility">
+        <div className="operator-pill-list" aria-label="Capability matrix column visibility">
           {table.getAllLeafColumns().map((column) => (
             <label key={column.id}>
               <input
@@ -217,16 +234,17 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
           ))}
         </div>
       ) : null}
-      <div className="overflow-x-auto rounded-xl border border-border/60 bg-background/60 p-4">
-        <table className="min-w-full text-sm" aria-label="Capability matrix">
+      <div className="operator-table-shell">
+        <div className="operator-table-caption">
+          <span>Sort columns to compare model coverage, degraded auth states, and provider family differences.</span>
+          <span>{filteredRows.length === 0 ? "No rows in view" : `${filteredRows.length} row(s) in view`}</span>
+        </div>
+        <table aria-label="Capability matrix">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
-              <tr
-                key={headerGroup.id}
-                className="border-b border-border/60 text-left text-xs uppercase tracking-[0.16em] text-muted-foreground"
-              >
+              <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id} className="px-2 py-2 font-medium">
+                  <th key={header.id}>
                     {header.isPlaceholder ? null : (
                       <button
                         type="button"
@@ -247,9 +265,9 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-b border-border/40 align-top last:border-b-0">
+              <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-2 py-3">
+                  <td key={cell.id}>
                     {cell.column.id === "authState" ? (
                       <span className={authStateTone(row.original.authState)}>
                         {row.original.authState}
@@ -267,7 +285,7 @@ export function CapabilityMatrixTable({ inventory, isLoading }: CapabilityMatrix
           </tbody>
         </table>
         {table.getRowModel().rows.length === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground">No capability rows match the current filters.</p>
+          <p className="operator-message">No capability rows match the current filters.</p>
         ) : null}
       </div>
     </section>
