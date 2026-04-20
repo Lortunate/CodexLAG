@@ -199,81 +199,111 @@ export function OverviewPage() {
   const queryableRelayCount = relayBalances.filter(
     (snapshot) => snapshot.balance.kind === "queryable",
   ).length;
+  const inventoryStatus = isProviderInventoryError
+    ? "degraded"
+    : isProviderInventoryPending
+      ? "loading"
+      : "ready";
 
   return (
-    <section aria-labelledby="overview-heading">
+    <section className="workspace-page" aria-labelledby="overview-heading">
       <PageHeader
         eyebrow="Operator workbench"
         titleId="overview-heading"
         title="Gateway Overview"
-        description="CodexLAG manages local accounts, relays, platform keys, policy routing, and runtime diagnostics from a single-machine control surface."
+        description="Operator summary for runtime posture, provider inventory, default key routing, and local diagnostics."
       />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      <div className="status-card-grid">
-        <article className="status-card">
-          <h3>Runtime status</h3>
-          <p>Level: {logSummary?.level ?? "loading"}</p>
-          <p>{logSummary?.last_event ?? "Loading runtime summary..."}</p>
-        </article>
-        <article className="status-card">
-          <h3>Balance observability</h3>
-          <p>Non-queryable accounts: {nonQueryableAccountCount}</p>
-          <p>Queryable relays: {queryableRelayCount}</p>
-          <p>Account refresh failures: {accountRefreshFailures}</p>
-          <p>Relay refresh failures: {relayRefreshFailures}</p>
-        </article>
-        <article className="status-card">
-          <h3>Usage ledger</h3>
-          <p>Total ledger tokens: {usageLedger?.total_tokens ?? 0}</p>
-          <p>Usage cost provenance: {usageLedger?.total_cost.provenance ?? "unknown"}</p>
-        </article>
-      </div>
-      <div className="overview-split">
-        <section className="panel" aria-labelledby="runtime-diagnostics-heading">
-          <div className="panel-heading">
-            <div>
-              <h3 id="runtime-diagnostics-heading">Runtime diagnostics</h3>
-              <p>Keep local log metadata and exportable diagnostics packages close to the top-level state view.</p>
-            </div>
-            <button type="button" onClick={handleExportDiagnostics} disabled={isExportingDiagnostics}>
-              {isExportingDiagnostics ? "Exporting diagnostics..." : "Export diagnostics"}
-            </button>
-          </div>
-          <p>
-            Log directory:{" "}
-            {runtimeLogMetadata?.log_dir ?? (runtimeLogDiagnosticsUnavailable ? "unavailable" : "loading")}
-          </p>
-          <p>Tracked log files: {runtimeLogMetadata?.files.length ?? 0}</p>
-          {runtimeLogMetadata ? <RuntimeLogFilesTable files={runtimeLogMetadata.files} /> : null}
-          {runtimeDiagnosticsManifestPath ? (
-            <p>Diagnostics manifest: {runtimeDiagnosticsManifestPath}</p>
-          ) : null}
-        </section>
-        <DefaultKeyModeToggle
-          activeMode={summary.allowedMode}
-          disabled={isUpdatingMode}
-          rawMode={summary.rawAllowedMode}
-          unavailableReason={summary.unavailableReason}
-          summaryName={summary.name}
-          onSelectMode={handleSelectMode}
-        />
-      </div>
-      <section className="panel" aria-labelledby="capability-matrix-heading">
-        <div className="panel-heading">
-          <div>
-            <h3 id="capability-matrix-heading">Capability Matrix</h3>
-            <p>
-              Compare provider models, auth state, and normalized capability flags from one inventory
-              surface.
+      <section className="workspace-summary-strip overview-status-board" aria-labelledby="overview-summary-heading">
+        <article className="status-card overview-status-board__primary">
+          <div className="overview-status-board__header">
+            <p className="overview-status-board__eyebrow" id="overview-summary-heading">
+              Operator summary
             </p>
+            <h3>Runtime status</h3>
           </div>
+          <p className="overview-status-board__primary-value">Level: {logSummary?.level ?? "loading"}</p>
+          <p className="overview-status-board__primary-detail">
+            {logSummary?.last_event ?? "Loading runtime summary..."}
+          </p>
+          <dl className="overview-status-board__meta" aria-label="Overview support state">
+            <div>
+              <dt>Default mode</dt>
+              <dd>{summary.allowedMode ?? summary.rawAllowedMode}</dd>
+            </div>
+            <div>
+              <dt>Provider inventory</dt>
+              <dd>
+                {inventoryStatus}
+                {providerInventory
+                  ? ` | ${providerInventory.accounts.length} accounts | ${providerInventory.models.length} models`
+                  : ""}
+              </dd>
+            </div>
+          </dl>
+        </article>
+        <div className="overview-status-board__support">
+          <article className="status-card">
+            <h3>Balance observability</h3>
+            <p>Non-queryable accounts: {nonQueryableAccountCount}</p>
+            <p>Queryable relays: {queryableRelayCount}</p>
+            <p>Account refresh failures: {accountRefreshFailures}</p>
+            <p>Relay refresh failures: {relayRefreshFailures}</p>
+          </article>
+          <article className="status-card">
+            <h3>Usage ledger</h3>
+            <p>Total ledger tokens: {usageLedger?.total_tokens ?? 0}</p>
+            <p>Usage cost provenance: {usageLedger?.total_cost.provenance ?? "unknown"}</p>
+          </article>
         </div>
-        {isProviderInventoryError ? <p role="alert">Failed to load capability matrix.</p> : null}
-        <CapabilityMatrixTable
-          inventory={providerInventory ?? { accounts: [], models: [] }}
-          isLoading={isProviderInventoryPending}
-        />
       </section>
+      <div className="workspace-grid">
+        <div className="workspace-column">
+          <section className="panel" aria-labelledby="capability-matrix-heading">
+            <div className="panel-heading">
+              <div>
+                <h3 id="capability-matrix-heading">Capability Matrix</h3>
+                <p>Inventory surface for provider capability and auth posture.</p>
+              </div>
+            </div>
+            {isProviderInventoryError ? <p role="alert">Failed to load capability matrix.</p> : null}
+            <CapabilityMatrixTable
+              inventory={providerInventory ?? { accounts: [], models: [] }}
+              isLoading={isProviderInventoryPending}
+            />
+          </section>
+        </div>
+        <div className="workspace-column">
+          <DefaultKeyModeToggle
+            activeMode={summary.allowedMode}
+            disabled={isUpdatingMode}
+            rawMode={summary.rawAllowedMode}
+            unavailableReason={summary.unavailableReason}
+            summaryName={summary.name}
+            onSelectMode={handleSelectMode}
+          />
+          <section className="panel" aria-labelledby="runtime-diagnostics-heading">
+            <div className="panel-heading">
+              <div>
+                <h3 id="runtime-diagnostics-heading">Runtime diagnostics</h3>
+                <p>Local log metadata and export packaging for operator handoff.</p>
+              </div>
+              <button type="button" onClick={handleExportDiagnostics} disabled={isExportingDiagnostics}>
+                {isExportingDiagnostics ? "Exporting diagnostics..." : "Export diagnostics"}
+              </button>
+            </div>
+            <p>
+              Log directory:{" "}
+              {runtimeLogMetadata?.log_dir ?? (runtimeLogDiagnosticsUnavailable ? "unavailable" : "loading")}
+            </p>
+            <p>Tracked log files: {runtimeLogMetadata?.files.length ?? 0}</p>
+            {runtimeLogMetadata ? <RuntimeLogFilesTable files={runtimeLogMetadata.files} /> : null}
+            {runtimeDiagnosticsManifestPath ? (
+              <p>Diagnostics manifest: {runtimeDiagnosticsManifestPath}</p>
+            ) : null}
+          </section>
+        </div>
+      </div>
     </section>
   );
 }

@@ -553,8 +553,9 @@ describe("App shell", () => {
     await screen.findByText("Runtime status");
 
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
-    expect(screen.getByText("CodexLAG")).toBeInTheDocument();
-    expect(screen.getByText("Gateway Overview")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /codexlag/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: /overview/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /gateway overview/i })).toBeInTheDocument();
   });
 
   it("renders the shared desktop shell and highlights the active page", async () => {
@@ -603,6 +604,8 @@ describe("App shell", () => {
   it("shows the overview diagnostics panel and default key operations in the rebuilt pages", async () => {
     render(<App />);
 
+    expect(await screen.findByRole("heading", { name: /gateway overview/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /capability matrix/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /runtime diagnostics/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /default key mode/i })).toBeInTheDocument();
   });
@@ -709,7 +712,13 @@ describe("App shell", () => {
     });
 
     expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
-    expect(await screen.findByText(/auth profile: api key/i)).toBeInTheDocument();
+    expect(
+      (
+        await screen.findAllByText(
+          /authenticate this provider with a configured api key before using the account/i,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
   });
 
   it("renders onboarding guidance per provider descriptor", async () => {
@@ -861,10 +870,14 @@ describe("App shell", () => {
   it("renders OpenAI session and relay creation as structured operations panels", async () => {
     render(<App />);
 
+    expect(screen.getByRole("button", { name: "Official Accounts" })).toBeInTheDocument();
+
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /accounts/i }));
     });
+    expect(await screen.findByRole("heading", { level: 1, name: /official accounts/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /browser sign-in/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /provider sessions/i })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /import official account/i })).not.toBeInTheDocument();
 
     await act(async () => {
@@ -993,7 +1006,7 @@ describe("App shell", () => {
       allowed_mode: "hybrid",
     });
     expect(await screen.findByText("Generated secret")).toBeInTheDocument();
-    expect(screen.getByText("ck_local_mocked_ops_key_secret")).toBeInTheDocument();
+    expect(await screen.findByText("ck_local_mocked_ops_key_secret")).toBeInTheDocument();
     expect(await screen.findByText("Operations Key")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disable key ops-key" })).toBeInTheDocument();
 

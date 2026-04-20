@@ -273,7 +273,7 @@ export function AccountsPage() {
   }
 
   return (
-    <section aria-labelledby="accounts-heading">
+    <section className="workspace-page" aria-labelledby="accounts-heading">
       <PageHeader
         eyebrow="Provider onboarding"
         titleId="accounts-heading"
@@ -281,7 +281,7 @@ export function AccountsPage() {
         description="Review provider identity, launch the correct auth flow, and keep degraded sessions and capability state visible without hiding partial failures."
       />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      <div className="operator-summary-grid">
+      <div className="workspace-summary-strip">
         <article className="operator-callout">
           <h4>Providers in scope</h4>
           <p>{buildOnboardingCards(providerDescriptors, accounts, providerSessions).length} auth paths tracked locally.</p>
@@ -295,162 +295,170 @@ export function AccountsPage() {
           <p>{accounts.length} official accounts available to the gateway and operator surfaces.</p>
         </article>
       </div>
-      <div className="operator-section-title">
-        <h3>Onboarding paths</h3>
-        <p>Each provider advertises its required auth profile so operators can use the right entry point immediately.</p>
-      </div>
-      <div className="detail-grid">
-        {buildOnboardingCards(providerDescriptors, accounts, providerSessions).map((card) => {
-          const supportsBrowserLogin =
-            card.authProfile === "browser" || card.authProfile === "browser_oauth_pkce";
-
-          return (
-            <article className="detail-card" key={card.providerId}>
-              <div className="operator-list__item-header">
-                <h3>{authProfileLabel(card.authProfile)}</h3>
-                <code>{card.providerId}</code>
-              </div>
-              <p>{authProfileGuidance(card.authProfile)}</p>
-              {isOpenAiProvider(card.providerId) && supportsBrowserLogin ? (
-                <button
-                  disabled={sessionActionPending !== null}
-                  onClick={() => void handleStartOpenAiLogin()}
-                  type="button"
-                >
-                  {sessionActionPending === "browser-login"
-                    ? "Starting browser sign-in..."
-                    : "Sign in with OpenAI"}
-                </button>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
-      {authActionMessage ? (
-        <p className="operator-success" role="status">
-          {authActionMessage}
-        </p>
-      ) : null}
-      {sessionActionError ? <p role="alert">{sessionActionError}</p> : null}
-      <div className="operator-section-title">
-        <h3>Provider sessions</h3>
-        <p>Persisted browser sessions remain actionable here so refresh and sign-out stay close to auth health.</p>
-      </div>
-      {providerSessions.length === 0 ? (
-        <p className="operator-empty">No provider sessions stored.</p>
-      ) : (
-        <div className="detail-grid">
-          {providerSessions.map((session) => (
-            <article className="detail-card" key={`${session.provider_id}:${session.account_id}`}>
-              <div className="operator-list__item-header">
-                <h4>{session.display_name}</h4>
-                <code>{session.account_id}</code>
-              </div>
-              <dl className="operator-inline-pairs">
-                <div>
-                  <dt>Auth state</dt>
-                  <dd>{session.auth_state}</dd>
-                </div>
-                <div>
-                  <dt>Auth profile</dt>
-                  <dd>{authProfileLabel(session.auth_profile)}</dd>
-                </div>
-              </dl>
-              <p>Provider session: {session.account_id}</p>
-              <p>Auth state: {session.auth_state}</p>
-              <p>Auth profile: {authProfileLabel(session.auth_profile)}</p>
-              <p>Last auth error: {session.last_error_message ?? session.last_refresh_error ?? "none"}</p>
-              <div className="operator-actions">
-                <button
-                  disabled={sessionActionPending !== null}
-                  onClick={() => void handleRefreshProviderSession(session.account_id)}
-                  type="button"
-                >
-                  {sessionActionPending === `refresh:${session.account_id}` ? "Refreshing..." : "Refresh"}
-                </button>
-                <button
-                  disabled={sessionActionPending !== null}
-                  onClick={() => void handleLogoutProviderSession(session.account_id)}
-                  type="button"
-                >
-                  {sessionActionPending === `logout:${session.account_id}` ? "Signing out..." : "Sign out"}
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-      <div className="operator-section-title">
-        <h3>Account inventory</h3>
-        <p>Capability, balance, auth degradation, and entitlement hints stay grouped at the account row so failures remain attributable.</p>
-      </div>
-      <div className="detail-grid">
-        {accounts.map((panel) => (
-          <article className="detail-card" key={panel.account.account_id}>
-            <div className="operator-list__item-header">
-              <h3>{panel.account.name}</h3>
-              <code>{panel.account.account_id}</code>
+      <div className="workspace-grid">
+        <div className="workspace-column">
+          <section className="workspace-section" aria-labelledby="accounts-inventory-heading">
+            <div className="operator-section-title">
+              <h3 id="accounts-inventory-heading">Account inventory</h3>
+              <p>Capability, balance, auth degradation, and entitlement hints stay grouped at the account row so failures remain attributable.</p>
             </div>
-            <dl className="operator-inline-pairs">
-              <div>
-                <dt>Provider</dt>
-                <dd>{panel.account.provider}</dd>
-              </div>
-              <div>
-                <dt>Auth state</dt>
-                <dd>{panel.providerHealth.auth_state}</dd>
-              </div>
-              <div>
-                <dt>Auth profile</dt>
-                <dd>{authProfileLabel(panel.providerHealth.auth_profile)}</dd>
-              </div>
-            </dl>
-            <p>Provider: {panel.account.provider}</p>
-            <p>Auth state: {panel.providerHealth.auth_state}</p>
-            <p>Auth profile: {authProfileLabel(panel.providerHealth.auth_profile)}</p>
-            <p>
-              Last auth error:{" "}
-              {panel.providerHealth.last_error_message ?? "No active auth errors."}
-            </p>
-            {panel.balanceSnapshot ? (
-              <>
-                <p>Balance state: {panel.balanceSnapshot.balance.kind}</p>
-                {panel.balanceSnapshot.balance.kind === "queryable" ? (
-                  <>
-                    <p>Total: {panel.balanceSnapshot.balance.total}</p>
-                    <p>Used: {panel.balanceSnapshot.balance.used}</p>
-                  </>
-                ) : (
-                  <p>{panel.balanceSnapshot.balance.reason}</p>
-                )}
-              </>
-            ) : (
-              <p>{panel.balanceError ?? "Balance unavailable."}</p>
-            )}
-            {panel.capabilityDetail ? (
-              <>
-                <p>{entitlementSummary(panel.capabilityDetail)}</p>
-                <p>Capability status: {panel.capabilityDetail.status}</p>
-                <p>Account identity: {panel.capabilityDetail.account_identity ?? "unknown"}</p>
-                <p>Refresh support: {String(panel.capabilityDetail.refresh_capability)}</p>
-                <p>Balance capability: {panel.capabilityDetail.balance_capability}</p>
-                {panel.capabilityDetail.entitlement?.plan_type ? (
-                  <p>Plan: {panel.capabilityDetail.entitlement.plan_type}</p>
-                ) : null}
-                {panel.capabilityDetail.entitlement?.claim_source ? (
-                  <p>Source: {panel.capabilityDetail.entitlement.claim_source}</p>
-                ) : null}
-                {panel.capabilityDetail.entitlement?.subscription_active_until ? (
+            <div className="detail-grid">
+              {accounts.map((panel) => (
+                <article className="detail-card" key={panel.account.account_id}>
+                  <div className="operator-list__item-header">
+                    <h3>{panel.account.name}</h3>
+                    <code>{panel.account.account_id}</code>
+                  </div>
+                  <dl className="operator-inline-pairs">
+                    <div>
+                      <dt>Provider</dt>
+                      <dd>{panel.account.provider}</dd>
+                    </div>
+                    <div>
+                      <dt>Auth state</dt>
+                      <dd>{panel.providerHealth.auth_state}</dd>
+                    </div>
+                    <div>
+                      <dt>Auth profile</dt>
+                      <dd>{authProfileLabel(panel.providerHealth.auth_profile)}</dd>
+                    </div>
+                  </dl>
+                  <p>Provider: {panel.account.provider}</p>
                   <p>
-                    Active until: {panel.capabilityDetail.entitlement.subscription_active_until}
+                    Last auth error:{" "}
+                    {panel.providerHealth.last_error_message ?? "No active auth errors."}
                   </p>
-                ) : null}
-              </>
+                  {panel.balanceSnapshot ? (
+                    <>
+                      <p>Balance state: {panel.balanceSnapshot.balance.kind}</p>
+                      {panel.balanceSnapshot.balance.kind === "queryable" ? (
+                        <>
+                          <p>Total: {panel.balanceSnapshot.balance.total}</p>
+                          <p>Used: {panel.balanceSnapshot.balance.used}</p>
+                        </>
+                      ) : (
+                        <p>{panel.balanceSnapshot.balance.reason}</p>
+                      )}
+                    </>
+                  ) : (
+                    <p>{panel.balanceError ?? "Balance unavailable."}</p>
+                  )}
+                  {panel.capabilityDetail ? (
+                    <>
+                      <p>{entitlementSummary(panel.capabilityDetail)}</p>
+                      <p>Capability status: {panel.capabilityDetail.status}</p>
+                      <p>Account identity: {panel.capabilityDetail.account_identity ?? "unknown"}</p>
+                      <p>Refresh support: {String(panel.capabilityDetail.refresh_capability)}</p>
+                      <p>Balance capability: {panel.capabilityDetail.balance_capability}</p>
+                      {panel.capabilityDetail.entitlement?.plan_type ? (
+                        <p>Plan: {panel.capabilityDetail.entitlement.plan_type}</p>
+                      ) : null}
+                      {panel.capabilityDetail.entitlement?.claim_source ? (
+                        <p>Source: {panel.capabilityDetail.entitlement.claim_source}</p>
+                      ) : null}
+                      {panel.capabilityDetail.entitlement?.subscription_active_until ? (
+                        <p>
+                          Active until: {panel.capabilityDetail.entitlement.subscription_active_until}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p>{panel.capabilityError ?? "Capability detail unavailable."}</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+        <div className="workspace-column">
+          <section className="workspace-section" aria-labelledby="onboarding-paths-heading">
+            <div className="operator-section-title">
+              <h3 id="onboarding-paths-heading">Onboarding paths</h3>
+              <p>Each provider advertises its required auth profile so operators can use the right entry point immediately.</p>
+            </div>
+            <div className="detail-grid">
+              {buildOnboardingCards(providerDescriptors, accounts, providerSessions).map((card) => {
+                const supportsBrowserLogin =
+                  card.authProfile === "browser" || card.authProfile === "browser_oauth_pkce";
+
+                return (
+                  <article className="detail-card" key={card.providerId}>
+                    <div className="operator-list__item-header">
+                      <h3>{authProfileLabel(card.authProfile)}</h3>
+                      <code>{card.providerId}</code>
+                    </div>
+                    <p>{authProfileGuidance(card.authProfile)}</p>
+                    {isOpenAiProvider(card.providerId) && supportsBrowserLogin ? (
+                      <button
+                        disabled={sessionActionPending !== null}
+                        onClick={() => void handleStartOpenAiLogin()}
+                        type="button"
+                      >
+                        {sessionActionPending === "browser-login"
+                          ? "Starting browser sign-in..."
+                          : "Sign in with OpenAI"}
+                      </button>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+          {authActionMessage ? (
+            <p className="operator-success" role="status">
+              {authActionMessage}
+            </p>
+          ) : null}
+          {sessionActionError ? <p role="alert">{sessionActionError}</p> : null}
+          <section className="workspace-section" aria-labelledby="provider-sessions-heading">
+            <div className="operator-section-title">
+              <h3 id="provider-sessions-heading">Provider sessions</h3>
+              <p>Persisted browser sessions remain actionable here so refresh and sign-out stay close to auth health.</p>
+            </div>
+            {providerSessions.length === 0 ? (
+              <p className="operator-empty">No provider sessions stored.</p>
             ) : (
-              <p>{panel.capabilityError ?? "Capability detail unavailable."}</p>
+              <div className="detail-grid">
+                {providerSessions.map((session) => (
+                  <article className="detail-card" key={`${session.provider_id}:${session.account_id}`}>
+                    <div className="operator-list__item-header">
+                      <h4>{session.display_name}</h4>
+                      <code>{session.account_id}</code>
+                    </div>
+                    <dl className="operator-inline-pairs">
+                      <div>
+                        <dt>Auth state</dt>
+                        <dd>{session.auth_state}</dd>
+                      </div>
+                      <div>
+                        <dt>Auth profile</dt>
+                        <dd>{authProfileLabel(session.auth_profile)}</dd>
+                      </div>
+                    </dl>
+                    <p>Provider session: {session.account_id}</p>
+                    <p>Last auth error: {session.last_error_message ?? session.last_refresh_error ?? "none"}</p>
+                    <div className="operator-actions">
+                      <button
+                        disabled={sessionActionPending !== null}
+                        onClick={() => void handleRefreshProviderSession(session.account_id)}
+                        type="button"
+                      >
+                        {sessionActionPending === `refresh:${session.account_id}` ? "Refreshing..." : "Refresh"}
+                      </button>
+                      <button
+                        disabled={sessionActionPending !== null}
+                        onClick={() => void handleLogoutProviderSession(session.account_id)}
+                        type="button"
+                      >
+                        {sessionActionPending === `logout:${session.account_id}` ? "Signing out..." : "Sign out"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
             )}
-          </article>
-        ))}
+          </section>
+        </div>
       </div>
     </section>
   );
