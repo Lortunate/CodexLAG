@@ -129,7 +129,7 @@ export function RelaysPage() {
   }
 
   return (
-    <section aria-labelledby="relays-heading">
+    <section className="workspace-page" aria-labelledby="relays-heading">
       <PageHeader
         eyebrow="Upstream relay fleet"
         titleId="relays-heading"
@@ -137,71 +137,97 @@ export function RelaysPage() {
         description="Manage NewAPI relay endpoints, validate connectivity, and keep balance visibility and capability support obvious at a glance."
       />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      <RelayEditor
-        connectionResults={relayConnectionResults}
-        errorMessage={editorErrorMessage}
-        isCreating={isCreatingRelay}
-        isTestingRelayId={testingRelayId}
-        relays={relays.map((panel) => panel.relay)}
-        successMessage={editorSuccessMessage}
-        onCreate={handleCreateRelay}
-        onTest={handleTestRelay}
-      />
-      <div className="detail-grid">
-        {relays.map((panel) => (
-          <article className="detail-card" key={panel.relay.relay_id}>
-            <div className="operator-list__item-header">
-              <h3>{panel.relay.name}</h3>
-              <code>{panel.relay.relay_id}</code>
+      <div className="workspace-summary-strip">
+        <article className="operator-callout">
+          <h4>Relay endpoints</h4>
+          <p>{relays.length} relays are currently available to the local gateway.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Queryable balances</h4>
+          <p>{relays.filter((panel) => panel.balanceSnapshot?.balance.kind === "queryable").length} relays report queryable balance adapters.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Connection tests</h4>
+          <p>{Object.keys(relayConnectionResults).length} relays have a cached connection test result in this session.</p>
+        </article>
+      </div>
+      <div className="workspace-grid">
+        <div className="workspace-column">
+          <section className="workspace-section" aria-labelledby="relay-inventory-heading">
+            <div className="operator-section-title">
+              <h3 id="relay-inventory-heading">Relay inventory</h3>
+              <p>Balance state, capability support, and endpoint metadata stay grouped in one operator-facing list.</p>
             </div>
-            <p>Endpoint: {panel.relay.endpoint}</p>
-            {panel.balanceSnapshot ? (
-              <>
-                <p>Balance state: {panel.balanceSnapshot.balance.kind}</p>
-                <dl className="operator-inline-pairs">
-                  <div>
-                    <dt>Balance state</dt>
-                    <dd>{panel.balanceSnapshot.balance.kind}</dd>
+            <div className="detail-grid">
+              {relays.map((panel) => (
+                <article className="detail-card" key={panel.relay.relay_id}>
+                  <div className="operator-list__item-header">
+                    <h3>{panel.relay.name}</h3>
+                    <code>{panel.relay.relay_id}</code>
                   </div>
-                </dl>
-                {panel.balanceSnapshot.balance.kind === "queryable" ? (
-                  <>
-                    <p>Adapter: {panel.balanceSnapshot.balance.adapter}</p>
-                    <p>Total: {panel.balanceSnapshot.balance.balance.total}</p>
-                    <p>Used: {panel.balanceSnapshot.balance.balance.used}</p>
-                    <dl className="operator-inline-pairs">
-                      <div>
-                        <dt>Adapter</dt>
-                        <dd>{panel.balanceSnapshot.balance.adapter}</dd>
-                      </div>
-                      <div>
-                        <dt>Total</dt>
-                        <dd>{panel.balanceSnapshot.balance.balance.total}</dd>
-                      </div>
-                      <div>
-                        <dt>Used</dt>
-                        <dd>{panel.balanceSnapshot.balance.balance.used}</dd>
-                      </div>
-                    </dl>
-                  </>
-                ) : (
-                  <p>{panel.balanceSnapshot.balance.reason}</p>
-                )}
-              </>
-            ) : (
-              <p>{panel.balanceError ?? "Balance unavailable."}</p>
-            )}
-            {panel.capabilityDetail ? (
-              panel.capabilityDetail.balance_capability.kind === "queryable" ? (
-                <p>Capability: queryable ({panel.capabilityDetail.balance_capability.adapter})</p>
-              ) : (
-                <p>Capability: unsupported</p>
-              )
-            ) : (
-              <p>{panel.capabilityError ?? "Capability detail unavailable."}</p>
-            )}
-          </article>
-        ))}
+                  <p>Endpoint: {panel.relay.endpoint}</p>
+                  {panel.balanceSnapshot ? (
+                    <>
+                      <p>Balance state: {panel.balanceSnapshot.balance.kind}</p>
+                      <dl className="operator-inline-pairs">
+                        <div>
+                          <dt>Balance state</dt>
+                          <dd>{panel.balanceSnapshot.balance.kind}</dd>
+                        </div>
+                      </dl>
+                      {panel.balanceSnapshot.balance.kind === "queryable" ? (
+                        <>
+                          <p>Adapter: {panel.balanceSnapshot.balance.adapter}</p>
+                          <p>Total: {panel.balanceSnapshot.balance.balance.total}</p>
+                          <p>Used: {panel.balanceSnapshot.balance.balance.used}</p>
+                          <dl className="operator-inline-pairs">
+                            <div>
+                              <dt>Adapter</dt>
+                              <dd>{panel.balanceSnapshot.balance.adapter}</dd>
+                            </div>
+                            <div>
+                              <dt>Total</dt>
+                              <dd>{panel.balanceSnapshot.balance.balance.total}</dd>
+                            </div>
+                            <div>
+                              <dt>Used</dt>
+                              <dd>{panel.balanceSnapshot.balance.balance.used}</dd>
+                            </div>
+                          </dl>
+                        </>
+                      ) : (
+                        <p>{panel.balanceSnapshot.balance.reason}</p>
+                      )}
+                    </>
+                  ) : (
+                    <p>{panel.balanceError ?? "Balance unavailable."}</p>
+                  )}
+                  {panel.capabilityDetail ? (
+                    panel.capabilityDetail.balance_capability.kind === "queryable" ? (
+                      <p>Capability: queryable ({panel.capabilityDetail.balance_capability.adapter})</p>
+                    ) : (
+                      <p>Capability: unsupported</p>
+                    )
+                  ) : (
+                    <p>{panel.capabilityError ?? "Capability detail unavailable."}</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+        <div className="workspace-column">
+          <RelayEditor
+            connectionResults={relayConnectionResults}
+            errorMessage={editorErrorMessage}
+            isCreating={isCreatingRelay}
+            isTestingRelayId={testingRelayId}
+            relays={relays.map((panel) => panel.relay)}
+            successMessage={editorSuccessMessage}
+            onCreate={handleCreateRelay}
+            onTest={handleTestRelay}
+          />
+        </div>
       </div>
     </section>
   );

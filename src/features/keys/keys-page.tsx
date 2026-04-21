@@ -107,7 +107,7 @@ export function KeysPage() {
   }
 
   return (
-    <section aria-labelledby="keys-heading">
+    <section className="workspace-page" aria-labelledby="keys-heading">
       <PageHeader
         eyebrow="Gateway issuance"
         titleId="keys-heading"
@@ -115,22 +115,51 @@ export function KeysPage() {
         description="Issue local gateway keys, bind runtime policy, and review which upstream modes each key is allowed to exercise."
       />
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
-      {createdKey ? (
-        <div className="generated-secret" role="status">
-          <h3>Generated secret</h3>
-          <code>{createdKey.secret}</code>
+      <div className="workspace-summary-strip">
+        <article className="operator-callout">
+          <h4>Issued keys</h4>
+          <p>{keys.length} platform keys currently registered in the local gateway inventory.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Enabled keys</h4>
+          <p>{keys.filter((key) => key.enabled).length} keys can currently issue requests.</p>
+        </article>
+        <article className="operator-callout">
+          <h4>Bound policies</h4>
+          <p>{new Set(keys.map((key) => key.policy_id)).size} policy bindings are represented across key inventory.</p>
+        </article>
+      </div>
+      <div className="workspace-grid">
+        <div className="workspace-column">
+          <KeyManagementPanel
+            errorMessage={panelErrorMessage}
+            isCreating={isCreatingKey}
+            keyActionId={keyActionId}
+            keys={keys}
+            successMessage={panelSuccessMessage}
+            onCreate={handleCreateKey}
+            onDisable={handleDisableKey}
+            onEnable={handleEnableKey}
+          />
         </div>
-      ) : null}
-      <KeyManagementPanel
-        errorMessage={panelErrorMessage}
-        isCreating={isCreatingKey}
-        keyActionId={keyActionId}
-        keys={keys}
-        successMessage={panelSuccessMessage}
-        onCreate={handleCreateKey}
-        onDisable={handleDisableKey}
-        onEnable={handleEnableKey}
-      />
+        <div className="workspace-column">
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <h3>Generated secret</h3>
+                <p>Create a new platform key to reveal its one-time secret in this inspector column.</p>
+              </div>
+            </div>
+            {createdKey ? (
+              <div className="generated-secret" role="status">
+                <code>{createdKey.secret}</code>
+              </div>
+            ) : (
+              <p className="operator-empty">No newly generated secret is in view.</p>
+            )}
+          </section>
+        </div>
+      </div>
     </section>
   );
 }
